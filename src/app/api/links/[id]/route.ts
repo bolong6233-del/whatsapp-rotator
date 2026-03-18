@@ -5,19 +5,20 @@ export const dynamic = 'force-dynamic'
 
 export async function GET(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
   if (!user) {
     return NextResponse.json({ error: '未授权' }, { status: 401 })
   }
 
+  const { id } = await params
   const { data, error } = await supabase
     .from('short_links')
     .select('*, whatsapp_numbers(*)')
-    .eq('id', params.id)
+    .eq('id', id)
     .eq('user_id', user.id)
     .single()
 
@@ -30,9 +31,9 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
   if (!user) {
@@ -42,10 +43,11 @@ export async function PUT(
   const body = await request.json()
   const { title, description, is_active } = body
 
+  const { id } = await params
   const { data, error } = await supabase
     .from('short_links')
     .update({ title, description, is_active })
-    .eq('id', params.id)
+    .eq('id', id)
     .eq('user_id', user.id)
     .select()
     .single()
@@ -59,19 +61,20 @@ export async function PUT(
 
 export async function DELETE(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
   if (!user) {
     return NextResponse.json({ error: '未授权' }, { status: 401 })
   }
 
+  const { id } = await params
   const { error } = await supabase
     .from('short_links')
     .delete()
-    .eq('id', params.id)
+    .eq('id', id)
     .eq('user_id', user.id)
 
   if (error) {

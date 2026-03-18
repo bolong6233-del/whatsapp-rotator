@@ -2,14 +2,15 @@
 
 export const dynamic = 'force-dynamic'
 
-import { useState, useEffect, useCallback } from 'react'
+import { use, useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase-client'
 import { formatDate, getBaseUrl, copyToClipboard } from '@/lib/utils'
 import type { ShortLink, WhatsAppNumber, ClickLog } from '@/types'
 
-export default function LinkDetailPage({ params }: { params: { id: string } }) {
+export default function LinkDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params)
   const router = useRouter()
   const [link, setLink] = useState<ShortLink | null>(null)
   const [numbers, setNumbers] = useState<WhatsAppNumber[]>([])
@@ -28,7 +29,7 @@ export default function LinkDetailPage({ params }: { params: { id: string } }) {
     const { data: linkData } = await supabase
       .from('short_links')
       .select('*')
-      .eq('id', params.id)
+      .eq('id', id)
       .single()
 
     if (!linkData) {
@@ -43,7 +44,7 @@ export default function LinkDetailPage({ params }: { params: { id: string } }) {
     const { data: numbersData } = await supabase
       .from('whatsapp_numbers')
       .select('*')
-      .eq('short_link_id', params.id)
+      .eq('short_link_id', id)
       .order('sort_order', { ascending: true })
 
     setNumbers(numbersData || [])
@@ -51,13 +52,13 @@ export default function LinkDetailPage({ params }: { params: { id: string } }) {
     const { data: logsData } = await supabase
       .from('click_logs')
       .select('*, whatsapp_numbers(phone_number, label)')
-      .eq('short_link_id', params.id)
+      .eq('short_link_id', id)
       .order('clicked_at', { ascending: false })
       .limit(50)
 
     setLogs(logsData || [])
     setLoading(false)
-  }, [params.id, router])
+  }, [id, router])
 
   useEffect(() => {
     fetchData()
@@ -71,7 +72,7 @@ export default function LinkDetailPage({ params }: { params: { id: string } }) {
     const { error } = await supabase
       .from('short_links')
       .update({ title: title || null, description: description || null })
-      .eq('id', params.id)
+      .eq('id', id)
 
     if (error) {
       setError('保存失败：' + error.message)
@@ -86,7 +87,7 @@ export default function LinkDetailPage({ params }: { params: { id: string } }) {
     if (!newPhone.trim()) return
 
     const { error } = await supabase.from('whatsapp_numbers').insert({
-      short_link_id: params.id,
+      short_link_id: id,
       phone_number: newPhone.trim(),
       label: newLabel.trim() || null,
       sort_order: numbers.length,
@@ -127,7 +128,7 @@ export default function LinkDetailPage({ params }: { params: { id: string } }) {
   const handleDeleteLink = async () => {
     if (!confirm('确定要删除此短链吗？此操作不可撤销。')) return
 
-    await supabase.from('short_links').delete().eq('id', params.id)
+    await supabase.from('short_links').delete().eq('id', id)
     router.push('/dashboard')
   }
 
