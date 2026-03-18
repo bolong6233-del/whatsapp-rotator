@@ -13,6 +13,7 @@ const PLATFORM_OPTIONS: { value: Platform; label: string }[] = [
   { value: 'whatsapp', label: 'WhatsApp' },
   { value: 'telegram', label: 'Telegram' },
   { value: 'line', label: 'LINE' },
+  { value: 'custom', label: '自定义' },
 ]
 
 export default function CreateLinkPage() {
@@ -27,6 +28,8 @@ export default function CreateLinkPage() {
   const [showBatch, setShowBatch] = useState(false)
   const [tiktokPixelEnabled, setTiktokPixelEnabled] = useState(false)
   const [tiktokPixelId, setTiktokPixelId] = useState('')
+  const [autoReplyEnabled, setAutoReplyEnabled] = useState(false)
+  const [autoReplyMessages, setAutoReplyMessages] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -94,6 +97,8 @@ export default function CreateLinkPage() {
           user_id: user.id,
           tiktok_pixel_enabled: tiktokPixelEnabled,
           tiktok_pixel_id: tiktokPixelEnabled ? tiktokPixelId.trim() : null,
+          auto_reply_enabled: autoReplyEnabled,
+          auto_reply_messages: autoReplyEnabled && autoReplyMessages.trim() ? autoReplyMessages.trim() : null,
         })
         .select()
         .single()
@@ -239,6 +244,45 @@ export default function CreateLinkPage() {
           )}
         </div>
 
+        {/* Auto Reply */}
+        <div className="bg-yellow-50 rounded-xl p-6 shadow-sm border border-yellow-100">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h2 className="font-semibold text-yellow-900">💬 自动回复语</h2>
+              <p className="text-xs text-yellow-600 mt-1">
+                仅 WhatsApp 号码生效，每个访客会按顺序收到不同的预填消息
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setAutoReplyEnabled(!autoReplyEnabled)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                autoReplyEnabled ? 'bg-yellow-500' : 'bg-gray-300'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  autoReplyEnabled ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+          {autoReplyEnabled && (
+            <div>
+              <label className="block text-sm font-medium text-yellow-800 mb-1">
+                回复语句（一行一个）
+              </label>
+              <textarea
+                value={autoReplyMessages}
+                onChange={(e) => setAutoReplyMessages(e.target.value)}
+                rows={4}
+                placeholder={'你好\n早上好\n下午好'}
+                className="w-full px-4 py-2.5 border border-yellow-200 rounded-lg focus:ring-2 focus:ring-yellow-400 focus:border-transparent outline-none bg-white resize-none text-sm"
+              />
+            </div>
+          )}
+        </div>
+
         {/* Phone Numbers */}
         <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
           <div className="flex justify-between items-center mb-4">
@@ -298,7 +342,9 @@ export default function CreateLinkPage() {
                         ? '号码（如：8613800138000）'
                         : num.platform === 'telegram'
                         ? 'Telegram 用户名'
-                        : 'LINE ID'
+                        : num.platform === 'line'
+                        ? 'LINE ID'
+                        : '完整 URL（如：https://example.com）'
                     }
                     className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none text-sm"
                   />

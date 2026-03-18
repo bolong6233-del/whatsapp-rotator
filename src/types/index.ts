@@ -9,12 +9,15 @@ export interface ShortLink {
   is_active: boolean
   tiktok_pixel_enabled: boolean
   tiktok_pixel_id: string | null
+  auto_reply_enabled: boolean
+  auto_reply_messages: string | null
+  auto_reply_index: number
   created_at: string
   updated_at: string
   whatsapp_numbers?: WhatsAppNumber[]
 }
 
-export type Platform = 'whatsapp' | 'telegram' | 'line'
+export type Platform = 'whatsapp' | 'telegram' | 'line' | 'custom'
 
 export interface WhatsAppNumber {
   id: string
