@@ -3,7 +3,19 @@ import { createClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
 
-const RESERVED_SLUGS = ['dashboard', 'login', 'register', 'api', '_next', 'favicon.ico']
+// Paths that must not be intercepted by the slug handler
+const RESERVED_SLUGS = [
+  'dashboard',  // authenticated app routes
+  'login',      // auth pages
+  'register',
+  'api',        // API routes
+  '_next',      // Next.js internals
+  'favicon.ico',
+  'fonts',
+  'images',
+  'icons',
+  'public',
+]
 
 export async function GET(
   request: NextRequest,
