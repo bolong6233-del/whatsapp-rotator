@@ -255,7 +255,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Migration for existing databases (run if upgrading from previous schema)
+-- Migration commands for upgrading an existing database (do NOT run on a fresh install):
 -- ALTER TABLE short_links ADD COLUMN IF NOT EXISTS tiktok_pixel_enabled BOOLEAN DEFAULT false;
 -- ALTER TABLE short_links ADD COLUMN IF NOT EXISTS tiktok_pixel_id VARCHAR(50);
 -- ALTER TABLE whatsapp_numbers ADD COLUMN IF NOT EXISTS platform VARCHAR(20) DEFAULT 'whatsapp' CHECK (platform IN ('whatsapp', 'telegram', 'line'));

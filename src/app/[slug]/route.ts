@@ -31,8 +31,22 @@ function buildRedirectUrl(phoneNumber: string, platform: string): string {
 }
 
 function buildPixelHtml(pixelId: string, redirectUrl: string): string {
-  const safePixelId = pixelId.replace(/['"<>&]/g, '')
-  const safeRedirectUrl = redirectUrl.replace(/'/g, '%27')
+  // TikTok Pixel IDs are alphanumeric with optional hyphens/underscores
+  const safePixelId = pixelId.replace(/[^a-zA-Z0-9_-]/g, '')
+  // Validate redirect URL uses a safe protocol (from our own DB, but defense-in-depth)
+  let safeRedirectUrl: string
+  try {
+    const parsed = new URL(redirectUrl)
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      safeRedirectUrl = '#'
+    } else {
+      safeRedirectUrl = parsed.toString()
+    }
+  } catch {
+    safeRedirectUrl = '#'
+  }
+  // JSON.stringify ensures the URL is properly JS-string-escaped
+  const encodedUrl = JSON.stringify(safeRedirectUrl)
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -65,7 +79,7 @@ function buildPixelHtml(pixelId: string, redirectUrl: string): string {
       ttq.load('${safePixelId}');
       ttq.page();
       ttq.track('SubmitForm');
-      setTimeout(function() { window.location.href = '${safeRedirectUrl}'; }, 800);
+      setTimeout(function() { window.location.href = ${encodedUrl}; }, 800);
     }(window, document, 'ttq');
   </script>
 </body>

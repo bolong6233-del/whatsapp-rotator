@@ -27,6 +27,12 @@ const PLATFORM_COLORS: Record<Platform, string> = {
   line: 'bg-emerald-100 text-emerald-700',
 }
 
+const DEFAULT_PLATFORM: Platform = 'whatsapp'
+
+function getPlatform(platform: Platform | undefined | null): Platform {
+  return platform || DEFAULT_PLATFORM
+}
+
 export default function NumbersPage() {
   const [numbers, setNumbers] = useState<NumberWithLink[]>([])
   const [links, setLinks] = useState<ShortLink[]>([])
@@ -70,7 +76,7 @@ export default function NumbersPage() {
   }, [fetchData])
 
   const filtered = numbers.filter((n) => {
-    if (filterPlatform !== 'all' && (n.platform || 'whatsapp') !== filterPlatform) return false
+    if (filterPlatform !== 'all' && getPlatform(n.platform) !== filterPlatform) return false
     if (filterLink !== 'all' && n.short_link_id !== filterLink) return false
     if (filterStatus === 'active' && !n.is_active) return false
     if (filterStatus === 'inactive' && n.is_active) return false
@@ -134,7 +140,7 @@ export default function NumbersPage() {
         n.id,
         n.short_links?.slug || '',
         n.phone_number,
-        PLATFORM_LABELS[n.platform || 'whatsapp'],
+        PLATFORM_LABELS[getPlatform(n.platform)],
         String(n.click_count),
         n.is_active ? '启用' : '停用',
         n.label || '',
@@ -412,8 +418,8 @@ export default function NumbersPage() {
                       {num.label && <span className="text-gray-400 ml-1 text-xs">({num.label})</span>}
                     </td>
                     <td className="py-3 px-4">
-                      <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${PLATFORM_COLORS[num.platform || 'whatsapp']}`}>
-                        {PLATFORM_LABELS[num.platform || 'whatsapp']}
+                      <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${PLATFORM_COLORS[getPlatform(num.platform)]}`}>
+                        {PLATFORM_LABELS[getPlatform(num.platform)]}
                       </span>
                     </td>
                     <td className="py-3 px-4 text-gray-600">{num.click_count}</td>

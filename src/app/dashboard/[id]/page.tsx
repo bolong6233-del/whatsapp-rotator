@@ -15,6 +15,12 @@ const PLATFORM_OPTIONS: { value: Platform; label: string }[] = [
   { value: 'line', label: 'LINE' },
 ]
 
+function getPlatformPlaceholder(platform: Platform): string {
+  if (platform === 'telegram') return 'Telegram 用户名'
+  if (platform === 'line') return 'LINE ID'
+  return '号码（如：8613800138000）'
+}
+
 const PLATFORM_LABELS: Record<Platform, string> = {
   whatsapp: 'WA',
   telegram: 'TG',
@@ -390,7 +396,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
             type="text"
             value={newPhone}
             onChange={(e) => setNewPhone(e.target.value)}
-            placeholder={newPlatform === 'whatsapp' ? '新号码' : newPlatform === 'telegram' ? 'Telegram 用户名' : 'LINE ID'}
+            placeholder={getPlatformPlaceholder(newPlatform)}
             className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
           />
           <input
