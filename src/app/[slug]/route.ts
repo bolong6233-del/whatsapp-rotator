@@ -3,13 +3,16 @@ import { createClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
 
+// Fallback: redirect to WhatsApp with empty phone (shows friendly error page)
+const WHATSAPP_FALLBACK = 'https://api.whatsapp.com/send/?phone='
+
 // Paths that must not be intercepted by the slug handler
 const RESERVED_SLUGS = [
-  'dashboard',  // authenticated app routes
-  'login',      // auth pages
+  'dashboard',
+  'login',
   'register',
-  'api',        // API routes
-  '_next',      // Next.js internals
+  'api',
+  '_next',
   'favicon.ico',
   'fonts',
   'images',
@@ -25,7 +28,6 @@ function buildRedirectUrl(phoneNumber: string, platform: string, autoReplyMessag
     case 'line':
       return `https://line.me/ti/p/~${clean}`
     case 'custom': {
-      // phone_number stores the full URL for custom platforms
       try {
         const parsed = new URL(clean)
         if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
@@ -34,7 +36,7 @@ function buildRedirectUrl(phoneNumber: string, platform: string, autoReplyMessag
       } catch {
         // invalid URL
       }
-      return '#'
+      return WHATSAPP_FALLBACK
     }
     case 'whatsapp':
     default: {
@@ -54,7 +56,7 @@ export async function GET(
   const { slug } = await params
 
   if (RESERVED_SLUGS.includes(slug)) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    return NextResponse.redirect(WHATSAPP_FALLBACK, { status: 302 })
   }
 
   const supabase = createClient(
@@ -66,11 +68,9 @@ export async function GET(
     p_slug: slug,
   })
 
+  // No data found -> redirect to WhatsApp fallback (shows friendly "link incorrect" page)
   if (rpcError || !rpcData || rpcData.length === 0) {
-    if (rpcError) {
-      console.error('[slug] RPC increment_and_get_number failed:', rpcError.message)
-    }
-    return NextResponse.json({ error: 'Short link not found' }, { status: 404 })
+    return NextResponse.redirect(WHATSAPP_FALLBACK, { status: 302 })
   }
 
   const {
@@ -115,10 +115,6 @@ export async function GET(
 
   const redirectUrl = buildRedirectUrl(phone_number, platform || 'whatsapp', autoReplyMessage)
 
-  if (redirectUrl === '#') {
-    return NextResponse.json({ error: 'Invalid destination URL' }, { status: 500 })
-  }
-
-  // Always do a direct 302 redirect - no HTML pages
+  // Always 302 redirect - never return JSON or HTML
   return NextResponse.redirect(redirectUrl, { status: 302 })
 }
