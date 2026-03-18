@@ -47,6 +47,10 @@ function buildRedirectUrl(phoneNumber: string, platform: string, autoReplyMessag
   }
 }
 
+function buildErrorHtml(icon: string, title: string, desc: string): string {
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>body{display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background:#f0fdf4;font-family:sans-serif}.box{text-align:center;padding:40px;background:#fff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,.08)}.icon{font-size:4rem;margin-bottom:16px}.title{font-size:1.5rem;font-weight:700;color:#111;margin-bottom:8px}.desc{color:#6b7280}</style></head><body><div class="box"><div class="icon">${icon}</div><div class="title">${title}</div><div class="desc">${desc}</div></div></body></html>`
+}
+
 function buildPixelHtml(pixelId: string, redirectUrl: string): string {
   // TikTok Pixel IDs are alphanumeric with optional hyphens/underscores
   const safePixelId = pixelId.replace(/[^a-zA-Z0-9_-]/g, '')
@@ -119,15 +123,83 @@ export async function GET(
   )
 
   try {
-    const { data, error } = await supabase.rpc('increment_and_get_number', {
+    let phone_number: string, number_id: string, link_id: string, platform: string
+    let tiktok_pixel_enabled: boolean, tiktok_pixel_id: string
+    let auto_reply_enabled: boolean, auto_reply_messages: string, auto_reply_index: number
+
+    const { data: rpcData, error: rpcError } = await supabase.rpc('increment_and_get_number', {
       p_slug: slug,
     })
 
-    if (error || !data || data.length === 0) {
-      return NextResponse.json({ error: 'Short link not found' }, { status: 404 })
-    }
+    if (!rpcError && rpcData && rpcData.length > 0) {
+      // RPC succeeded – use its result
+      ({ phone_number, number_id, link_id, platform, tiktok_pixel_enabled, tiktok_pixel_id, auto_reply_enabled, auto_reply_messages, auto_reply_index } = rpcData[0])
+    } else {
+      // RPC failed or returned empty – fall back to direct table queries
+      const { data: linkData, error: linkError } = await supabase
+        .from('short_links')
+        .select('*')
+        .eq('slug', slug)
+        .eq('is_active', true)
+        .single()
 
-    const { phone_number, number_id, link_id, platform, tiktok_pixel_enabled, tiktok_pixel_id, auto_reply_enabled, auto_reply_messages, auto_reply_index } = data[0]
+      if (linkError || !linkData) {
+        return new Response(
+          buildErrorHtml('🔗', '链接不存在', '该短链接不存在或已被删除'),
+          { status: 404, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+        )
+      }
+
+      // Short link exists – fetch its active numbers
+      const { data: numbers, error: numbersError } = await supabase
+        .from('whatsapp_numbers')
+        .select('*')
+        .eq('short_link_id', linkData.id)
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true })
+        .order('created_at', { ascending: true })
+
+      if (numbersError || !numbers || numbers.length === 0) {
+        return new Response(
+          buildErrorHtml('📵', '暂无可用号码', '该短链接暂时没有绑定任何可用号码，请联系管理员'),
+          { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+        )
+      }
+
+      // Pick number using round-robin
+      const currentIndex = (linkData.current_index ?? 0) % numbers.length
+      const chosen = numbers[currentIndex]
+      const nextIndex = (currentIndex + 1) % numbers.length
+
+      // Update short_links counter (fire-and-forget)
+      supabase
+        .from('short_links')
+        .update({
+          current_index: nextIndex,
+          total_clicks: (linkData.total_clicks ?? 0) + 1,
+          auto_reply_index: (linkData.auto_reply_index ?? 0) + 1,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', linkData.id)
+        .then(({ error: e }) => { if (e) console.error('[fallback] short_links update:', e.message) })
+
+      // Update number click count (fire-and-forget)
+      supabase
+        .from('whatsapp_numbers')
+        .update({ click_count: (chosen.click_count ?? 0) + 1 })
+        .eq('id', chosen.id)
+        .then(({ error: e }) => { if (e) console.error('[fallback] whatsapp_numbers update:', e.message) })
+
+      phone_number = chosen.phone_number
+      number_id = chosen.id
+      link_id = linkData.id
+      platform = chosen.platform ?? 'whatsapp'
+      tiktok_pixel_enabled = linkData.tiktok_pixel_enabled ?? false
+      tiktok_pixel_id = linkData.tiktok_pixel_id ?? ''
+      auto_reply_enabled = linkData.auto_reply_enabled ?? false
+      auto_reply_messages = linkData.auto_reply_messages ?? ''
+      auto_reply_index = linkData.auto_reply_index ?? 0
+    }
 
     const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
       request.headers.get('x-real-ip') || null
@@ -162,7 +234,10 @@ export async function GET(
     const redirectUrl = buildRedirectUrl(phone_number, platform || 'whatsapp', autoReplyMessage)
 
     if (redirectUrl === '#') {
-      return NextResponse.json({ error: 'Invalid destination URL' }, { status: 502 })
+      return new Response(
+        buildErrorHtml('⚠️', '链接无效', '目标链接地址不正确，请联系管理员'),
+        { status: 502, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+      )
     }
 
     if (tiktok_pixel_enabled && tiktok_pixel_id) {
@@ -174,6 +249,9 @@ export async function GET(
 
     return NextResponse.redirect(redirectUrl, { status: 302 })
   } catch {
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return new Response(
+      buildErrorHtml('🛠️', '服务器错误', '暂时无法处理请求，请稍后重试'),
+      { status: 500, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+    )
   }
 }

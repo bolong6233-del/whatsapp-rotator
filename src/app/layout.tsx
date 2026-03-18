@@ -2,8 +2,8 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'WhatsApp 轮询分流系统',
-  description: 'WhatsApp 智能短链生成与轮询分流系统，助力广告营销',
+  title: '无敌牛子分流系统',
+  description: '无敌牛子智能短链生成与分流系统，助力广告营销',
 }
 
 export default function RootLayout({

@@ -17,7 +17,7 @@ export default function Sidebar() {
       <div className="p-5 border-b border-gray-200">
         <Link href="/dashboard" className="flex items-center gap-2">
           <span className="text-2xl">💬</span>
-          <span className="font-bold text-gray-900">WA 轮询</span>
+          <span className="font-bold text-gray-900">无敌牛子</span>
         </Link>
       </div>
       <nav className="flex-1 p-4 space-y-1">

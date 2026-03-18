@@ -9,7 +9,7 @@ export default function HomePage() {
           <div className="flex justify-between h-16 items-center">
             <div className="flex items-center gap-2">
               <span className="text-2xl">💬</span>
-              <span className="font-bold text-xl text-gray-900">WA 轮询系统</span>
+              <span className="font-bold text-xl text-gray-900">无敌牛子</span>
             </div>
             <div className="flex gap-4">
               <Link
@@ -37,7 +37,7 @@ export default function HomePage() {
             <span>专为广告营销设计</span>
           </div>
           <h1 className="text-5xl font-bold text-gray-900 mb-6 leading-tight">
-            WhatsApp 智能轮询
+            牛子智能
             <span className="text-green-500">分流系统</span>
           </h1>
           <p className="text-xl text-gray-600 mb-10 max-w-2xl mx-auto">
@@ -116,7 +116,7 @@ export default function HomePage() {
 
       {/* Footer */}
       <footer className="bg-gray-900 text-gray-400 py-8 px-4 text-center">
-        <p>© 2024 WA 轮询系统. 保留所有权利.</p>
+        <p>© 2024 无敌牛子. 保留所有权利.</p>
       </footer>
     </div>
   )
