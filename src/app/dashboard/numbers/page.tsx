@@ -1,7 +1,5 @@
 'use client'
 
-export const dynamic = 'force-dynamic'
-
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase-client'
 import type { WhatsAppNumber, ShortLink, Platform } from '@/types'
