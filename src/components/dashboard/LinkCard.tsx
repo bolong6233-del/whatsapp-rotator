@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase-client'
-import { getBaseUrl, copyToClipboard } from '@/lib/utils'
+import { getBaseUrl, copyToClipboard, formatDate } from '@/lib/utils'
 import { useRouter } from 'next/navigation'
 
 interface LinkCardProps {
@@ -18,10 +18,9 @@ interface LinkCardProps {
     auto_reply_messages?: string | null
     whatsapp_numbers?: { count: number }[]
   }
-  formatDate: (date: string) => string
 }
 
-export default function LinkCard({ link, formatDate }: LinkCardProps) {
+export default function LinkCard({ link }: LinkCardProps) {
   const router = useRouter()
   const [copied, setCopied] = useState(false)
 
