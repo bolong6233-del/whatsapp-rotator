@@ -66,3 +66,24 @@ export interface ClickLog {
     label: string | null
   }
 }
+
+export type TicketType = '云控' | '海王SCRM' | '太极云控' | '火箭云控' | 'SaleSmartly-Channel' | 'Salesmartly-Customer' | '译发发SCRM'
+
+export interface WorkOrder {
+  id: string
+  user_id: string
+  ticket_type: TicketType
+  ticket_name: string
+  ticket_link: string
+  distribution_link_slug: string
+  number_type: Platform
+  start_time: string
+  end_time: string
+  total_quantity: number
+  download_ratio: number
+  account: string | null
+  password: string | null
+  status: 'active' | 'completed' | 'expired' | 'cancelled'
+  created_at: string
+  updated_at: string
+}
