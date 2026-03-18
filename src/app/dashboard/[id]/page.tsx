@@ -151,8 +151,7 @@ export default function LinkDetailPage({ params }: { params: { id: string } }) {
   if (!link) return null
 
   const shortUrl = `${getBaseUrl()}/${link.slug}`
-  const allClickCounts = numbers.map((n) => n.click_count)
-  const maxClicks = allClickCounts.length > 0 ? Math.max(...allClickCounts, 1) : 1
+  const maxClicks = numbers.length > 0 ? Math.max(...numbers.map((n) => n.click_count), 1) : 1
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
