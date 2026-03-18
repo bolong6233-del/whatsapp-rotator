@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS short_links (
   current_index INTEGER DEFAULT 0,
   total_clicks INTEGER DEFAULT 0,
   is_active BOOLEAN DEFAULT true,
+  tiktok_pixel_enabled BOOLEAN DEFAULT false,
+  tiktok_pixel_id VARCHAR(50),
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
@@ -19,11 +21,34 @@ CREATE TABLE IF NOT EXISTS short_links (
 CREATE TABLE IF NOT EXISTS whatsapp_numbers (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   short_link_id UUID REFERENCES short_links(id) ON DELETE CASCADE,
-  phone_number VARCHAR(20) NOT NULL,
+  phone_number VARCHAR(100) NOT NULL,
   label VARCHAR(100),
   sort_order INTEGER DEFAULT 0,
   click_count INTEGER DEFAULT 0,
   is_active BOOLEAN DEFAULT true,
+  platform VARCHAR(20) DEFAULT 'whatsapp' CHECK (platform IN ('whatsapp', 'telegram', 'line')),
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Tickets table
+CREATE TABLE IF NOT EXISTS tickets (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  title VARCHAR(255) NOT NULL,
+  description TEXT,
+  status VARCHAR(20) DEFAULT 'open' CHECK (status IN ('open', 'in_progress', 'resolved', 'closed')),
+  priority VARCHAR(20) DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high', 'urgent')),
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Ticket messages table
+CREATE TABLE IF NOT EXISTS ticket_messages (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  ticket_id UUID REFERENCES tickets(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  message TEXT NOT NULL,
+  is_admin BOOLEAN DEFAULT false,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -45,6 +70,8 @@ CREATE INDEX IF NOT EXISTS idx_short_links_user_id ON short_links(user_id);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_numbers_short_link_id ON whatsapp_numbers(short_link_id);
 CREATE INDEX IF NOT EXISTS idx_click_logs_short_link_id ON click_logs(short_link_id);
 CREATE INDEX IF NOT EXISTS idx_click_logs_clicked_at ON click_logs(clicked_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tickets_user_id ON tickets(user_id);
+CREATE INDEX IF NOT EXISTS idx_ticket_messages_ticket_id ON ticket_messages(ticket_id);
 
 -- Updated_at trigger function
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -60,10 +87,17 @@ CREATE TRIGGER update_short_links_updated_at
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
 
+CREATE TRIGGER update_tickets_updated_at
+  BEFORE UPDATE ON tickets
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
+
 -- Row Level Security
 ALTER TABLE short_links ENABLE ROW LEVEL SECURITY;
 ALTER TABLE whatsapp_numbers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE click_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tickets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ticket_messages ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies for short_links
 CREATE POLICY "Users can view own links" ON short_links
@@ -129,9 +163,41 @@ CREATE POLICY "Users can view own click logs" ON click_logs
 CREATE POLICY "Allow public insert for click logs" ON click_logs
   FOR INSERT WITH CHECK (true);
 
+-- RLS Policies for tickets
+CREATE POLICY "Users can view own tickets" ON tickets
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can create own tickets" ON tickets
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own tickets" ON tickets
+  FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own tickets" ON tickets
+  FOR DELETE USING (auth.uid() = user_id);
+
+-- RLS Policies for ticket_messages
+CREATE POLICY "Users can view messages for own tickets" ON ticket_messages
+  FOR SELECT USING (
+    EXISTS (
+      SELECT 1 FROM tickets
+      WHERE tickets.id = ticket_messages.ticket_id
+      AND tickets.user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Users can create messages for own tickets" ON ticket_messages
+  FOR INSERT WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM tickets
+      WHERE tickets.id = ticket_messages.ticket_id
+      AND tickets.user_id = auth.uid()
+    )
+  );
+
 -- Atomic RPC function for polling rotation
 CREATE OR REPLACE FUNCTION increment_and_get_number(p_slug VARCHAR)
-RETURNS TABLE(phone_number VARCHAR, number_id UUID, link_id UUID) AS $$
+RETURNS TABLE(phone_number VARCHAR, number_id UUID, link_id UUID, platform VARCHAR, tiktok_pixel_enabled BOOLEAN, tiktok_pixel_id VARCHAR) AS $$
 DECLARE
   v_link_id UUID;
   v_current_index INTEGER;
@@ -139,9 +205,13 @@ DECLARE
   v_next_index INTEGER;
   v_phone_number VARCHAR;
   v_number_id UUID;
+  v_platform VARCHAR;
+  v_tiktok_pixel_enabled BOOLEAN;
+  v_tiktok_pixel_id VARCHAR;
 BEGIN
   -- Get and lock the short link
-  SELECT id, current_index INTO v_link_id, v_current_index
+  SELECT id, current_index, short_links.tiktok_pixel_enabled, short_links.tiktok_pixel_id
+    INTO v_link_id, v_current_index, v_tiktok_pixel_enabled, v_tiktok_pixel_id
   FROM short_links
   WHERE slug = p_slug AND is_active = true
   FOR UPDATE;
@@ -162,10 +232,10 @@ BEGIN
   -- Get the number at current index (modulo for safety)
   v_current_index := v_current_index % v_total_numbers;
 
-  SELECT id, phone_number INTO v_number_id, v_phone_number
-  FROM whatsapp_numbers
-  WHERE short_link_id = v_link_id AND is_active = true
-  ORDER BY sort_order, created_at
+  SELECT wn.id, wn.phone_number, wn.platform INTO v_number_id, v_phone_number, v_platform
+  FROM whatsapp_numbers wn
+  WHERE wn.short_link_id = v_link_id AND wn.is_active = true
+  ORDER BY wn.sort_order, wn.created_at
   LIMIT 1 OFFSET v_current_index;
 
   -- Calculate next index
@@ -181,6 +251,11 @@ BEGIN
   SET click_count = click_count + 1
   WHERE id = v_number_id;
 
-  RETURN QUERY SELECT v_phone_number, v_number_id, v_link_id;
+  RETURN QUERY SELECT v_phone_number, v_number_id, v_link_id, v_platform, v_tiktok_pixel_enabled, v_tiktok_pixel_id;
 END;
 $$ LANGUAGE plpgsql;
+
+-- Migration commands for upgrading an existing database (do NOT run on a fresh install):
+-- ALTER TABLE short_links ADD COLUMN IF NOT EXISTS tiktok_pixel_enabled BOOLEAN DEFAULT false;
+-- ALTER TABLE short_links ADD COLUMN IF NOT EXISTS tiktok_pixel_id VARCHAR(50);
+-- ALTER TABLE whatsapp_numbers ADD COLUMN IF NOT EXISTS platform VARCHAR(20) DEFAULT 'whatsapp' CHECK (platform IN ('whatsapp', 'telegram', 'line'));

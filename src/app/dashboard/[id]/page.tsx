@@ -7,7 +7,31 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase-client'
 import { formatDate, getBaseUrl, copyToClipboard } from '@/lib/utils'
-import type { ShortLink, WhatsAppNumber, ClickLog } from '@/types'
+import type { ShortLink, WhatsAppNumber, ClickLog, Platform } from '@/types'
+
+const PLATFORM_OPTIONS: { value: Platform; label: string }[] = [
+  { value: 'whatsapp', label: 'WhatsApp' },
+  { value: 'telegram', label: 'Telegram' },
+  { value: 'line', label: 'LINE' },
+]
+
+function getPlatformPlaceholder(platform: Platform): string {
+  if (platform === 'telegram') return 'Telegram 用户名'
+  if (platform === 'line') return 'LINE ID'
+  return '号码（如：8613800138000）'
+}
+
+const PLATFORM_LABELS: Record<Platform, string> = {
+  whatsapp: 'WA',
+  telegram: 'TG',
+  line: 'LINE',
+}
+
+const PLATFORM_COLORS: Record<Platform, string> = {
+  whatsapp: 'bg-green-100 text-green-700',
+  telegram: 'bg-blue-100 text-blue-700',
+  line: 'bg-emerald-100 text-emerald-700',
+}
 
 export default function LinkDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
@@ -22,8 +46,11 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
   const [copied, setCopied] = useState(false)
   const [newPhone, setNewPhone] = useState('')
   const [newLabel, setNewLabel] = useState('')
+  const [newPlatform, setNewPlatform] = useState<Platform>('whatsapp')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
+  const [tiktokPixelEnabled, setTiktokPixelEnabled] = useState(false)
+  const [tiktokPixelId, setTiktokPixelId] = useState('')
 
   const fetchData = useCallback(async () => {
     const { data: linkData } = await supabase
@@ -40,6 +67,8 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
     setLink(linkData)
     setTitle(linkData.title || '')
     setDescription(linkData.description || '')
+    setTiktokPixelEnabled(linkData.tiktok_pixel_enabled || false)
+    setTiktokPixelId(linkData.tiktok_pixel_id || '')
 
     const { data: numbersData } = await supabase
       .from('whatsapp_numbers')
@@ -69,9 +98,20 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
     setError('')
     setSuccess('')
 
+    if (tiktokPixelEnabled && !tiktokPixelId.trim()) {
+      setError('请输入 TikTok Pixel ID')
+      setSaving(false)
+      return
+    }
+
     const { error } = await supabase
       .from('short_links')
-      .update({ title: title || null, description: description || null })
+      .update({
+        title: title || null,
+        description: description || null,
+        tiktok_pixel_enabled: tiktokPixelEnabled,
+        tiktok_pixel_id: tiktokPixelEnabled ? tiktokPixelId.trim() : null,
+      })
       .eq('id', id)
 
     if (error) {
@@ -91,6 +131,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
       phone_number: newPhone.trim(),
       label: newLabel.trim() || null,
       sort_order: numbers.length,
+      platform: newPlatform,
     })
 
     if (error) {
@@ -98,6 +139,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
     } else {
       setNewPhone('')
       setNewLabel('')
+      setNewPlatform('whatsapp')
       fetchData()
     }
   }
@@ -249,6 +291,44 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
               className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none resize-none"
             />
           </div>
+
+          {/* TikTok Pixel */}
+          <div className="bg-indigo-50 rounded-lg p-4 border border-indigo-100">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <p className="font-medium text-indigo-900 text-sm">🎯 TikTok Pixel</p>
+                <p className="text-xs text-indigo-600 mt-0.5">
+                  开启后访客点击短链时自动触发 SubmitForm 事件
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTiktokPixelEnabled(!tiktokPixelEnabled)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  tiktokPixelEnabled ? 'bg-indigo-600' : 'bg-gray-300'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    tiktokPixelEnabled ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+            {tiktokPixelEnabled && (
+              <div>
+                <label className="block text-xs font-medium text-indigo-800 mb-1">Pixel ID</label>
+                <input
+                  type="text"
+                  value={tiktokPixelId}
+                  onChange={(e) => setTiktokPixelId(e.target.value)}
+                  placeholder="例如：CXXXXXXXXXX"
+                  className="w-full px-3 py-2 border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-400 focus:border-transparent outline-none bg-white text-sm"
+                />
+              </div>
+            )}
+          </div>
+
           <button
             onClick={handleSave}
             disabled={saving}
@@ -261,7 +341,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
 
       {/* Numbers */}
       <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-        <h2 className="font-semibold text-gray-900 mb-4">WhatsApp 号码管理</h2>
+        <h2 className="font-semibold text-gray-900 mb-4">号码管理</h2>
 
         {/* Number click stats bars */}
         <div className="space-y-3 mb-6">
@@ -269,9 +349,12 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
             <div key={num.id} className="flex items-center gap-3">
               <div className="flex-1">
                 <div className="flex justify-between text-sm mb-1">
-                  <span className="text-gray-700 font-medium">
+                  <span className="text-gray-700 font-medium flex items-center gap-1.5">
+                    <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${PLATFORM_COLORS[num.platform || 'whatsapp']}`}>
+                      {PLATFORM_LABELS[num.platform || 'whatsapp']}
+                    </span>
                     {num.phone_number}
-                    {num.label && <span className="text-gray-400 ml-2">({num.label})</span>}
+                    {num.label && <span className="text-gray-400">({num.label})</span>}
                   </span>
                   <span className="text-gray-500">{num.click_count} 次</span>
                 </div>
@@ -300,11 +383,20 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
 
         {/* Add number */}
         <div className="flex gap-2 pt-4 border-t border-gray-100">
+          <select
+            value={newPlatform}
+            onChange={(e) => setNewPlatform(e.target.value as Platform)}
+            className="w-28 px-2 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none bg-white"
+          >
+            {PLATFORM_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
           <input
             type="text"
             value={newPhone}
             onChange={(e) => setNewPhone(e.target.value)}
-            placeholder="新号码"
+            placeholder={getPlatformPlaceholder(newPlatform)}
             className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
           />
           <input
@@ -312,7 +404,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
             value={newLabel}
             onChange={(e) => setNewLabel(e.target.value)}
             placeholder="备注（可选）"
-            className="w-32 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
+            className="w-28 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
           />
           <button
             onClick={handleAddNumber}

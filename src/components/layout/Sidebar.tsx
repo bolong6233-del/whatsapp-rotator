@@ -6,6 +6,8 @@ import { usePathname } from 'next/navigation'
 const navItems = [
   { href: '/dashboard', label: '短链列表', icon: '🔗' },
   { href: '/dashboard/create', label: '创建短链', icon: '➕' },
+  { href: '/dashboard/numbers', label: '号码管理', icon: '📱' },
+  { href: '/dashboard/tickets', label: '工单管理', icon: '🎫' },
 ]
 
 export default function Sidebar() {
@@ -21,7 +23,9 @@ export default function Sidebar() {
       </div>
       <nav className="flex-1 p-4 space-y-1">
         {navItems.map((item) => {
-          const isActive = pathname === item.href
+          const isActive = item.href === '/dashboard'
+            ? pathname === '/dashboard'
+            : pathname.startsWith(item.href)
           return (
             <Link
               key={item.href}

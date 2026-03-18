@@ -7,37 +7,50 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase-client'
 import { generateSlug } from '@/lib/utils'
+import type { Platform } from '@/types'
+
+const PLATFORM_OPTIONS: { value: Platform; label: string }[] = [
+  { value: 'whatsapp', label: 'WhatsApp' },
+  { value: 'telegram', label: 'Telegram' },
+  { value: 'line', label: 'LINE' },
+]
 
 export default function CreateLinkPage() {
   const router = useRouter()
   const [slug, setSlug] = useState(generateSlug())
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
-  const [numbers, setNumbers] = useState<{ phone: string; label: string }[]>([
-    { phone: '', label: '' },
+  const [numbers, setNumbers] = useState<{ phone: string; label: string; platform: Platform }[]>([
+    { phone: '', label: '', platform: 'whatsapp' },
   ])
   const [batchInput, setBatchInput] = useState('')
   const [showBatch, setShowBatch] = useState(false)
+  const [tiktokPixelEnabled, setTiktokPixelEnabled] = useState(false)
+  const [tiktokPixelId, setTiktokPixelId] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
   const addNumber = () => {
-    setNumbers([...numbers, { phone: '', label: '' }])
+    setNumbers([...numbers, { phone: '', label: '', platform: 'whatsapp' }])
   }
 
   const removeNumber = (index: number) => {
     setNumbers(numbers.filter((_, i) => i !== index))
   }
 
-  const updateNumber = (index: number, field: 'phone' | 'label', value: string) => {
+  const updateNumber = (index: number, field: 'phone' | 'label' | 'platform', value: string) => {
     const updated = [...numbers]
-    updated[index][field] = value
+    if (field === 'platform') {
+      updated[index].platform = value as Platform
+    } else {
+      updated[index][field] = value
+    }
     setNumbers(updated)
   }
 
   const handleBatchAdd = () => {
     const lines = batchInput.split('\n').map((l) => l.trim()).filter(Boolean)
-    const newNumbers = lines.map((line) => ({ phone: line, label: '' }))
+    const newNumbers = lines.map((line) => ({ phone: line, label: '', platform: 'whatsapp' as Platform }))
     setNumbers([...numbers.filter((n) => n.phone), ...newNumbers])
     setBatchInput('')
     setShowBatch(false)
@@ -49,12 +62,17 @@ export default function CreateLinkPage() {
 
     const validNumbers = numbers.filter((n) => n.phone.trim())
     if (validNumbers.length === 0) {
-      setError('请至少添加一个 WhatsApp 号码')
+      setError('请至少添加一个号码')
       return
     }
 
     if (!slug.trim()) {
       setError('请输入短链后缀')
+      return
+    }
+
+    if (tiktokPixelEnabled && !tiktokPixelId.trim()) {
+      setError('请输入 TikTok Pixel ID')
       return
     }
 
@@ -74,6 +92,8 @@ export default function CreateLinkPage() {
           title: title.trim() || null,
           description: description.trim() || null,
           user_id: user.id,
+          tiktok_pixel_enabled: tiktokPixelEnabled,
+          tiktok_pixel_id: tiktokPixelEnabled ? tiktokPixelId.trim() : null,
         })
         .select()
         .single()
@@ -93,6 +113,7 @@ export default function CreateLinkPage() {
         phone_number: n.phone.trim(),
         label: n.label.trim() || null,
         sort_order: i,
+        platform: n.platform,
       }))
 
       const { error: numbersError } = await supabase
@@ -179,10 +200,49 @@ export default function CreateLinkPage() {
           </div>
         </div>
 
+        {/* TikTok Pixel */}
+        <div className="bg-indigo-50 rounded-xl p-6 shadow-sm border border-indigo-100">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h2 className="font-semibold text-indigo-900">🎯 TikTok Pixel 设置</h2>
+              <p className="text-xs text-indigo-600 mt-1">
+                开启后，访客点击短链时会自动触发 TikTok SubmitForm 事件，用于广告受众收集
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setTiktokPixelEnabled(!tiktokPixelEnabled)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                tiktokPixelEnabled ? 'bg-indigo-600' : 'bg-gray-300'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  tiktokPixelEnabled ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+          {tiktokPixelEnabled && (
+            <div>
+              <label className="block text-sm font-medium text-indigo-800 mb-1">
+                Pixel ID <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={tiktokPixelId}
+                onChange={(e) => setTiktokPixelId(e.target.value)}
+                placeholder="例如：CXXXXXXXXXX"
+                className="w-full px-4 py-2.5 border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-400 focus:border-transparent outline-none bg-white"
+              />
+            </div>
+          )}
+        </div>
+
         {/* Phone Numbers */}
         <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
           <div className="flex justify-between items-center mb-4">
-            <h2 className="font-semibold text-gray-900">WhatsApp 号码</h2>
+            <h2 className="font-semibold text-gray-900">号码管理</h2>
             <button
               type="button"
               onClick={() => setShowBatch(!showBatch)}
@@ -217,16 +277,33 @@ export default function CreateLinkPage() {
           <div className="space-y-3">
             {numbers.map((num, index) => (
               <div key={index} className="flex gap-2 items-start">
+                <div className="w-28">
+                  <select
+                    value={num.platform}
+                    onChange={(e) => updateNumber(index, 'platform', e.target.value)}
+                    className="w-full px-2 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none text-sm bg-white"
+                  >
+                    {PLATFORM_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
                 <div className="flex-1">
                   <input
                     type="text"
                     value={num.phone}
                     onChange={(e) => updateNumber(index, 'phone', e.target.value)}
-                    placeholder="号码（如：8613800138000）"
+                    placeholder={
+                      num.platform === 'whatsapp'
+                        ? '号码（如：8613800138000）'
+                        : num.platform === 'telegram'
+                        ? 'Telegram 用户名'
+                        : 'LINE ID'
+                    }
                     className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none text-sm"
                   />
                 </div>
-                <div className="w-32">
+                <div className="w-28">
                   <input
                     type="text"
                     value={num.label}
