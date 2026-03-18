@@ -5,67 +5,23 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase-client'
 import { generateSlug } from '@/lib/utils'
-import type { Platform } from '@/types'
-
-const PLATFORM_OPTIONS: { value: Platform; label: string }[] = [
-  { value: 'whatsapp', label: 'WhatsApp' },
-  { value: 'telegram', label: 'Telegram' },
-  { value: 'line', label: 'LINE' },
-  { value: 'custom', label: '自定义' },
-]
 
 export default function CreateLinkPage() {
   const router = useRouter()
   const [slug, setSlug] = useState(generateSlug())
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
-  const [numbers, setNumbers] = useState<{ phone: string; label: string; platform: Platform }[]>([
-    { phone: '', label: '', platform: 'whatsapp' },
-  ])
-  const [batchInput, setBatchInput] = useState('')
-  const [showBatch, setShowBatch] = useState(false)
   const [tiktokPixelEnabled, setTiktokPixelEnabled] = useState(false)
   const [tiktokPixelId, setTiktokPixelId] = useState('')
+  const [tiktokAccessToken, setTiktokAccessToken] = useState('')
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(false)
   const [autoReplyMessages, setAutoReplyMessages] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const addNumber = () => {
-    setNumbers([...numbers, { phone: '', label: '', platform: 'whatsapp' }])
-  }
-
-  const removeNumber = (index: number) => {
-    setNumbers(numbers.filter((_, i) => i !== index))
-  }
-
-  const updateNumber = (index: number, field: 'phone' | 'label' | 'platform', value: string) => {
-    const updated = [...numbers]
-    if (field === 'platform') {
-      updated[index].platform = value as Platform
-    } else {
-      updated[index][field] = value
-    }
-    setNumbers(updated)
-  }
-
-  const handleBatchAdd = () => {
-    const lines = batchInput.split('\n').map((l) => l.trim()).filter(Boolean)
-    const newNumbers = lines.map((line) => ({ phone: line, label: '', platform: 'whatsapp' as Platform }))
-    setNumbers([...numbers.filter((n) => n.phone), ...newNumbers])
-    setBatchInput('')
-    setShowBatch(false)
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-
-    const validNumbers = numbers.filter((n) => n.phone.trim())
-    if (validNumbers.length === 0) {
-      setError('请至少添加一个号码')
-      return
-    }
 
     if (!slug.trim()) {
       setError('请输入短链后缀')
@@ -95,6 +51,7 @@ export default function CreateLinkPage() {
           user_id: user.id,
           tiktok_pixel_enabled: tiktokPixelEnabled,
           tiktok_pixel_id: tiktokPixelEnabled ? tiktokPixelId.trim() : null,
+          tiktok_access_token: tiktokPixelEnabled && tiktokAccessToken.trim() ? tiktokAccessToken.trim() : null,
           auto_reply_enabled: autoReplyEnabled,
           auto_reply_messages: autoReplyEnabled && autoReplyMessages.trim() ? autoReplyMessages.trim() : null,
         })
@@ -107,24 +64,6 @@ export default function CreateLinkPage() {
         } else {
           setError('创建失败：' + linkError.message)
         }
-        setLoading(false)
-        return
-      }
-
-      const numberInserts = validNumbers.map((n, i) => ({
-        short_link_id: link.id,
-        phone_number: n.phone.trim(),
-        label: n.label.trim() || null,
-        sort_order: i,
-        platform: n.platform,
-      }))
-
-      const { error: numbersError } = await supabase
-        .from('whatsapp_numbers')
-        .insert(numberInserts)
-
-      if (numbersError) {
-        setError('添加号码失败：' + numbersError.message)
         setLoading(false)
         return
       }
@@ -227,17 +166,31 @@ export default function CreateLinkPage() {
             </button>
           </div>
           {tiktokPixelEnabled && (
-            <div>
-              <label className="block text-sm font-medium text-indigo-800 mb-1">
-                Pixel ID <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                value={tiktokPixelId}
-                onChange={(e) => setTiktokPixelId(e.target.value)}
-                placeholder="例如：CXXXXXXXXXX"
-                className="w-full px-4 py-2.5 border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-400 focus:border-transparent outline-none bg-white"
-              />
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-indigo-800 mb-1">
+                  Pixel ID <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={tiktokPixelId}
+                  onChange={(e) => setTiktokPixelId(e.target.value)}
+                  placeholder="例如：CXXXXXXXXXX"
+                  className="w-full px-4 py-2.5 border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-400 focus:border-transparent outline-none bg-white"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-indigo-800 mb-1">
+                  Access Token
+                </label>
+                <input
+                  type="text"
+                  value={tiktokAccessToken}
+                  onChange={(e) => setTiktokAccessToken(e.target.value)}
+                  placeholder="可选，用于服务端事件上报"
+                  className="w-full px-4 py-2.5 border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-400 focus:border-transparent outline-none bg-white"
+                />
+              </div>
             </div>
           )}
         </div>
@@ -279,102 +232,6 @@ export default function CreateLinkPage() {
               />
             </div>
           )}
-        </div>
-
-        {/* Phone Numbers */}
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="font-semibold text-gray-900">号码管理</h2>
-            <button
-              type="button"
-              onClick={() => setShowBatch(!showBatch)}
-              className="text-sm text-green-600 hover:text-green-700"
-            >
-              批量添加
-            </button>
-          </div>
-
-          {showBatch && (
-            <div className="mb-4 p-4 bg-gray-50 rounded-lg">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                批量输入号码（每行一个）
-              </label>
-              <textarea
-                value={batchInput}
-                onChange={(e) => setBatchInput(e.target.value)}
-                rows={5}
-                placeholder={'8613800138000\n8613900139000\n...'}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-green-500"
-              />
-              <button
-                type="button"
-                onClick={handleBatchAdd}
-                className="mt-2 px-4 py-2 bg-green-500 text-white rounded-lg text-sm hover:bg-green-600 transition-colors"
-              >
-                确认添加
-              </button>
-            </div>
-          )}
-
-          <div className="space-y-3">
-            {numbers.map((num, index) => (
-              <div key={index} className="flex gap-2 items-start">
-                <div className="w-28">
-                  <select
-                    value={num.platform}
-                    onChange={(e) => updateNumber(index, 'platform', e.target.value)}
-                    className="w-full px-2 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none text-sm bg-white"
-                  >
-                    {PLATFORM_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="flex-1">
-                  <input
-                    type="text"
-                    value={num.phone}
-                    onChange={(e) => updateNumber(index, 'phone', e.target.value)}
-                    placeholder={
-                      num.platform === 'whatsapp'
-                        ? '号码（如：8613800138000）'
-                        : num.platform === 'telegram'
-                        ? 'Telegram 用户名'
-                        : num.platform === 'line'
-                        ? 'LINE ID'
-                        : '完整 URL（如：https://example.com）'
-                    }
-                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none text-sm"
-                  />
-                </div>
-                <div className="w-28">
-                  <input
-                    type="text"
-                    value={num.label}
-                    onChange={(e) => updateNumber(index, 'label', e.target.value)}
-                    placeholder="备注（可选）"
-                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none text-sm"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={() => removeNumber(index)}
-                  disabled={numbers.length === 1}
-                  className="p-2.5 text-red-400 hover:text-red-600 disabled:opacity-30 transition-colors"
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
-          </div>
-
-          <button
-            type="button"
-            onClick={addNumber}
-            className="mt-3 w-full py-2 border-2 border-dashed border-gray-300 text-gray-500 rounded-lg hover:border-green-400 hover:text-green-600 transition-colors text-sm"
-          >
-            + 添加号码
-          </button>
         </div>
 
         <div className="flex gap-3">

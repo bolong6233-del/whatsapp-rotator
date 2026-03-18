@@ -9,6 +9,7 @@ export interface ShortLink {
   is_active: boolean
   tiktok_pixel_enabled: boolean
   tiktok_pixel_id: string | null
+  tiktok_access_token: string | null
   auto_reply_enabled: boolean
   auto_reply_messages: string | null
   auto_reply_index: number

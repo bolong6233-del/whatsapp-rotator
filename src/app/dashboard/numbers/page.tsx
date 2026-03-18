@@ -46,19 +46,20 @@ export default function NumbersPage() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
-  // New number form
-  const [showAddForm, setShowAddForm] = useState(false)
-  const [newPhone, setNewPhone] = useState('')
-  const [newLabel, setNewLabel] = useState('')
-  const [newPlatform, setNewPlatform] = useState<Platform>('whatsapp')
-  const [newLinkId, setNewLinkId] = useState('')
+  // Modal state
+  const [showModal, setShowModal] = useState(false)
+  const [modalLinkId, setModalLinkId] = useState('')
+  const [modalPlatform, setModalPlatform] = useState<Platform>('whatsapp')
+  const [modalLabel, setModalLabel] = useState('')
+  const [modalNumbers, setModalNumbers] = useState('')
+  const [modalStatus, setModalStatus] = useState<'active' | 'inactive'>('active')
   const [adding, setAdding] = useState(false)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
     const { data: linksData } = await supabase
       .from('short_links')
-      .select('id, slug, title, user_id, current_index, total_clicks, is_active, tiktok_pixel_enabled, tiktok_pixel_id, description, created_at, updated_at, auto_reply_enabled, auto_reply_messages, auto_reply_index')
+      .select('*')
       .order('created_at', { ascending: false })
 
     setLinks(linksData || [])
@@ -104,8 +105,8 @@ export default function NumbersPage() {
     }
   }
 
-  const handleToggle = async (numberId: string, isActive: boolean) => {
-    await supabase.from('whatsapp_numbers').update({ is_active: !isActive }).eq('id', numberId)
+  const handleToggleActive = async (numberId: string, currentStatus: boolean) => {
+    await supabase.from('whatsapp_numbers').update({ is_active: !currentStatus }).eq('id', numberId)
     fetchData()
   }
 
@@ -157,30 +158,38 @@ export default function NumbersPage() {
     URL.revokeObjectURL(url)
   }
 
-  const handleAddNumber = async () => {
-    if (!newPhone.trim() || !newLinkId) {
-      setError('请填写号码并选择关联链接')
+  const handleAddNumbers = async () => {
+    if (!modalLinkId) {
+      setError('请选择关联链接')
+      return
+    }
+    const lines = modalNumbers.split('\n').map((l) => l.trim()).filter(Boolean)
+    if (lines.length === 0) {
+      setError('请输入至少一个号码')
       return
     }
     setAdding(true)
-    const { error } = await supabase.from('whatsapp_numbers').insert({
-      phone_number: newPhone.trim(),
-      label: newLabel.trim() || null,
-      platform: newPlatform,
-      short_link_id: newLinkId,
+    const inserts = lines.map((phone) => ({
+      phone_number: phone,
+      label: modalLabel.trim() || null,
+      platform: modalPlatform,
+      short_link_id: modalLinkId,
       sort_order: 0,
-    })
+      is_active: modalStatus === 'active',
+    }))
+    const { error } = await supabase.from('whatsapp_numbers').insert(inserts)
     setAdding(false)
     if (error) {
       setError('添加失败：' + error.message)
     } else {
-      setSuccess('添加成功')
+      setSuccess(`成功添加 ${lines.length} 个号码`)
       setTimeout(() => setSuccess(''), 3000)
-      setNewPhone('')
-      setNewLabel('')
-      setNewPlatform('whatsapp')
-      setNewLinkId('')
-      setShowAddForm(false)
+      setModalLinkId('')
+      setModalPlatform('whatsapp')
+      setModalLabel('')
+      setModalNumbers('')
+      setModalStatus('active')
+      setShowModal(false)
       fetchData()
     }
   }
@@ -205,10 +214,10 @@ export default function NumbersPage() {
             ⬆️ 导出
           </button>
           <button
-            onClick={() => setShowAddForm(!showAddForm)}
+            onClick={() => { setError(''); setShowModal(true) }}
             className="px-4 py-2 text-sm bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors"
           >
-            ➕ 新增号码
+            + 新增
           </button>
         </div>
       </div>
@@ -221,76 +230,6 @@ export default function NumbersPage() {
       {success && (
         <div className="bg-green-50 border border-green-200 text-green-600 px-4 py-3 rounded-lg text-sm">
           {success}
-        </div>
-      )}
-
-      {/* Add Form */}
-      {showAddForm && (
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-          <h2 className="font-semibold text-gray-900 mb-4">新增号码</h2>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">关联链接 <span className="text-red-500">*</span></label>
-              <select
-                value={newLinkId}
-                onChange={(e) => setNewLinkId(e.target.value)}
-                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none bg-white"
-              >
-                <option value="">请选择链接</option>
-                {links.map((l) => (
-                  <option key={l.id} value={l.id}>{l.title || l.slug}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">平台</label>
-              <select
-                value={newPlatform}
-                onChange={(e) => setNewPlatform(e.target.value as Platform)}
-                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none bg-white"
-              >
-                <option value="whatsapp">WhatsApp</option>
-                <option value="telegram">Telegram</option>
-                <option value="line">LINE</option>
-                <option value="custom">自定义</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">号码 <span className="text-red-500">*</span></label>
-              <input
-                type="text"
-                value={newPhone}
-                onChange={(e) => setNewPhone(e.target.value)}
-                placeholder={newPlatform === 'whatsapp' ? '8613800138000' : newPlatform === 'telegram' ? 'Telegram 用户名' : newPlatform === 'line' ? 'LINE ID' : '完整 URL（如：https://example.com）'}
-                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">备注</label>
-              <input
-                type="text"
-                value={newLabel}
-                onChange={(e) => setNewLabel(e.target.value)}
-                placeholder="备注（可选）"
-                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none"
-              />
-            </div>
-          </div>
-          <div className="flex gap-3 mt-4">
-            <button
-              onClick={() => setShowAddForm(false)}
-              className="px-4 py-2 text-gray-600 bg-gray-100 rounded-lg text-sm hover:bg-gray-200 transition-colors"
-            >
-              取消
-            </button>
-            <button
-              onClick={handleAddNumber}
-              disabled={adding}
-              className="px-4 py-2 bg-green-500 hover:bg-green-600 disabled:bg-green-300 text-white rounded-lg text-sm transition-colors"
-            >
-              {adding ? '添加中...' : '确认添加'}
-            </button>
-          </div>
         </div>
       )}
 
@@ -426,25 +365,24 @@ export default function NumbersPage() {
                     </td>
                     <td className="py-3 px-4 text-gray-600">{num.click_count}</td>
                     <td className="py-3 px-4">
-                      <span className={`px-2 py-0.5 text-xs rounded-full ${num.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                        {num.is_active ? '启用' : '停用'}
-                      </span>
+                      <button
+                        onClick={() => handleToggleActive(num.id, num.is_active)}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          num.is_active ? 'bg-green-500' : 'bg-gray-300'
+                        }`}
+                      >
+                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          num.is_active ? 'translate-x-6' : 'translate-x-1'
+                        }`} />
+                      </button>
                     </td>
                     <td className="py-3 px-4">
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleToggle(num.id, num.is_active)}
-                          className="text-xs text-blue-600 hover:text-blue-800 transition-colors"
-                        >
-                          {num.is_active ? '停用' : '启用'}
-                        </button>
-                        <button
-                          onClick={() => handleDelete(num.id)}
-                          className="text-xs text-red-400 hover:text-red-600 transition-colors"
-                        >
-                          删除
-                        </button>
-                      </div>
+                      <button
+                        onClick={() => handleDelete(num.id)}
+                        className="text-xs text-red-400 hover:text-red-600 transition-colors"
+                      >
+                        删除
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -453,6 +391,134 @@ export default function NumbersPage() {
           </table>
         </div>
       </div>
+
+      {/* Add Modal */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <h2 className="text-lg font-bold text-gray-900">新增号码</h2>
+              <button
+                onClick={() => setShowModal(false)}
+                className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  号码类型
+                </label>
+                <select
+                  value={modalPlatform}
+                  onChange={(e) => setModalPlatform(e.target.value as Platform)}
+                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none bg-white"
+                >
+                  <option value="whatsapp">WhatsApp</option>
+                  <option value="telegram">Telegram</option>
+                  <option value="line">LINE</option>
+                  <option value="custom">自定义</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  选择链接 <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={modalLinkId}
+                  onChange={(e) => setModalLinkId(e.target.value)}
+                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none bg-white"
+                >
+                  <option value="">请选择要绑定的短链</option>
+                  {links.map((l) => (
+                    <option key={l.id} value={l.id}>{l.title || l.slug}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">工单号 / 备注</label>
+                <input
+                  type="text"
+                  value={modalLabel}
+                  onChange={(e) => setModalLabel(e.target.value)}
+                  placeholder="备注（可选）"
+                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  号码 <span className="text-red-500">*</span>
+                  <span className="text-gray-400 font-normal ml-1">（一行一个，支持批量）</span>
+                </label>
+                <textarea
+                  value={modalNumbers}
+                  onChange={(e) => setModalNumbers(e.target.value)}
+                  rows={5}
+                  placeholder={
+                    modalPlatform === 'whatsapp'
+                      ? '8613800138000\n8613900139000\n...'
+                      : modalPlatform === 'telegram'
+                      ? 'username1\nusername2\n...'
+                      : modalPlatform === 'line'
+                      ? 'lineid1\nlineid2\n...'
+                      : 'https://example.com/1\nhttps://example.com/2\n...'
+                  }
+                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none resize-none font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">状态</label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="modalStatus"
+                      value="active"
+                      checked={modalStatus === 'active'}
+                      onChange={() => setModalStatus('active')}
+                      className="text-green-500"
+                    />
+                    <span className="text-sm text-gray-700">正常</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="modalStatus"
+                      value="inactive"
+                      checked={modalStatus === 'inactive'}
+                      onChange={() => setModalStatus('inactive')}
+                      className="text-green-500"
+                    />
+                    <span className="text-sm text-gray-700">停用</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => setShowModal(false)}
+                  className="flex-1 py-2.5 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium transition-colors"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleAddNumbers}
+                  disabled={adding}
+                  className="flex-1 py-2.5 bg-green-500 hover:bg-green-600 disabled:bg-green-300 text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  {adding ? '添加中...' : '确定'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
