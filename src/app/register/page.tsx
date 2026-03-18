@@ -3,12 +3,10 @@
 export const dynamic = 'force-dynamic'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase-client'
 
 export default function RegisterPage() {
-  const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -43,7 +41,7 @@ export default function RegisterPage() {
       setLoading(false)
     } else {
       setSuccess(true)
-      setTimeout(() => router.push('/dashboard'), 2000)
+      setTimeout(() => { window.location.href = '/dashboard' }, 2000)
     }
   }
 
