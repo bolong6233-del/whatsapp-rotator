@@ -62,6 +62,11 @@ export default function TicketsPage() {
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState('')
 
+  const handleOpenModal = () => {
+    setCreateError('')
+    setShowModal(true)
+  }
+
   const fetchTickets = useCallback(async () => {
     setLoading(true)
     const { data } = await supabase
@@ -138,7 +143,7 @@ export default function TicketsPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">🎫 工单管理</h1>
         <button
-          onClick={() => { setCreateError(''); setShowModal(true) }}
+          onClick={handleOpenModal}
           className="px-4 py-2 text-sm bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors"
         >
           + 新增
@@ -176,7 +181,7 @@ export default function TicketsPage() {
             <p className="text-gray-400 text-4xl mb-3">🎫</p>
             <p className="text-gray-500">暂无工单</p>
             <button
-              onClick={() => { setCreateError(''); setShowModal(true) }}
+              onClick={handleOpenModal}
               className="mt-4 inline-block px-4 py-2 bg-green-500 text-white rounded-lg text-sm hover:bg-green-600 transition-colors"
             >
               + 新增工单

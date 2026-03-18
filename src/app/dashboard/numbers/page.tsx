@@ -59,7 +59,7 @@ export default function NumbersPage() {
     setLoading(true)
     const { data: linksData } = await supabase
       .from('short_links')
-      .select('id, slug, title, user_id, current_index, total_clicks, is_active, tiktok_pixel_enabled, tiktok_pixel_id, tiktok_access_token, description, created_at, updated_at, auto_reply_enabled, auto_reply_messages, auto_reply_index')
+      .select('*')
       .order('created_at', { ascending: false })
 
     setLinks(linksData || [])

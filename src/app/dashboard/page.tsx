@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase-client'
-import { generateSlug } from '@/lib/utils'
+import { generateSlug, getBaseUrl } from '@/lib/utils'
 import type { ShortLink } from '@/types'
 import Link from 'next/link'
 
@@ -45,7 +45,10 @@ export default function DashboardPage() {
   }, [fetchLinks])
 
   const filtered = links.filter((l) => {
-    if (searchSlug && !l.slug.toLowerCase().includes(searchSlug.toLowerCase()) && !(l.title || '').toLowerCase().includes(searchSlug.toLowerCase())) return false
+    if (searchSlug) {
+      const q = searchSlug.toLowerCase()
+      if (!l.slug.toLowerCase().includes(q) && !(l.title || '').toLowerCase().includes(q)) return false
+    }
     if (filterStatus === 'active' && !l.is_active) return false
     if (filterStatus === 'inactive' && l.is_active) return false
     return true
@@ -153,11 +156,6 @@ export default function DashboardPage() {
     } finally {
       setCreating(false)
     }
-  }
-
-  const getBaseUrl = () => {
-    if (typeof window !== 'undefined') return window.location.origin
-    return ''
   }
 
   return (
@@ -285,7 +283,7 @@ export default function DashboardPage() {
                           rel="noopener noreferrer"
                           className="text-green-600 hover:text-green-800 text-xs font-mono truncate max-w-xs block"
                         >
-                          {typeof window !== 'undefined' ? window.location.host : ''}/{link.slug}
+                          {getBaseUrl().replace(/^https?:\/\//, '')}/{link.slug}
                         </a>
                       </td>
                       <td className="py-3 px-4 text-gray-700">{link.title || '-'}</td>
