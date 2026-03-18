@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase-client'
 import { formatDate } from '@/lib/utils'
@@ -50,6 +51,7 @@ const PRIORITY_OPTIONS = [
 ]
 
 export default function TicketsPage() {
+  const router = useRouter()
   const [tickets, setTickets] = useState<Ticket[]>([])
   const [loading, setLoading] = useState(true)
   const [filterStatus, setFilterStatus] = useState<string>('all')
@@ -69,14 +71,20 @@ export default function TicketsPage() {
 
   const fetchTickets = useCallback(async () => {
     setLoading(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      router.push('/login')
+      return
+    }
     const { data } = await supabase
       .from('tickets')
       .select('*')
+      .eq('user_id', user.id)
       .order('created_at', { ascending: false })
 
     setTickets(data || [])
     setLoading(false)
-  }, [])
+  }, [router])
 
   useEffect(() => {
     fetchTickets()

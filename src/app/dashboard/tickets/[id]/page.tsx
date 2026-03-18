@@ -48,10 +48,17 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const fetchData = useCallback(async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      router.push('/login')
+      return
+    }
+
     const { data: ticketData } = await supabase
       .from('tickets')
       .select('*')
       .eq('id', id)
+      .eq('user_id', user.id)
       .single()
 
     if (!ticketData) {
