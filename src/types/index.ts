@@ -7,10 +7,14 @@ export interface ShortLink {
   current_index: number
   total_clicks: number
   is_active: boolean
+  tiktok_pixel_enabled: boolean
+  tiktok_pixel_id: string | null
   created_at: string
   updated_at: string
   whatsapp_numbers?: WhatsAppNumber[]
 }
+
+export type Platform = 'whatsapp' | 'telegram' | 'line'
 
 export interface WhatsAppNumber {
   id: string
@@ -20,6 +24,27 @@ export interface WhatsAppNumber {
   sort_order: number
   click_count: number
   is_active: boolean
+  platform: Platform
+  created_at: string
+}
+
+export interface Ticket {
+  id: string
+  user_id: string
+  title: string
+  description: string | null
+  status: 'open' | 'in_progress' | 'resolved' | 'closed'
+  priority: 'low' | 'medium' | 'high' | 'urgent'
+  created_at: string
+  updated_at: string
+}
+
+export interface TicketMessage {
+  id: string
+  ticket_id: string
+  user_id: string
+  message: string
+  is_admin: boolean
   created_at: string
 }
 
