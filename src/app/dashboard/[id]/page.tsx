@@ -53,6 +53,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
   const [description, setDescription] = useState('')
   const [tiktokPixelEnabled, setTiktokPixelEnabled] = useState(false)
   const [tiktokPixelId, setTiktokPixelId] = useState('')
+  const [tiktokAccessToken, setTiktokAccessToken] = useState('')
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(false)
   const [autoReplyMessages, setAutoReplyMessages] = useState('')
 
@@ -73,6 +74,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
     setDescription(linkData.description || '')
     setTiktokPixelEnabled(linkData.tiktok_pixel_enabled || false)
     setTiktokPixelId(linkData.tiktok_pixel_id || '')
+    setTiktokAccessToken(linkData.tiktok_access_token || '')
     setAutoReplyEnabled(linkData.auto_reply_enabled || false)
     setAutoReplyMessages(linkData.auto_reply_messages || '')
 
@@ -117,6 +119,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
         description: description || null,
         tiktok_pixel_enabled: tiktokPixelEnabled,
         tiktok_pixel_id: tiktokPixelEnabled ? tiktokPixelId.trim() : null,
+        tiktok_access_token: tiktokPixelEnabled && tiktokAccessToken.trim() ? tiktokAccessToken.trim() : null,
         auto_reply_enabled: autoReplyEnabled,
         auto_reply_messages: autoReplyEnabled && autoReplyMessages.trim() ? autoReplyMessages.trim() : null,
       })
@@ -324,15 +327,27 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
               </button>
             </div>
             {tiktokPixelEnabled && (
-              <div>
-                <label className="block text-xs font-medium text-indigo-800 mb-1">Pixel ID</label>
-                <input
-                  type="text"
-                  value={tiktokPixelId}
-                  onChange={(e) => setTiktokPixelId(e.target.value)}
-                  placeholder="例如：CXXXXXXXXXX"
-                  className="w-full px-3 py-2 border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-400 focus:border-transparent outline-none bg-white text-sm"
-                />
+              <div className="space-y-2">
+                <div>
+                  <label className="block text-xs font-medium text-indigo-800 mb-1">Pixel ID</label>
+                  <input
+                    type="text"
+                    value={tiktokPixelId}
+                    onChange={(e) => setTiktokPixelId(e.target.value)}
+                    placeholder="例如：CXXXXXXXXXX"
+                    className="w-full px-3 py-2 border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-400 focus:border-transparent outline-none bg-white text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-indigo-800 mb-1">Access Token</label>
+                  <input
+                    type="text"
+                    value={tiktokAccessToken}
+                    onChange={(e) => setTiktokAccessToken(e.target.value)}
+                    placeholder="可选，用于服务端事件上报"
+                    className="w-full px-3 py-2 border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-400 focus:border-transparent outline-none bg-white text-sm"
+                  />
+                </div>
               </div>
             )}
           </div>
