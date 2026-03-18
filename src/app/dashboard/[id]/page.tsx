@@ -13,11 +13,13 @@ const PLATFORM_OPTIONS: { value: Platform; label: string }[] = [
   { value: 'whatsapp', label: 'WhatsApp' },
   { value: 'telegram', label: 'Telegram' },
   { value: 'line', label: 'LINE' },
+  { value: 'custom', label: '自定义' },
 ]
 
 function getPlatformPlaceholder(platform: Platform): string {
   if (platform === 'telegram') return 'Telegram 用户名'
   if (platform === 'line') return 'LINE ID'
+  if (platform === 'custom') return '完整 URL（如：https://example.com）'
   return '号码（如：8613800138000）'
 }
 
@@ -25,12 +27,14 @@ const PLATFORM_LABELS: Record<Platform, string> = {
   whatsapp: 'WA',
   telegram: 'TG',
   line: 'LINE',
+  custom: '自定义',
 }
 
 const PLATFORM_COLORS: Record<Platform, string> = {
   whatsapp: 'bg-green-100 text-green-700',
   telegram: 'bg-blue-100 text-blue-700',
   line: 'bg-emerald-100 text-emerald-700',
+  custom: 'bg-purple-100 text-purple-700',
 }
 
 export default function LinkDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -51,6 +55,8 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
   const [description, setDescription] = useState('')
   const [tiktokPixelEnabled, setTiktokPixelEnabled] = useState(false)
   const [tiktokPixelId, setTiktokPixelId] = useState('')
+  const [autoReplyEnabled, setAutoReplyEnabled] = useState(false)
+  const [autoReplyMessages, setAutoReplyMessages] = useState('')
 
   const fetchData = useCallback(async () => {
     const { data: linkData } = await supabase
@@ -69,6 +75,8 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
     setDescription(linkData.description || '')
     setTiktokPixelEnabled(linkData.tiktok_pixel_enabled || false)
     setTiktokPixelId(linkData.tiktok_pixel_id || '')
+    setAutoReplyEnabled(linkData.auto_reply_enabled || false)
+    setAutoReplyMessages(linkData.auto_reply_messages || '')
 
     const { data: numbersData } = await supabase
       .from('whatsapp_numbers')
@@ -111,6 +119,8 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
         description: description || null,
         tiktok_pixel_enabled: tiktokPixelEnabled,
         tiktok_pixel_id: tiktokPixelEnabled ? tiktokPixelId.trim() : null,
+        auto_reply_enabled: autoReplyEnabled,
+        auto_reply_messages: autoReplyEnabled && autoReplyMessages.trim() ? autoReplyMessages.trim() : null,
       })
       .eq('id', id)
 
@@ -324,6 +334,43 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
                   onChange={(e) => setTiktokPixelId(e.target.value)}
                   placeholder="例如：CXXXXXXXXXX"
                   className="w-full px-3 py-2 border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-400 focus:border-transparent outline-none bg-white text-sm"
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Auto Reply */}
+          <div className="bg-yellow-50 rounded-lg p-4 border border-yellow-100">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <p className="font-medium text-yellow-900 text-sm">💬 自动回复语</p>
+                <p className="text-xs text-yellow-600 mt-0.5">
+                  仅 WhatsApp 号码生效，每个访客会按顺序收到不同的预填消息
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAutoReplyEnabled(!autoReplyEnabled)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  autoReplyEnabled ? 'bg-yellow-500' : 'bg-gray-300'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    autoReplyEnabled ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+            {autoReplyEnabled && (
+              <div>
+                <label className="block text-xs font-medium text-yellow-800 mb-1">回复语句（一行一个）</label>
+                <textarea
+                  value={autoReplyMessages}
+                  onChange={(e) => setAutoReplyMessages(e.target.value)}
+                  rows={4}
+                  placeholder={'你好\n早上好\n下午好'}
+                  className="w-full px-3 py-2 border border-yellow-200 rounded-lg focus:ring-2 focus:ring-yellow-400 focus:border-transparent outline-none bg-white text-sm resize-none"
                 />
               </div>
             )}

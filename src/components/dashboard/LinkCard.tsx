@@ -14,6 +14,8 @@ interface LinkCardProps {
     is_active: boolean
     total_clicks: number
     created_at: string
+    auto_reply_enabled?: boolean
+    auto_reply_messages?: string | null
     whatsapp_numbers?: { count: number }[]
   }
   formatDate: (date: string) => string
@@ -54,6 +56,10 @@ export default function LinkCard({ link, formatDate }: LinkCardProps) {
           <div className="flex gap-4 mt-2 text-xs text-gray-400">
             <span>📊 {link.total_clicks} 次点击</span>
             <span>📱 {numberCount} 个号码</span>
+            <span>💬 {link.auto_reply_enabled
+              ? `${link.auto_reply_messages?.split('\n').filter(Boolean).length ?? 0} 条回复语`
+              : '自动回复关闭'
+            }</span>
             <span>🕐 {formatDate(link.created_at)}</span>
           </div>
         </div>

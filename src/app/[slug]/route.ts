@@ -17,16 +17,33 @@ const RESERVED_SLUGS = [
   'public',
 ]
 
-function buildRedirectUrl(phoneNumber: string, platform: string): string {
+function buildRedirectUrl(phoneNumber: string, platform: string, autoReplyMessage?: string): string {
   const clean = phoneNumber.trim()
   switch (platform) {
     case 'telegram':
       return `https://t.me/${clean}`
     case 'line':
-      return `https://line.me/ti/p/${clean}`
+      return `https://line.me/ti/p/~${clean}`
+    case 'custom': {
+      // phone_number stores the full URL for custom platforms
+      try {
+        const parsed = new URL(clean)
+        if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+          return parsed.toString()
+        }
+      } catch {
+        // invalid URL
+      }
+      return '#'
+    }
     case 'whatsapp':
-    default:
-      return `https://wa.me/${clean.replace(/[^0-9]/g, '')}`
+    default: {
+      const phone = clean.replace(/[^0-9]/g, '')
+      if (autoReplyMessage) {
+        return `https://wa.me/${phone}?text=${encodeURIComponent(autoReplyMessage)}`
+      }
+      return `https://wa.me/${phone}`
+    }
   }
 }
 
@@ -110,7 +127,7 @@ export async function GET(
       return NextResponse.json({ error: 'Short link not found' }, { status: 404 })
     }
 
-    const { phone_number, number_id, link_id, platform, tiktok_pixel_enabled, tiktok_pixel_id } = data[0]
+    const { phone_number, number_id, link_id, platform, tiktok_pixel_enabled, tiktok_pixel_id, auto_reply_enabled, auto_reply_messages, auto_reply_index } = data[0]
 
     const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
       request.headers.get('x-real-ip') || null
@@ -130,7 +147,23 @@ export async function GET(
       }
     })
 
-    const redirectUrl = buildRedirectUrl(phone_number, platform || 'whatsapp')
+    // Determine auto-reply message (only for WhatsApp)
+    let autoReplyMessage: string | undefined
+    if (auto_reply_enabled && platform === 'whatsapp' && auto_reply_messages) {
+      const messages = (auto_reply_messages as string)
+        .split('\n')
+        .map((m: string) => m.trim())
+        .filter(Boolean)
+      if (messages.length > 0) {
+        autoReplyMessage = messages[(auto_reply_index as number) % messages.length]
+      }
+    }
+
+    const redirectUrl = buildRedirectUrl(phone_number, platform || 'whatsapp', autoReplyMessage)
+
+    if (redirectUrl === '#') {
+      return NextResponse.json({ error: 'Invalid destination URL' }, { status: 502 })
+    }
 
     if (tiktok_pixel_enabled && tiktok_pixel_id) {
       const html = buildPixelHtml(tiktok_pixel_id, redirectUrl)

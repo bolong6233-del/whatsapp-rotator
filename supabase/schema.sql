@@ -13,6 +13,9 @@ CREATE TABLE IF NOT EXISTS short_links (
   is_active BOOLEAN DEFAULT true,
   tiktok_pixel_enabled BOOLEAN DEFAULT false,
   tiktok_pixel_id VARCHAR(50),
+  auto_reply_enabled BOOLEAN DEFAULT false,
+  auto_reply_messages TEXT,
+  auto_reply_index INTEGER DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
@@ -26,7 +29,7 @@ CREATE TABLE IF NOT EXISTS whatsapp_numbers (
   sort_order INTEGER DEFAULT 0,
   click_count INTEGER DEFAULT 0,
   is_active BOOLEAN DEFAULT true,
-  platform VARCHAR(20) DEFAULT 'whatsapp' CHECK (platform IN ('whatsapp', 'telegram', 'line')),
+  platform VARCHAR(20) DEFAULT 'whatsapp' CHECK (platform IN ('whatsapp', 'telegram', 'line', 'custom')),
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -197,7 +200,7 @@ CREATE POLICY "Users can create messages for own tickets" ON ticket_messages
 
 -- Atomic RPC function for polling rotation
 CREATE OR REPLACE FUNCTION increment_and_get_number(p_slug VARCHAR)
-RETURNS TABLE(phone_number VARCHAR, number_id UUID, link_id UUID, platform VARCHAR, tiktok_pixel_enabled BOOLEAN, tiktok_pixel_id VARCHAR) AS $$
+RETURNS TABLE(phone_number VARCHAR, number_id UUID, link_id UUID, platform VARCHAR, tiktok_pixel_enabled BOOLEAN, tiktok_pixel_id VARCHAR, auto_reply_enabled BOOLEAN, auto_reply_messages TEXT, auto_reply_index INTEGER) AS $$
 DECLARE
   v_link_id UUID;
   v_current_index INTEGER;
@@ -208,10 +211,15 @@ DECLARE
   v_platform VARCHAR;
   v_tiktok_pixel_enabled BOOLEAN;
   v_tiktok_pixel_id VARCHAR;
+  v_auto_reply_enabled BOOLEAN;
+  v_auto_reply_messages TEXT;
+  v_auto_reply_index INTEGER;
 BEGIN
   -- Get and lock the short link
-  SELECT id, current_index, short_links.tiktok_pixel_enabled, short_links.tiktok_pixel_id
-    INTO v_link_id, v_current_index, v_tiktok_pixel_enabled, v_tiktok_pixel_id
+  SELECT id, current_index, short_links.tiktok_pixel_enabled, short_links.tiktok_pixel_id,
+         short_links.auto_reply_enabled, short_links.auto_reply_messages, short_links.auto_reply_index
+    INTO v_link_id, v_current_index, v_tiktok_pixel_enabled, v_tiktok_pixel_id,
+         v_auto_reply_enabled, v_auto_reply_messages, v_auto_reply_index
   FROM short_links
   WHERE slug = p_slug AND is_active = true
   FOR UPDATE;
@@ -241,9 +249,12 @@ BEGIN
   -- Calculate next index
   v_next_index := (v_current_index + 1) % v_total_numbers;
 
-  -- Update current_index and total_clicks atomically
+  -- Update current_index, total_clicks, and auto_reply_index atomically
   UPDATE short_links
-  SET current_index = v_next_index, total_clicks = total_clicks + 1, updated_at = now()
+  SET current_index = v_next_index,
+      total_clicks = total_clicks + 1,
+      auto_reply_index = auto_reply_index + 1,
+      updated_at = now()
   WHERE id = v_link_id;
 
   -- Increment number's click_count
@@ -251,11 +262,16 @@ BEGIN
   SET click_count = click_count + 1
   WHERE id = v_number_id;
 
-  RETURN QUERY SELECT v_phone_number, v_number_id, v_link_id, v_platform, v_tiktok_pixel_enabled, v_tiktok_pixel_id;
+  RETURN QUERY SELECT v_phone_number, v_number_id, v_link_id, v_platform, v_tiktok_pixel_enabled, v_tiktok_pixel_id, v_auto_reply_enabled, v_auto_reply_messages, v_auto_reply_index;
 END;
 $$ LANGUAGE plpgsql;
 
 -- Migration commands for upgrading an existing database (do NOT run on a fresh install):
 -- ALTER TABLE short_links ADD COLUMN IF NOT EXISTS tiktok_pixel_enabled BOOLEAN DEFAULT false;
 -- ALTER TABLE short_links ADD COLUMN IF NOT EXISTS tiktok_pixel_id VARCHAR(50);
--- ALTER TABLE whatsapp_numbers ADD COLUMN IF NOT EXISTS platform VARCHAR(20) DEFAULT 'whatsapp' CHECK (platform IN ('whatsapp', 'telegram', 'line'));
+-- ALTER TABLE short_links ADD COLUMN IF NOT EXISTS auto_reply_enabled BOOLEAN DEFAULT false;
+-- ALTER TABLE short_links ADD COLUMN IF NOT EXISTS auto_reply_messages TEXT;
+-- ALTER TABLE short_links ADD COLUMN IF NOT EXISTS auto_reply_index INTEGER DEFAULT 0;
+-- Note: PostgreSQL automatically back-fills the DEFAULT value (0) for existing rows when adding auto_reply_index.
+-- ALTER TABLE whatsapp_numbers DROP CONSTRAINT IF EXISTS whatsapp_numbers_platform_check;
+-- ALTER TABLE whatsapp_numbers ADD CONSTRAINT whatsapp_numbers_platform_check CHECK (platform IN ('whatsapp', 'telegram', 'line', 'custom'));

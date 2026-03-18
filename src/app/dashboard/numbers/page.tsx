@@ -13,18 +13,21 @@ const PLATFORM_OPTIONS: { value: Platform | 'all'; label: string }[] = [
   { value: 'whatsapp', label: 'WhatsApp' },
   { value: 'telegram', label: 'Telegram' },
   { value: 'line', label: 'LINE' },
+  { value: 'custom', label: '自定义' },
 ]
 
 const PLATFORM_LABELS: Record<Platform, string> = {
   whatsapp: 'WhatsApp',
   telegram: 'Telegram',
   line: 'LINE',
+  custom: '自定义',
 }
 
 const PLATFORM_COLORS: Record<Platform, string> = {
   whatsapp: 'bg-green-100 text-green-700',
   telegram: 'bg-blue-100 text-blue-700',
   line: 'bg-emerald-100 text-emerald-700',
+  custom: 'bg-purple-100 text-purple-700',
 }
 
 const DEFAULT_PLATFORM: Platform = 'whatsapp'
@@ -57,7 +60,7 @@ export default function NumbersPage() {
     setLoading(true)
     const { data: linksData } = await supabase
       .from('short_links')
-      .select('id, slug, title, user_id, current_index, total_clicks, is_active, tiktok_pixel_enabled, tiktok_pixel_id, description, created_at, updated_at')
+      .select('id, slug, title, user_id, current_index, total_clicks, is_active, tiktok_pixel_enabled, tiktok_pixel_id, description, created_at, updated_at, auto_reply_enabled, auto_reply_messages, auto_reply_index')
       .order('created_at', { ascending: false })
 
     setLinks(linksData || [])
@@ -251,6 +254,7 @@ export default function NumbersPage() {
                 <option value="whatsapp">WhatsApp</option>
                 <option value="telegram">Telegram</option>
                 <option value="line">LINE</option>
+                <option value="custom">自定义</option>
               </select>
             </div>
             <div>
@@ -259,7 +263,7 @@ export default function NumbersPage() {
                 type="text"
                 value={newPhone}
                 onChange={(e) => setNewPhone(e.target.value)}
-                placeholder={newPlatform === 'whatsapp' ? '8613800138000' : newPlatform === 'telegram' ? 'Telegram 用户名' : 'LINE ID'}
+                placeholder={newPlatform === 'whatsapp' ? '8613800138000' : newPlatform === 'telegram' ? 'Telegram 用户名' : newPlatform === 'line' ? 'LINE ID' : '完整 URL（如：https://example.com）'}
                 className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none"
               />
             </div>
