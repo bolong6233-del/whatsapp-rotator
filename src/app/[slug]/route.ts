@@ -55,6 +55,8 @@ export async function GET(
   { params }: { params: Promise<{ slug: string }> }
 ) {
   const { slug } = await params
+  const { searchParams } = new URL(request.url)
+  const isDebug = searchParams.get('debug') === '1'
 
   if (RESERVED_SLUGS.includes(slug)) {
     return NextResponse.redirect(WHATSAPP_FALLBACK, { status: 302 })
@@ -69,8 +71,19 @@ export async function GET(
     p_slug: slug,
   })
 
+  const noData = !rpcData || rpcData.length === 0
+
+  if (rpcError) {
+    console.error(`[Slug Redirect] RPC Error for slug ${slug}:`, rpcError)
+  } else if (noData) {
+    console.warn(`[Slug Redirect] No active numbers or link found for slug: ${slug}`)
+  }
+
   // No data found -> redirect to WhatsApp fallback (shows friendly "link incorrect" page)
-  if (rpcError || !rpcData || rpcData.length === 0) {
+  if (rpcError || noData) {
+    if (isDebug) {
+      return NextResponse.json({ error: 'Redirect failed', rpcError, rpcData, slug }, { status: 500 })
+    }
     return NextResponse.redirect(WHATSAPP_FALLBACK, { status: 302 })
   }
 
