@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase-client'
 import { formatDate } from '@/lib/utils'
-import type { WorkOrder, TicketType, Platform } from '@/types'
+import type { WorkOrder, TicketType, Platform, SyncNumber } from '@/types'
 
 const TICKET_TYPES: TicketType[] = [
   '云控',
@@ -65,15 +65,30 @@ function getInitialForm() {
   }
 }
 
+const TABLE_COL_COUNT = 15
+
+function OnlineStatusBadge({ online }: { online: number }) {
+  if (online === 1) {
+    return <span className="inline-flex items-center gap-1 text-green-600 font-medium"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" />在线</span>
+  }
+  const label = online === 0 ? '无号码' : online === 2 ? '异常' : '离线'
+  return <span className="inline-flex items-center gap-1 text-red-500 font-medium"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" />{label}</span>
+}
+
 export default function TicketsPage() {
   const router = useRouter()
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([])
   const [loading, setLoading] = useState(true)
   const [slugOptions, setSlugOptions] = useState<string[]>([])
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
 
   // Modal state
   const [showModal, setShowModal] = useState(false)
   const [form, setForm] = useState(getInitialForm())
+
+  // Keep a ref to the latest workOrders to avoid stale closures in the interval
+  const workOrdersRef = useRef<WorkOrder[]>([])
+  workOrdersRef.current = workOrders
 
   const fetchSlugs = useCallback(async () => {
     const { data } = await supabase
@@ -96,24 +111,131 @@ export default function TicketsPage() {
     setLoading(false)
   }, [router])
 
+  // Sync a single work order by calling /api/sync/yunkon
+  const syncWorkOrder = useCallback(async (order: WorkOrder): Promise<Partial<WorkOrder>> => {
+    try {
+      const res = await fetch('/api/sync/yunkon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticket_link: order.ticket_link }),
+      })
+      const result = await res.json()
+      if (!result.success) return {}
+
+      const { numbers, total_count, total_sum, total_day_sum, online_count, offline_count } = result.data
+      const updates: Partial<WorkOrder> = {
+        sync_total_sum: total_sum,
+        sync_total_day_sum: total_day_sum,
+        sync_total_numbers: total_count,
+        sync_online_count: online_count,
+        sync_offline_count: offline_count,
+        sync_numbers: numbers as SyncNumber[],
+        last_synced_at: new Date().toISOString(),
+      }
+
+      // Auto-complete when total_sum reaches the threshold
+      if (total_sum >= order.total_quantity && order.total_quantity > 0) {
+        updates.status = 'completed'
+      }
+
+      return updates
+    } catch {
+      return {}
+    }
+  }, [])
+
+  // Sync all active 云控 orders
+  const syncAllActive = useCallback(async () => {
+    const orders = workOrdersRef.current
+    const active = orders.filter((o) => o.status === 'active' && o.ticket_type === '云控')
+    if (active.length === 0) return
+
+    const updatesMap: Record<string, Partial<WorkOrder>> = {}
+    await Promise.all(
+      active.map(async (order) => {
+        const updates = await syncWorkOrder(order)
+        if (Object.keys(updates).length > 0) {
+          updatesMap[order.id] = updates
+        }
+      })
+    )
+
+    if (Object.keys(updatesMap).length > 0) {
+      setWorkOrders((prev) =>
+        prev.map((o) => (updatesMap[o.id] ? { ...o, ...updatesMap[o.id] } : o))
+      )
+    }
+  }, [syncWorkOrder])
+
   useEffect(() => {
     fetchWorkOrders()
     fetchSlugs()
   }, [fetchWorkOrders, fetchSlugs])
+
+  // Auto-sync every minute for active 云控 orders
+  useEffect(() => {
+    syncAllActive()
+    const interval = setInterval(syncAllActive, 60000)
+    return () => clearInterval(interval)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleOpenModal = () => {
     setForm(getInitialForm())
     setShowModal(true)
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    console.log('formData', form)
+
+    const now = new Date().toISOString()
+    const newOrder: WorkOrder = {
+      id: `local-${Date.now()}`,
+      user_id: 'local',
+      ticket_type: form.ticket_type,
+      ticket_name: form.ticket_name,
+      ticket_link: form.ticket_link,
+      distribution_link_slug: form.distribution_link_slug,
+      number_type: form.number_type,
+      start_time: form.start_time,
+      end_time: form.end_time,
+      total_quantity: form.total_quantity,
+      download_ratio: form.download_ratio,
+      account: form.account || null,
+      password: form.password || null,
+      status: 'active',
+      created_at: now,
+      updated_at: now,
+    }
+
+    setWorkOrders((prev) => [newOrder, ...prev])
     setShowModal(false)
+
+    // Immediately sync if it's a 云控 order
+    if (newOrder.ticket_type === '云控' && newOrder.ticket_link) {
+      const updates = await syncWorkOrder(newOrder)
+      if (Object.keys(updates).length > 0) {
+        setWorkOrders((prev) =>
+          prev.map((o) => (o.id === newOrder.id ? { ...o, ...updates } : o))
+        )
+      }
+    }
   }
 
   const updateForm = (field: string, value: string | number) => {
     setForm((prev) => ({ ...prev, [field]: value }))
+  }
+
+  const toggleExpand = (id: string) => {
+    setExpandedRows((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
   }
 
   if (loading) {
@@ -153,6 +275,7 @@ export default function TicketsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 text-left text-gray-500">
+                <th className="px-4 py-3 font-medium w-8" />
                 <th className="px-4 py-3 font-medium">工单类型</th>
                 <th className="px-4 py-3 font-medium">工单名称</th>
                 <th className="px-4 py-3 font-medium">工单链接</th>
@@ -163,33 +286,102 @@ export default function TicketsPage() {
                 <th className="px-4 py-3 font-medium">工单总量</th>
                 <th className="px-4 py-3 font-medium">下号比率</th>
                 <th className="px-4 py-3 font-medium">工单账号</th>
+                <th className="px-4 py-3 font-medium">引流总数</th>
+                <th className="px-4 py-3 font-medium">在线号码</th>
+                <th className="px-4 py-3 font-medium">最后同步</th>
                 <th className="px-4 py-3 font-medium">状态</th>
               </tr>
             </thead>
             <tbody>
-              {workOrders.map((order) => (
-                <tr key={order.id} className="border-b border-gray-50 hover:bg-gray-50">
-                  <td className="px-4 py-3">{order.ticket_type}</td>
-                  <td className="px-4 py-3">{order.ticket_name}</td>
-                  <td className="px-4 py-3 max-w-[160px] truncate">
-                    <a href={order.ticket_link} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">
-                      {order.ticket_link}
-                    </a>
-                  </td>
-                  <td className="px-4 py-3">{order.distribution_link_slug}</td>
-                  <td className="px-4 py-3 capitalize">{order.number_type}</td>
-                  <td className="px-4 py-3">{formatDate(order.start_time)}</td>
-                  <td className="px-4 py-3">{formatDate(order.end_time)}</td>
-                  <td className="px-4 py-3">{order.total_quantity}</td>
-                  <td className="px-4 py-3">{order.download_ratio}</td>
-                  <td className="px-4 py-3">{order.account || '-'}</td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${STATUS_COLORS[order.status]}`}>
-                      {STATUS_LABELS[order.status]}
-                    </span>
-                  </td>
-                </tr>
-              ))}
+              {workOrders.map((order) => {
+                const isExpanded = expandedRows.has(order.id)
+                const canExpand = order.ticket_type === '云控' && (order.sync_numbers?.length ?? 0) > 0
+                return (
+                  <>
+                    <tr
+                      key={order.id}
+                      className={`border-b border-gray-50 hover:bg-gray-50 ${canExpand ? 'cursor-pointer' : ''}`}
+                      onClick={() => canExpand && toggleExpand(order.id)}
+                    >
+                      <td className="px-4 py-3 text-gray-400">
+                        {canExpand ? (isExpanded ? '▾' : '▸') : ''}
+                      </td>
+                      <td className="px-4 py-3">{order.ticket_type}</td>
+                      <td className="px-4 py-3">{order.ticket_name}</td>
+                      <td className="px-4 py-3 max-w-[160px] truncate">
+                        <a
+                          href={order.ticket_link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-500 hover:underline"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {order.ticket_link}
+                        </a>
+                      </td>
+                      <td className="px-4 py-3">{order.distribution_link_slug}</td>
+                      <td className="px-4 py-3 capitalize">{order.number_type}</td>
+                      <td className="px-4 py-3">{formatDate(order.start_time)}</td>
+                      <td className="px-4 py-3">{formatDate(order.end_time)}</td>
+                      <td className="px-4 py-3">{order.total_quantity}</td>
+                      <td className="px-4 py-3">{order.download_ratio}</td>
+                      <td className="px-4 py-3">{order.account || '-'}</td>
+                      <td className="px-4 py-3">
+                        {order.sync_total_sum !== undefined
+                          ? `${order.sync_total_sum}/${order.total_quantity}`
+                          : '-'}
+                      </td>
+                      <td className="px-4 py-3">
+                        {order.sync_online_count !== undefined
+                          ? `${order.sync_online_count}/${order.sync_total_numbers ?? 0}`
+                          : '-'}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">
+                        {order.last_synced_at
+                          ? new Date(order.last_synced_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                          : '-'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${STATUS_COLORS[order.status]}`}>
+                          {STATUS_LABELS[order.status]}
+                        </span>
+                      </td>
+                    </tr>
+                    {isExpanded && order.sync_numbers && order.sync_numbers.length > 0 && (
+                      <tr key={`${order.id}-detail`} className="bg-gray-50">
+                        <td colSpan={TABLE_COL_COUNT} className="px-8 py-3">
+                          <table className="w-full text-xs border border-gray-200 rounded-lg overflow-hidden">
+                            <thead>
+                              <tr className="bg-gray-100 text-gray-500">
+                                <th className="px-3 py-2 text-left font-medium">ID</th>
+                                <th className="px-3 py-2 text-left font-medium">账号</th>
+                                <th className="px-3 py-2 text-left font-medium">昵称</th>
+                                <th className="px-3 py-2 text-left font-medium">状态</th>
+                                <th className="px-3 py-2 text-left font-medium">去重引流数</th>
+                                <th className="px-3 py-2 text-left font-medium">今日引流</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {order.sync_numbers.map((num) => (
+                                <tr key={num.id} className={`border-t border-gray-100 ${num.online !== 1 ? 'bg-red-50' : ''}`}>
+                                  <td className="px-3 py-2">{num.id}</td>
+                                  <td className="px-3 py-2">{num.user}</td>
+                                  <td className="px-3 py-2">{num.nickname}</td>
+                                  <td className="px-3 py-2">
+                                    <OnlineStatusBadge online={num.online} />
+                                  </td>
+                                  <td className="px-3 py-2">{num.sum}</td>
+                                  <td className="px-3 py-2">{num.day_sum}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </td>
+                      </tr>
+                    )}
+                  </>
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -381,7 +573,7 @@ export default function TicketsPage() {
                     type="password"
                     value={form.password}
                     onChange={(e) => updateForm('password', e.target.value)}
-                    placeholder="请输入工单密码"
+                    placeholder="请输入工单密码（可选）"
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
                   />
                 </div>
