@@ -95,7 +95,7 @@ export interface WorkOrder {
   status: 'active' | 'completed' | 'expired' | 'cancelled'
   created_at: string
   updated_at: string
-  // Sync fields (client-side only, not persisted to DB yet)
+  // Sync fields (persisted to DB)
   sync_total_sum?: number
   sync_total_day_sum?: number
   sync_total_numbers?: number
