@@ -65,7 +65,7 @@ function getInitialForm() {
   }
 }
 
-const TABLE_COL_COUNT = 15
+const TABLE_COL_COUNT = 15 // total columns: 1 expand arrow + 14 data columns
 
 function OnlineStatusBadge({ online }: { online: number }) {
   if (online === 1) {
@@ -83,9 +83,11 @@ export default function TicketsPage() {
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [slugOptions, setSlugOptions] = useState<string[]>([])
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
+  const [copiedId, setCopiedId] = useState<string | null>(null)
 
   // Modal state
   const [showModal, setShowModal] = useState(false)
+  const [editingOrder, setEditingOrder] = useState<WorkOrder | null>(null)
   const [form, setForm] = useState(getInitialForm())
 
   // Keep a ref to the latest workOrders to avoid stale closures in the interval
@@ -102,7 +104,6 @@ export default function TicketsPage() {
   }, [])
 
   const fetchWorkOrders = useCallback(async () => {
-    setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
       router.push('/login')
@@ -205,31 +206,109 @@ export default function TicketsPage() {
   }
 
   const handleOpenModal = () => {
+    setEditingOrder(null)
     setForm(getInitialForm())
     setSubmitError(null)
     setShowModal(true)
+  }
+
+  const handleEdit = (e: React.MouseEvent, order: WorkOrder) => {
+    e.stopPropagation()
+    setEditingOrder(order)
+    setForm({
+      ticket_type: order.ticket_type,
+      ticket_name: order.ticket_name,
+      ticket_link: order.ticket_link,
+      distribution_link_slug: order.distribution_link_slug,
+      number_type: order.number_type,
+      start_time: order.start_time.slice(0, 16),
+      end_time: order.end_time.slice(0, 16),
+      total_quantity: order.total_quantity,
+      download_ratio: order.download_ratio,
+      account: order.account || '',
+      password: order.password || '',
+    })
+    setSubmitError(null)
+    setShowModal(true)
+  }
+
+  const handleDelete = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation()
+    if (!window.confirm('确认删除该工单？')) return
+    const res = await fetch(`/api/work-orders/${id}`, { method: 'DELETE' })
+    if (res.ok) {
+      setWorkOrders((prev) => prev.filter((o) => o.id !== id))
+    }
+  }
+
+  const handleToggleStatus = async (e: React.MouseEvent, order: WorkOrder) => {
+    e.stopPropagation()
+    const newStatus = order.status === 'active' ? 'cancelled' : 'active'
+    const res = await fetch(`/api/work-orders/${order.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: newStatus }),
+    })
+    if (res.ok) {
+      setWorkOrders((prev) =>
+        prev.map((o) => (o.id === order.id ? { ...o, status: newStatus } : o))
+      )
+    }
+  }
+
+  const handleCopy = async (e: React.MouseEvent, order: WorkOrder) => {
+    e.stopPropagation()
+    try {
+      await navigator.clipboard.writeText(order.ticket_link)
+      setCopiedId(order.id)
+      setTimeout(() => setCopiedId(null), 2000)
+    } catch {
+      // fallback
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setSubmitError(null)
 
+    const payload = {
+      ticket_type: form.ticket_type,
+      ticket_name: form.ticket_name,
+      ticket_link: form.ticket_link,
+      distribution_link_slug: form.distribution_link_slug,
+      number_type: form.number_type,
+      start_time: form.start_time,
+      end_time: form.end_time,
+      total_quantity: form.total_quantity,
+      download_ratio: form.download_ratio,
+      account: form.account || null,
+      password: form.password || null,
+    }
+
+    if (editingOrder) {
+      // Edit mode
+      const res = await fetch(`/api/work-orders/${editingOrder.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        setSubmitError(err.error || '更新工单失败，请稍后重试')
+        return
+      }
+      const updated: WorkOrder = await res.json()
+      setWorkOrders((prev) => prev.map((o) => (o.id === updated.id ? { ...o, ...updated } : o)))
+      setShowModal(false)
+      setEditingOrder(null)
+      return
+    }
+
+    // Create mode
     const res = await fetch('/api/work-orders', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ticket_type: form.ticket_type,
-        ticket_name: form.ticket_name,
-        ticket_link: form.ticket_link,
-        distribution_link_slug: form.distribution_link_slug,
-        number_type: form.number_type,
-        start_time: form.start_time,
-        end_time: form.end_time,
-        total_quantity: form.total_quantity,
-        download_ratio: form.download_ratio,
-        account: form.account || null,
-        password: form.password || null,
-      }),
+      body: JSON.stringify(payload),
     })
 
     if (!res.ok) {
@@ -325,11 +404,11 @@ export default function TicketsPage() {
                 <th className="px-4 py-3 font-medium">到期时间</th>
                 <th className="px-4 py-3 font-medium">工单总量</th>
                 <th className="px-4 py-3 font-medium">下号比率</th>
-                <th className="px-4 py-3 font-medium">工单账号</th>
+                <th className="px-4 py-3 font-medium">同步状态</th>
                 <th className="px-4 py-3 font-medium">当日引流</th>
                 <th className="px-4 py-3 font-medium">在线号码</th>
                 <th className="px-4 py-3 font-medium">最后同步</th>
-                <th className="px-4 py-3 font-medium">状态</th>
+                <th className="px-4 py-3 font-medium">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -365,7 +444,13 @@ export default function TicketsPage() {
                       <td className="px-4 py-3">{formatDate(order.end_time)}</td>
                       <td className="px-4 py-3">{order.total_quantity}</td>
                       <td className="px-4 py-3">{order.download_ratio}</td>
-                      <td className="px-4 py-3">{order.account || '-'}</td>
+                      <td className="px-4 py-3">
+                        {order.last_synced_at
+                          ? <span className="text-green-600 font-medium">同步成功</span>
+                          : order.ticket_type === '云控'
+                            ? <span className="text-red-500 font-medium">失败</span>
+                            : <span className="text-gray-400">-</span>}
+                      </td>
                       <td className="px-4 py-3">
                         {order.sync_total_day_sum !== undefined
                           ? `${order.sync_total_day_sum}/${order.total_quantity}`
@@ -382,9 +467,39 @@ export default function TicketsPage() {
                           : '-'}
                       </td>
                       <td className="px-4 py-3">
-                        <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${STATUS_COLORS[order.status]}`}>
-                          {STATUS_LABELS[order.status]}
-                        </span>
+                        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                          {/* Toggle switch */}
+                          <button
+                            type="button"
+                            onClick={(e) => handleToggleStatus(e, order)}
+                            aria-label={order.status === 'active' ? '停用工单' : '启用工单'}
+                            className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${order.status === 'active' ? 'bg-blue-500' : 'bg-gray-300'}`}
+                            title={order.status === 'active' ? '点击停用' : '点击启用'}
+                          >
+                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform duration-200 ${order.status === 'active' ? 'translate-x-4' : 'translate-x-0'}`} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => handleEdit(e, order)}
+                            className="text-blue-500 hover:text-blue-700 text-xs whitespace-nowrap"
+                          >
+                            ✏ 修改
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => handleCopy(e, order)}
+                            className="text-blue-500 hover:text-blue-700 text-xs whitespace-nowrap"
+                          >
+                            {copiedId === order.id ? '已复制' : '📋 拷贝'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => handleDelete(e, order.id)}
+                            className="text-red-500 hover:text-red-700 text-xs whitespace-nowrap"
+                          >
+                            🗑 删除
+                          </button>
+                        </div>
                       </td>
                     </tr>
                     {isExpanded && order.sync_numbers && order.sync_numbers.length > 0 && (
@@ -427,14 +542,14 @@ export default function TicketsPage() {
         </div>
       )}
 
-      {/* Create Modal */}
+      {/* Create / Edit Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-              <h2 className="text-base font-bold text-gray-900">添加工单管理</h2>
+              <h2 className="text-base font-bold text-gray-900">{editingOrder ? '编辑工单' : '添加工单管理'}</h2>
               <button
-                onClick={() => setShowModal(false)}
+                onClick={() => { setShowModal(false); setEditingOrder(null) }}
                 className="text-gray-400 hover:text-gray-600 text-xl leading-none"
               >
                 ✕
@@ -626,7 +741,7 @@ export default function TicketsPage() {
               <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-100">
                 <button
                   type="button"
-                  onClick={() => setShowModal(false)}
+                  onClick={() => { setShowModal(false); setEditingOrder(null) }}
                   className="px-6 py-2 text-sm text-gray-600 border border-gray-300 bg-white hover:bg-gray-50 rounded-lg font-medium transition-colors"
                 >
                   取消
@@ -635,7 +750,7 @@ export default function TicketsPage() {
                   type="submit"
                   className="px-6 py-2 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-colors"
                 >
-                  确定
+                  {editingOrder ? '保存' : '确定'}
                 </button>
               </div>
             </form>
