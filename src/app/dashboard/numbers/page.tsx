@@ -6,6 +6,8 @@ import type { WhatsAppNumber, ShortLink, Platform } from '@/types'
 
 type NumberWithLink = WhatsAppNumber & { short_links: Pick<ShortLink, 'id' | 'slug' | 'title'> }
 
+const PAGE_SIZE = 10
+
 const PLATFORM_OPTIONS: { value: Platform | 'all'; label: string }[] = [
   { value: 'all', label: '全部平台' },
   { value: 'whatsapp', label: 'WhatsApp' },
@@ -36,12 +38,14 @@ function getPlatform(platform: Platform | undefined | null): Platform {
 
 export default function NumbersPage() {
   const [numbers, setNumbers] = useState<NumberWithLink[]>([])
+  const [totalCount, setTotalCount] = useState(0)
   const [links, setLinks] = useState<ShortLink[]>([])
   const [loading, setLoading] = useState(true)
   const [filterPlatform, setFilterPlatform] = useState<Platform | 'all'>('all')
   const [filterLink, setFilterLink] = useState<string>('all')
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all')
   const [searchPhone, setSearchPhone] = useState('')
+  const [page, setPage] = useState(1)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
@@ -64,29 +68,40 @@ export default function NumbersPage() {
 
     setLinks(linksData || [])
 
-    const { data: numbersData } = await supabase
+    let query = supabase
       .from('whatsapp_numbers')
-      .select('*, short_links(id, slug, title)')
+      .select('*, short_links(id, slug, title)', { count: 'exact' })
       .order('created_at', { ascending: false })
 
+    if (filterPlatform !== 'all') {
+      query = query.eq('platform', filterPlatform)
+    }
+    if (filterLink !== 'all') {
+      query = query.eq('short_link_id', filterLink)
+    }
+    if (filterStatus === 'active') {
+      query = query.eq('is_active', true)
+    } else if (filterStatus === 'inactive') {
+      query = query.eq('is_active', false)
+    }
+    if (searchPhone) {
+      query = query.ilike('phone_number', `%${searchPhone}%`)
+    }
+
+    const from = (page - 1) * PAGE_SIZE
+    query = query.range(from, from + PAGE_SIZE - 1)
+
+    const { data: numbersData, count } = await query
     setNumbers((numbersData as NumberWithLink[]) || [])
+    setTotalCount(count || 0)
     setLoading(false)
-  }, [])
+  }, [page, filterPlatform, filterLink, filterStatus, searchPhone])
 
   useEffect(() => {
     fetchData()
   }, [fetchData])
 
-  const filtered = numbers.filter((n) => {
-    if (filterPlatform !== 'all' && getPlatform(n.platform) !== filterPlatform) return false
-    if (filterLink !== 'all' && n.short_link_id !== filterLink) return false
-    if (filterStatus === 'active' && !n.is_active) return false
-    if (filterStatus === 'inactive' && n.is_active) return false
-    if (searchPhone && !n.phone_number.toLowerCase().includes(searchPhone.toLowerCase())) return false
-    return true
-  })
-
-  const totalClicks = filtered.reduce((sum, n) => sum + n.click_count, 0)
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE))
 
   const toggleSelect = (id: string) => {
     setSelected((prev) => {
@@ -98,10 +113,10 @@ export default function NumbersPage() {
   }
 
   const toggleSelectAll = () => {
-    if (selected.size === filtered.length) {
+    if (selected.size === numbers.length) {
       setSelected(new Set())
     } else {
-      setSelected(new Set(filtered.map((n) => n.id)))
+      setSelected(new Set(numbers.map((n) => n.id)))
     }
   }
 
@@ -137,7 +152,7 @@ export default function NumbersPage() {
 
   const handleExport = () => {
     const rows = [['号码ID', '链接URL', '号码', '号码类型', '访问次数', '状态', '备注']]
-    filtered.forEach((n) => {
+    numbers.forEach((n) => {
       rows.push([
         n.id,
         n.short_links?.slug || '',
@@ -238,7 +253,7 @@ export default function NumbersPage() {
         <div className="flex flex-wrap gap-3">
           <select
             value={filterLink}
-            onChange={(e) => setFilterLink(e.target.value)}
+            onChange={(e) => { setFilterLink(e.target.value); setPage(1) }}
             className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none bg-white"
           >
             <option value="all">全部链接</option>
@@ -248,7 +263,7 @@ export default function NumbersPage() {
           </select>
           <select
             value={filterPlatform}
-            onChange={(e) => setFilterPlatform(e.target.value as Platform | 'all')}
+            onChange={(e) => { setFilterPlatform(e.target.value as Platform | 'all'); setPage(1) }}
             className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none bg-white"
           >
             {PLATFORM_OPTIONS.map((opt) => (
@@ -257,7 +272,7 @@ export default function NumbersPage() {
           </select>
           <select
             value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value as 'all' | 'active' | 'inactive')}
+            onChange={(e) => { setFilterStatus(e.target.value as 'all' | 'active' | 'inactive'); setPage(1) }}
             className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none bg-white"
           >
             <option value="all">全部状态</option>
@@ -267,7 +282,7 @@ export default function NumbersPage() {
           <input
             type="text"
             value={searchPhone}
-            onChange={(e) => setSearchPhone(e.target.value)}
+            onChange={(e) => { setSearchPhone(e.target.value); setPage(1) }}
             placeholder="搜索号码..."
             className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none"
           />
@@ -302,7 +317,7 @@ export default function NumbersPage() {
           )}
         </div>
         <div className="text-sm text-gray-500">
-          本页访问次数合计：<span className="font-semibold text-gray-800">{totalClicks}</span>
+          本页访问次数合计：<span className="font-semibold text-gray-800">{numbers.reduce((sum, n) => sum + n.click_count, 0)}</span>
         </div>
       </div>
 
@@ -315,7 +330,7 @@ export default function NumbersPage() {
                 <th className="py-3 px-4">
                   <input
                     type="checkbox"
-                    checked={filtered.length > 0 && selected.size === filtered.length}
+                    checked={numbers.length > 0 && selected.size === numbers.length}
                     onChange={toggleSelectAll}
                     className="rounded"
                   />
@@ -329,14 +344,14 @@ export default function NumbersPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {filtered.length === 0 ? (
+              {numbers.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="py-12 text-center text-gray-400">
                     暂无号码数据
                   </td>
                 </tr>
               ) : (
-                filtered.map((num) => (
+                numbers.map((num) => (
                   <tr key={num.id} className="hover:bg-gray-50">
                     <td className="py-3 px-4">
                       <input
@@ -390,6 +405,31 @@ export default function NumbersPage() {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
+            <span className="text-sm text-gray-500">
+              共 {totalCount} 条，第 {page}/{totalPages} 页
+            </span>
+            <div className="flex gap-1">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg disabled:opacity-40 hover:bg-gray-50 transition-colors"
+              >
+                上一页
+              </button>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg disabled:opacity-40 hover:bg-gray-50 transition-colors"
+              >
+                下一页
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Add Modal */}

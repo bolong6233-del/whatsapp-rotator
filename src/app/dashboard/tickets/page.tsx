@@ -78,12 +78,16 @@ function OnlineStatusBadge({ online }: { online: number }) {
 export default function TicketsPage() {
   const router = useRouter()
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([])
+  const [totalCount, setTotalCount] = useState(0)
+  const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [slugOptions, setSlugOptions] = useState<string[]>([])
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
   const [copiedId, setCopiedId] = useState<string | null>(null)
+
+  const PAGE_SIZE = 10
 
   // Modal state
   const [showModal, setShowModal] = useState(false)
@@ -93,6 +97,8 @@ export default function TicketsPage() {
   // Keep a ref to the latest workOrders to avoid stale closures in the interval
   const workOrdersRef = useRef<WorkOrder[]>([])
   workOrdersRef.current = workOrders
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE))
 
   const fetchSlugs = useCallback(async () => {
     const { data } = await supabase
@@ -109,13 +115,19 @@ export default function TicketsPage() {
       router.push('/login')
       return
     }
-    const res = await fetch('/api/work-orders')
-    if (res.ok) {
-      const data = await res.json()
-      setWorkOrders(data)
+    const from = (page - 1) * PAGE_SIZE
+    const { data, count } = await supabase
+      .from('work_orders')
+      .select('*', { count: 'exact' })
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .range(from, from + PAGE_SIZE - 1)
+    if (data) {
+      setWorkOrders(data as WorkOrder[])
+      setTotalCount(count || 0)
     }
     setLoading(false)
-  }, [router])
+  }, [router, page])
 
   // Sync a single work order by calling /api/sync/yunkon
   const syncWorkOrder = useCallback(async (order: WorkOrder): Promise<Partial<WorkOrder>> => {
@@ -281,7 +293,7 @@ export default function TicketsPage() {
     if (!window.confirm('确认删除该工单？')) return
     const res = await fetch(`/api/work-orders/${id}`, { method: 'DELETE' })
     if (res.ok) {
-      setWorkOrders((prev) => prev.filter((o) => o.id !== id))
+      fetchWorkOrders()
     }
   }
 
@@ -362,7 +374,7 @@ export default function TicketsPage() {
     }
     const newOrder: WorkOrder = await res.json()
 
-    setWorkOrders((prev) => [newOrder, ...prev])
+    fetchWorkOrders()
     setShowModal(false)
 
     // Immediately sync if it's a 云控 order
@@ -434,8 +446,9 @@ export default function TicketsPage() {
           </button>
         </div>
       ) : (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
-          <table className="w-full text-sm">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 text-left text-gray-500">
                 <th className="px-4 py-3 font-medium w-8" />
@@ -583,6 +596,32 @@ export default function TicketsPage() {
               })}
             </tbody>
           </table>
+        </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
+            <span className="text-sm text-gray-500">
+              共 {totalCount} 条，第 {page}/{totalPages} 页
+            </span>
+            <div className="flex gap-1">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg disabled:opacity-40 hover:bg-gray-50 transition-colors"
+              >
+                上一页
+              </button>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg disabled:opacity-40 hover:bg-gray-50 transition-colors"
+              >
+                下一页
+              </button>
+            </div>
+          </div>
+        )}
         </div>
       )}
 

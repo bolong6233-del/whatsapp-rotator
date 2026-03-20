@@ -56,6 +56,33 @@ CREATE TABLE IF NOT EXISTS ticket_messages (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- Work orders table
+CREATE TABLE IF NOT EXISTS work_orders (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  ticket_type VARCHAR(50) NOT NULL,
+  ticket_name VARCHAR(255) NOT NULL,
+  ticket_link TEXT NOT NULL,
+  distribution_link_slug VARCHAR(100),
+  number_type VARCHAR(20) DEFAULT 'whatsapp',
+  start_time TIMESTAMPTZ,
+  end_time TIMESTAMPTZ,
+  total_quantity INTEGER DEFAULT 0,
+  download_ratio INTEGER DEFAULT 0,
+  account VARCHAR(255),
+  password VARCHAR(255),
+  status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'completed', 'expired', 'cancelled')),
+  sync_total_sum INTEGER DEFAULT 0,
+  sync_total_day_sum INTEGER DEFAULT 0,
+  sync_total_numbers INTEGER DEFAULT 0,
+  sync_online_count INTEGER DEFAULT 0,
+  sync_offline_count INTEGER DEFAULT 0,
+  sync_numbers JSONB DEFAULT '[]'::jsonb,
+  last_synced_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
 -- Click logs table
 CREATE TABLE IF NOT EXISTS click_logs (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -72,10 +99,12 @@ CREATE TABLE IF NOT EXISTS click_logs (
 CREATE INDEX IF NOT EXISTS idx_short_links_slug ON short_links(slug);
 CREATE INDEX IF NOT EXISTS idx_short_links_user_id ON short_links(user_id);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_numbers_short_link_id ON whatsapp_numbers(short_link_id);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_numbers_sort ON whatsapp_numbers(sort_order, created_at);
 CREATE INDEX IF NOT EXISTS idx_click_logs_short_link_id ON click_logs(short_link_id);
 CREATE INDEX IF NOT EXISTS idx_click_logs_clicked_at ON click_logs(clicked_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tickets_user_id ON tickets(user_id);
 CREATE INDEX IF NOT EXISTS idx_ticket_messages_ticket_id ON ticket_messages(ticket_id);
+CREATE INDEX IF NOT EXISTS idx_work_orders_user_id ON work_orders(user_id);
 
 -- Updated_at trigger function
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -96,12 +125,18 @@ CREATE TRIGGER update_tickets_updated_at
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
 
+CREATE TRIGGER update_work_orders_updated_at
+  BEFORE UPDATE ON work_orders
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
+
 -- Row Level Security
 ALTER TABLE short_links ENABLE ROW LEVEL SECURITY;
 ALTER TABLE whatsapp_numbers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE click_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tickets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ticket_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE work_orders ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies for short_links
 CREATE POLICY "Users can view own links" ON short_links
@@ -199,6 +234,19 @@ CREATE POLICY "Users can create messages for own tickets" ON ticket_messages
     )
   );
 
+-- RLS Policies for work_orders
+CREATE POLICY "Users can view own work orders" ON work_orders
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can create own work orders" ON work_orders
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own work orders" ON work_orders
+  FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own work orders" ON work_orders
+  FOR DELETE USING (auth.uid() = user_id);
+
 -- Atomic RPC function for polling rotation
 CREATE OR REPLACE FUNCTION increment_and_get_number(p_slug VARCHAR)
 RETURNS TABLE(phone_number VARCHAR, number_id UUID, link_id UUID, platform VARCHAR, tiktok_pixel_enabled BOOLEAN, tiktok_pixel_id VARCHAR, tiktok_access_token VARCHAR, auto_reply_enabled BOOLEAN, auto_reply_messages TEXT, auto_reply_index INTEGER) AS $$
@@ -278,3 +326,11 @@ $$ LANGUAGE plpgsql;
 -- Note: PostgreSQL automatically back-fills the DEFAULT value (0) for existing rows when adding auto_reply_index.
 -- ALTER TABLE whatsapp_numbers DROP CONSTRAINT IF EXISTS whatsapp_numbers_platform_check;
 -- ALTER TABLE whatsapp_numbers ADD CONSTRAINT whatsapp_numbers_platform_check CHECK (platform IN ('whatsapp', 'telegram', 'line', 'custom'));
+-- Migration: add sync columns to existing work_orders table:
+-- ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS sync_total_sum INTEGER DEFAULT 0;
+-- ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS sync_total_day_sum INTEGER DEFAULT 0;
+-- ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS sync_total_numbers INTEGER DEFAULT 0;
+-- ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS sync_online_count INTEGER DEFAULT 0;
+-- ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS sync_offline_count INTEGER DEFAULT 0;
+-- ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS sync_numbers JSONB DEFAULT '[]'::jsonb;
+-- ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS last_synced_at TIMESTAMPTZ;
