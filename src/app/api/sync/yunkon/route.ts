@@ -20,6 +20,13 @@ interface YunkonApiResponse {
   }
 }
 
+class YunkonUpstreamError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'YunkonUpstreamError'
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -65,13 +72,13 @@ export async function POST(request: NextRequest) {
       })
 
       if (!response.ok) {
-        throw new Error(`Yunkon API error: ${response.status}`)
+        throw new YunkonUpstreamError(`Yunkon API error: ${response.status}`)
       }
 
       const json: YunkonApiResponse = await response.json()
 
       if (json.code !== 0) {
-        throw new Error(`Yunkon returned error code: ${json.code}`)
+        throw new YunkonUpstreamError(`Yunkon returned error code: ${json.code}`)
       }
 
       return json
@@ -110,8 +117,8 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (error) {
+    const isUpstream = error instanceof YunkonUpstreamError
     const message = error instanceof Error ? error.message : 'Internal server error'
-    const isUpstream = message.startsWith('Yunkon')
     console.error('[yunkon sync] error:', error)
     return NextResponse.json(
       { success: false, error: message },
