@@ -69,6 +69,15 @@ export interface ClickLog {
 
 export type TicketType = '云控' | '海王SCRM' | '太极云控' | '火箭云控' | 'SaleSmartly-Channel' | 'Salesmartly-Customer' | '译发发SCRM'
 
+export interface SyncNumber {
+  id: number
+  nickname: string
+  user: string
+  online: number
+  sum: number
+  day_sum: number
+}
+
 export interface WorkOrder {
   id: string
   user_id: string
@@ -86,4 +95,12 @@ export interface WorkOrder {
   status: 'active' | 'completed' | 'expired' | 'cancelled'
   created_at: string
   updated_at: string
+  // Sync fields (client-side only, not persisted to DB yet)
+  sync_total_sum?: number
+  sync_total_day_sum?: number
+  sync_total_numbers?: number
+  sync_online_count?: number
+  sync_offline_count?: number
+  sync_numbers?: SyncNumber[]
+  last_synced_at?: string
 }
