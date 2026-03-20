@@ -61,40 +61,47 @@ export default function NumbersPage() {
 
   const fetchData = useCallback(async () => {
     setLoading(true)
-    const { data: linksData } = await supabase
-      .from('short_links')
-      .select('*')
-      .order('created_at', { ascending: false })
+    try {
+      const { data: linksData, error: linksError } = await supabase
+        .from('short_links')
+        .select('*')
+        .order('created_at', { ascending: false })
 
-    setLinks(linksData || [])
+      if (linksError) throw linksError
+      setLinks(linksData || [])
 
-    let query = supabase
-      .from('whatsapp_numbers')
-      .select('*, short_links(id, slug, title)', { count: 'exact' })
-      .order('created_at', { ascending: false })
+      let query = supabase
+        .from('whatsapp_numbers')
+        .select('*, short_links(id, slug, title)', { count: 'exact' })
+        .order('created_at', { ascending: false })
 
-    if (filterPlatform !== 'all') {
-      query = query.eq('platform', filterPlatform)
+      if (filterPlatform !== 'all') {
+        query = query.eq('platform', filterPlatform)
+      }
+      if (filterLink !== 'all') {
+        query = query.eq('short_link_id', filterLink)
+      }
+      if (filterStatus === 'active') {
+        query = query.eq('is_active', true)
+      } else if (filterStatus === 'inactive') {
+        query = query.eq('is_active', false)
+      }
+      if (searchPhone) {
+        query = query.ilike('phone_number', `%${searchPhone}%`)
+      }
+
+      const from = (page - 1) * PAGE_SIZE
+      query = query.range(from, from + PAGE_SIZE - 1)
+
+      const { data: numbersData, count, error } = await query
+      if (error) throw error
+      setNumbers((numbersData as NumberWithLink[]) || [])
+      setTotalCount(count || 0)
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setLoading(false)
     }
-    if (filterLink !== 'all') {
-      query = query.eq('short_link_id', filterLink)
-    }
-    if (filterStatus === 'active') {
-      query = query.eq('is_active', true)
-    } else if (filterStatus === 'inactive') {
-      query = query.eq('is_active', false)
-    }
-    if (searchPhone) {
-      query = query.ilike('phone_number', `%${searchPhone}%`)
-    }
-
-    const from = (page - 1) * PAGE_SIZE
-    query = query.range(from, from + PAGE_SIZE - 1)
-
-    const { data: numbersData, count } = await query
-    setNumbers((numbersData as NumberWithLink[]) || [])
-    setTotalCount(count || 0)
-    setLoading(false)
   }, [page, filterPlatform, filterLink, filterStatus, searchPhone])
 
   useEffect(() => {
