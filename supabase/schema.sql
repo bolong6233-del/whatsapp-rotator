@@ -302,14 +302,14 @@ BEGIN
   -- Update current_index, total_clicks, and auto_reply_index atomically
   UPDATE short_links
   SET current_index = v_next_index,
-      total_clicks = total_clicks + 1,
-      auto_reply_index = auto_reply_index + 1,
+      total_clicks = short_links.total_clicks + 1,
+      auto_reply_index = short_links.auto_reply_index + 1,
       updated_at = now()
   WHERE id = v_link_id;
 
   -- Increment number's click_count
   UPDATE whatsapp_numbers
-  SET click_count = click_count + 1
+  SET click_count = whatsapp_numbers.click_count + 1
   WHERE id = v_number_id;
 
   RETURN QUERY SELECT v_phone_number, v_number_id, v_link_id, v_platform, v_tiktok_pixel_enabled, v_tiktok_pixel_id, v_tiktok_access_token, v_auto_reply_enabled, v_auto_reply_messages, v_auto_reply_index;
