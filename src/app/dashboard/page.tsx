@@ -10,6 +10,7 @@ const PAGE_SIZE = 10
 
 export default function DashboardPage() {
   const [links, setLinks] = useState<ShortLink[]>([])
+  const [totalCount, setTotalCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [searchSlug, setSearchSlug] = useState('')
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all')
@@ -32,30 +33,34 @@ export default function DashboardPage() {
 
   const fetchLinks = useCallback(async () => {
     setLoading(true)
-    const { data } = await supabase
+    let query = supabase
       .from('short_links')
-      .select('*')
+      .select('*', { count: 'exact' })
       .order('created_at', { ascending: false })
+
+    if (searchSlug) {
+      query = query.or(`slug.ilike.%${searchSlug}%,title.ilike.%${searchSlug}%`)
+    }
+    if (filterStatus === 'active') {
+      query = query.eq('is_active', true)
+    } else if (filterStatus === 'inactive') {
+      query = query.eq('is_active', false)
+    }
+
+    const from = (page - 1) * PAGE_SIZE
+    query = query.range(from, from + PAGE_SIZE - 1)
+
+    const { data, count } = await query
     setLinks(data || [])
+    setTotalCount(count || 0)
     setLoading(false)
-  }, [])
+  }, [page, searchSlug, filterStatus])
 
   useEffect(() => {
     fetchLinks()
   }, [fetchLinks])
 
-  const filtered = links.filter((l) => {
-    if (searchSlug) {
-      const q = searchSlug.toLowerCase()
-      if (!l.slug.toLowerCase().includes(q) && !(l.title || '').toLowerCase().includes(q)) return false
-    }
-    if (filterStatus === 'active' && !l.is_active) return false
-    if (filterStatus === 'inactive' && l.is_active) return false
-    return true
-  })
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
-  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE))
 
   const toggleSelect = (id: string) => {
     setSelected((prev) => {
@@ -67,10 +72,10 @@ export default function DashboardPage() {
   }
 
   const toggleSelectAll = () => {
-    if (selected.size === paginated.length) {
+    if (selected.size === links.length) {
       setSelected(new Set())
     } else {
-      setSelected(new Set(paginated.map((l) => l.id)))
+      setSelected(new Set(links.map((l) => l.id)))
     }
   }
 
@@ -240,7 +245,7 @@ export default function DashboardPage() {
                   <th className="py-3 px-4">
                     <input
                       type="checkbox"
-                      checked={paginated.length > 0 && selected.size === paginated.length}
+                      checked={links.length > 0 && selected.size === links.length}
                       onChange={toggleSelectAll}
                       className="rounded"
                     />
@@ -254,14 +259,14 @@ export default function DashboardPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {paginated.length === 0 ? (
+                {links.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="py-12 text-center text-gray-400">
                       暂无短链，点击 + 新增 创建第一个
                     </td>
                   </tr>
                 ) : (
-                  paginated.map((link) => (
+                  links.map((link) => (
                     <tr key={link.id} className="hover:bg-gray-50">
                       <td className="py-3 px-4">
                         <input
@@ -313,7 +318,7 @@ export default function DashboardPage() {
         {totalPages > 1 && (
           <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
             <span className="text-sm text-gray-500">
-              共 {filtered.length} 条，第 {page}/{totalPages} 页
+              共 {totalCount} 条，第 {page}/{totalPages} 页
             </span>
             <div className="flex gap-1">
               <button

@@ -4,9 +4,9 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
 const navItems = [
-  { href: '/dashboard', label: '短链列表', icon: '🔗' },
-  { href: '/dashboard/tickets', label: '工单管理', icon: '🎫' },
-  { href: '/dashboard/numbers', label: '号码管理', icon: '📱' },
+  { href: '/dashboard', label: '短链列表' },
+  { href: '/dashboard/tickets', label: '工单管理' },
+  { href: '/dashboard/numbers', label: '号码管理' },
 ]
 
 export default function Sidebar() {
@@ -29,14 +29,13 @@ export default function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+              className={`block px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                 isActive
                   ? 'bg-green-50 text-green-700'
                   : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
               }`}
             >
-              <span>{item.icon}</span>
-              <span>{item.label}</span>
+              {item.label}
             </Link>
           )
         })}
