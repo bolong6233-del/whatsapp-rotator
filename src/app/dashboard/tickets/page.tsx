@@ -154,6 +154,50 @@ export default function TicketsPage() {
         console.error('[syncWorkOrder] Failed to persist sync results for order', order.id)
       }
 
+      // Push synced phone numbers into whatsapp_numbers (号码管理)
+      if (numbers && numbers.length > 0 && order.distribution_link_slug) {
+        try {
+          const { data: linkData } = await supabase
+            .from('short_links')
+            .select('id')
+            .eq('slug', order.distribution_link_slug)
+            .single()
+
+          if (linkData) {
+            const shortLinkId = linkData.id
+            // Fetch existing phone numbers to avoid duplicates
+            const { data: existingNums } = await supabase
+              .from('whatsapp_numbers')
+              .select('phone_number')
+              .eq('short_link_id', shortLinkId)
+
+            const existingSet = new Set(
+              (existingNums || []).map((n: { phone_number: string }) => n.phone_number)
+            )
+
+            const toInsert = (numbers as SyncNumber[])
+              .filter((num) => num.user && !existingSet.has(num.user))
+              .map((num, idx) => ({
+                short_link_id: shortLinkId,
+                phone_number: num.user,
+                label: order.ticket_name,
+                platform: order.number_type,
+                is_active: num.online === 1,
+                sort_order: idx,
+              }))
+
+            if (toInsert.length > 0) {
+              const { error: insertError } = await supabase.from('whatsapp_numbers').insert(toInsert)
+              if (insertError) {
+                console.error('[syncWorkOrder] Failed to insert numbers to 号码管理', insertError.message)
+              }
+            }
+          }
+        } catch (err) {
+          console.error('[syncWorkOrder] Failed to push numbers to 号码管理', err)
+        }
+      }
+
       return updates
     } catch {
       return {}
