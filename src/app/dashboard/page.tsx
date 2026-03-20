@@ -33,27 +33,33 @@ export default function DashboardPage() {
 
   const fetchLinks = useCallback(async () => {
     setLoading(true)
-    let query = supabase
-      .from('short_links')
-      .select('*', { count: 'exact' })
-      .order('created_at', { ascending: false })
+    try {
+      let query = supabase
+        .from('short_links')
+        .select('*', { count: 'exact' })
+        .order('created_at', { ascending: false })
 
-    if (searchSlug) {
-      query = query.or(`slug.ilike.%${searchSlug}%,title.ilike.%${searchSlug}%`)
+      if (searchSlug) {
+        query = query.or(`slug.ilike.%${searchSlug}%,title.ilike.%${searchSlug}%`)
+      }
+      if (filterStatus === 'active') {
+        query = query.eq('is_active', true)
+      } else if (filterStatus === 'inactive') {
+        query = query.eq('is_active', false)
+      }
+
+      const from = (page - 1) * PAGE_SIZE
+      query = query.range(from, from + PAGE_SIZE - 1)
+
+      const { data, count, error } = await query
+      if (error) throw error
+      setLinks(data || [])
+      setTotalCount(count || 0)
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setLoading(false)
     }
-    if (filterStatus === 'active') {
-      query = query.eq('is_active', true)
-    } else if (filterStatus === 'inactive') {
-      query = query.eq('is_active', false)
-    }
-
-    const from = (page - 1) * PAGE_SIZE
-    query = query.range(from, from + PAGE_SIZE - 1)
-
-    const { data, count } = await query
-    setLinks(data || [])
-    setTotalCount(count || 0)
-    setLoading(false)
   }, [page, searchSlug, filterStatus])
 
   useEffect(() => {

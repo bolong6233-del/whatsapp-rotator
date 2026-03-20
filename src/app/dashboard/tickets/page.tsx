@@ -110,23 +110,30 @@ export default function TicketsPage() {
   }, [])
 
   const fetchWorkOrders = useCallback(async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      router.push('/login')
-      return
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      if (authError) throw authError
+      if (!user) {
+        router.push('/login')
+        return
+      }
+      const from = (page - 1) * PAGE_SIZE
+      const { data, count, error } = await supabase
+        .from('work_orders')
+        .select('*', { count: 'exact' })
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .range(from, from + PAGE_SIZE - 1)
+      if (error) throw error
+      if (data) {
+        setWorkOrders(data as WorkOrder[])
+        setTotalCount(count || 0)
+      }
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setLoading(false)
     }
-    const from = (page - 1) * PAGE_SIZE
-    const { data, count } = await supabase
-      .from('work_orders')
-      .select('*', { count: 'exact' })
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .range(from, from + PAGE_SIZE - 1)
-    if (data) {
-      setWorkOrders(data as WorkOrder[])
-      setTotalCount(count || 0)
-    }
-    setLoading(false)
   }, [router, page])
 
   // Sync a single work order by calling /api/sync/yunkon
