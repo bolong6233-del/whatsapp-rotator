@@ -79,6 +79,7 @@ export default function TicketsPage() {
   const router = useRouter()
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([])
   const [loading, setLoading] = useState(true)
+  const [syncing, setSyncing] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [slugOptions, setSlugOptions] = useState<string[]>([])
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
@@ -194,6 +195,15 @@ export default function TicketsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const handleManualRefresh = async () => {
+    setSyncing(true)
+    try {
+      await syncAllActive()
+    } finally {
+      setSyncing(false)
+    }
+  }
+
   const handleOpenModal = () => {
     setForm(getInitialForm())
     setSubmitError(null)
@@ -271,12 +281,21 @@ export default function TicketsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">工单管理</h1>
-        <button
-          onClick={handleOpenModal}
-          className="px-4 py-2 text-sm bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors"
-        >
-          + 新增
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleManualRefresh}
+            disabled={syncing}
+            className="px-4 py-2 text-sm bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white rounded-lg transition-colors flex items-center gap-1"
+          >
+            {syncing ? '同步中...' : '🔄 刷新'}
+          </button>
+          <button
+            onClick={handleOpenModal}
+            className="px-4 py-2 text-sm bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors"
+          >
+            + 新增
+          </button>
+        </div>
       </div>
 
       {/* Work Order List */}
@@ -307,7 +326,7 @@ export default function TicketsPage() {
                 <th className="px-4 py-3 font-medium">工单总量</th>
                 <th className="px-4 py-3 font-medium">下号比率</th>
                 <th className="px-4 py-3 font-medium">工单账号</th>
-                <th className="px-4 py-3 font-medium">引流总数</th>
+                <th className="px-4 py-3 font-medium">当日引流</th>
                 <th className="px-4 py-3 font-medium">在线号码</th>
                 <th className="px-4 py-3 font-medium">最后同步</th>
                 <th className="px-4 py-3 font-medium">状态</th>
@@ -348,8 +367,8 @@ export default function TicketsPage() {
                       <td className="px-4 py-3">{order.download_ratio}</td>
                       <td className="px-4 py-3">{order.account || '-'}</td>
                       <td className="px-4 py-3">
-                        {order.sync_total_sum !== undefined
-                          ? `${order.sync_total_sum}/${order.total_quantity}`
+                        {order.sync_total_day_sum !== undefined
+                          ? `${order.sync_total_day_sum}/${order.total_quantity}`
                           : '-'}
                       </td>
                       <td className="px-4 py-3">
