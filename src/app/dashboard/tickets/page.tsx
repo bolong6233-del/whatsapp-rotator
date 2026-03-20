@@ -79,6 +79,7 @@ export default function TicketsPage() {
   const router = useRouter()
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([])
   const [loading, setLoading] = useState(true)
+  const [submitError, setSubmitError] = useState<string | null>(null)
   const [slugOptions, setSlugOptions] = useState<string[]>([])
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
 
@@ -106,8 +107,11 @@ export default function TicketsPage() {
       router.push('/login')
       return
     }
-    // Using mock data since work_orders table may not exist yet
-    setWorkOrders([])
+    const res = await fetch('/api/work-orders')
+    if (res.ok) {
+      const data = await res.json()
+      setWorkOrders(data)
+    }
     setLoading(false)
   }, [router])
 
@@ -136,6 +140,16 @@ export default function TicketsPage() {
       // Auto-complete when total_sum reaches the threshold
       if (total_sum >= order.total_quantity && order.total_quantity > 0) {
         updates.status = 'completed'
+      }
+
+      // Persist sync results to the database
+      const persistRes = await fetch(`/api/work-orders/${order.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      })
+      if (!persistRes.ok) {
+        console.error('[syncWorkOrder] Failed to persist sync results for order', order.id)
       }
 
       return updates
@@ -182,31 +196,38 @@ export default function TicketsPage() {
 
   const handleOpenModal = () => {
     setForm(getInitialForm())
+    setSubmitError(null)
     setShowModal(true)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setSubmitError(null)
 
-    const now = new Date().toISOString()
-    const newOrder: WorkOrder = {
-      id: `local-${Date.now()}`,
-      user_id: 'local',
-      ticket_type: form.ticket_type,
-      ticket_name: form.ticket_name,
-      ticket_link: form.ticket_link,
-      distribution_link_slug: form.distribution_link_slug,
-      number_type: form.number_type,
-      start_time: form.start_time,
-      end_time: form.end_time,
-      total_quantity: form.total_quantity,
-      download_ratio: form.download_ratio,
-      account: form.account || null,
-      password: form.password || null,
-      status: 'active',
-      created_at: now,
-      updated_at: now,
+    const res = await fetch('/api/work-orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ticket_type: form.ticket_type,
+        ticket_name: form.ticket_name,
+        ticket_link: form.ticket_link,
+        distribution_link_slug: form.distribution_link_slug,
+        number_type: form.number_type,
+        start_time: form.start_time,
+        end_time: form.end_time,
+        total_quantity: form.total_quantity,
+        download_ratio: form.download_ratio,
+        account: form.account || null,
+        password: form.password || null,
+      }),
+    })
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      setSubmitError(err.error || '创建工单失败，请稍后重试')
+      return
     }
+    const newOrder: WorkOrder = await res.json()
 
     setWorkOrders((prev) => [newOrder, ...prev])
     setShowModal(false)
@@ -580,6 +601,9 @@ export default function TicketsPage() {
               </div>
 
               {/* Footer Buttons */}
+              {submitError && (
+                <p className="text-sm text-red-500 mt-4">{submitError}</p>
+              )}
               <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-100">
                 <button
                   type="button"
