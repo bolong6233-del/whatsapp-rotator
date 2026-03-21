@@ -63,7 +63,9 @@ function parseUserAgent(ua: string | null): {
     os = 'Linux'
   }
 
-  // Browser – order matters: Edge/OPR must precede Chrome; Safari after Chrome
+  // Browser – order matters: Edge/OPR must precede Chrome; Samsung must precede Chrome;
+  // Safari UA always contains "Safari/" but also "Chrome/" when it's actually Chrome,
+  // so Chrome must match before Safari.
   let browser: string | null = null
   if (/Edg\//.test(ua)) {
     browser = 'Edge'
@@ -75,7 +77,7 @@ function parseUserAgent(ua: string | null): {
     browser = 'Chrome'
   } else if (/Firefox\//.test(ua)) {
     browser = 'Firefox'
-  } else if (/Safari\//.test(ua)) {
+  } else if (/Safari\//.test(ua) && !/Chrome\//.test(ua)) {
     browser = 'Safari'
   }
 

@@ -99,29 +99,32 @@ export default function LogsPage() {
     const todayStart = new Date()
     todayStart.setHours(0, 0, 0, 0)
 
-    const [todayRes, deviceRes, countryRes] = await Promise.all([
+    // Use count-only queries for device types to avoid fetching all rows
+    const [todayRes, mobileRes, desktopRes, countryRes] = await Promise.all([
       supabase
         .from('click_logs')
         .select('id', { count: 'exact', head: true })
         .gte('clicked_at', todayStart.toISOString()),
       supabase
         .from('click_logs')
-        .select('device_type'),
+        .select('id', { count: 'exact', head: true })
+        .in('device_type', ['Mobile', 'Tablet']),
       supabase
         .from('click_logs')
-        .select('country'),
+        .select('id', { count: 'exact', head: true })
+        .eq('device_type', 'Desktop'),
+      // Fetch a bounded list of non-null countries and aggregate client-side
+      // (Supabase JS client doesn't support GROUP BY directly without RPC)
+      supabase
+        .from('click_logs')
+        .select('country')
+        .not('country', 'is', null)
+        .limit(2000),
     ])
 
     const todayCount = todayRes.count ?? 0
-
-    let mobileCount = 0
-    let desktopCount = 0
-    if (deviceRes.data) {
-      for (const row of deviceRes.data as { device_type: string | null }[]) {
-        if (row.device_type === 'Mobile' || row.device_type === 'Tablet') mobileCount++
-        else if (row.device_type === 'Desktop') desktopCount++
-      }
-    }
+    const mobileCount = mobileRes.count ?? 0
+    const desktopCount = desktopRes.count ?? 0
 
     let topCountry: string | null = null
     if (countryRes.data) {
