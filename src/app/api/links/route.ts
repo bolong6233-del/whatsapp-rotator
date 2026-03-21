@@ -33,15 +33,25 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json()
-  const { slug, title, description, numbers } = body
+  const { slug, title, description, numbers, tiktok_pixel_enabled, tiktok_pixel_id, tiktok_access_token } = body
 
   if (!slug) {
     return NextResponse.json({ error: '短链后缀不能为空' }, { status: 400 })
   }
 
+  const pixelEnabled = Boolean(tiktok_pixel_enabled)
+
   const { data: link, error: linkError } = await supabase
     .from('short_links')
-    .insert({ slug, title, description, user_id: user.id })
+    .insert({
+      slug,
+      title,
+      description,
+      user_id: user.id,
+      tiktok_pixel_enabled: pixelEnabled,
+      tiktok_pixel_id: pixelEnabled ? (tiktok_pixel_id ?? null) : null,
+      tiktok_access_token: pixelEnabled && tiktok_access_token ? tiktok_access_token : null,
+    })
     .select()
     .single()
 
