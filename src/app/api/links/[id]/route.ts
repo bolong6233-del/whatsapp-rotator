@@ -41,12 +41,24 @@ export async function PUT(
   }
 
   const body = await request.json()
-  const { title, description, is_active } = body
+  const { title, description, is_active, tiktok_pixel_enabled, tiktok_pixel_id, tiktok_access_token } = body
+
+  const pixelEnabled = tiktok_pixel_enabled !== undefined ? Boolean(tiktok_pixel_enabled) : undefined
+
+  const updatePayload: Record<string, unknown> = {}
+  if (title !== undefined) updatePayload.title = title
+  if (description !== undefined) updatePayload.description = description
+  if (is_active !== undefined) updatePayload.is_active = is_active
+  if (pixelEnabled !== undefined) {
+    updatePayload.tiktok_pixel_enabled = pixelEnabled
+    updatePayload.tiktok_pixel_id = pixelEnabled ? (tiktok_pixel_id ?? null) : null
+    updatePayload.tiktok_access_token = pixelEnabled && tiktok_access_token ? tiktok_access_token : null
+  }
 
   const { id } = await params
   const { data, error } = await supabase
     .from('short_links')
-    .update({ title, description, is_active })
+    .update(updatePayload)
     .eq('id', id)
     .eq('user_id', user.id)
     .select()
