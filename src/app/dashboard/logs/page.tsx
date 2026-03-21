@@ -12,14 +12,112 @@
  *   ALTER TABLE click_logs ADD COLUMN IF NOT EXISTS device_type TEXT;
  */
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase-client'
 import { formatDate } from '@/lib/utils'
 import type { ClickLog } from '@/types'
 import Pagination from '@/components/ui/Pagination'
 
-function escapeLikePattern(value: string): string {
-  return value.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
+interface ShortLinkOption {
+  id: string
+  slug: string
+  title: string | null
+}
+
+/** Searchable dropdown for selecting a short link filter. */
+function ShortLinkSelect({
+  options,
+  value,
+  onChange,
+}: {
+  options: ShortLinkOption[]
+  value: string
+  onChange: (slug: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false)
+        setSearch('')
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const filtered = options.filter((o) => {
+    const q = search.toLowerCase()
+    return (
+      o.slug.toLowerCase().includes(q) ||
+      (o.title && o.title.toLowerCase().includes(q))
+    )
+  })
+
+  const selectedOption = options.find((o) => o.slug === value)
+  const displayLabel = selectedOption
+    ? `${selectedOption.title ? `${selectedOption.title} · ` : ''}${selectedOption.slug}`
+    : '全部短链'
+
+  return (
+    <div ref={ref} className="relative min-w-56">
+      <button
+        type="button"
+        onClick={() => { setOpen((prev) => !prev); setSearch('') }}
+        className="w-full flex items-center justify-between gap-2 px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white hover:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors"
+      >
+        <span className={value ? 'text-gray-900' : 'text-gray-400'}>{displayLabel}</span>
+        <svg className={`w-4 h-4 text-gray-400 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+          <div className="p-2 border-b border-gray-100">
+            <input
+              autoFocus
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="搜索短链..."
+              className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-green-500"
+            />
+          </div>
+          <ul className="max-h-56 overflow-y-auto">
+            <li>
+              <button
+                type="button"
+                onClick={() => { onChange(''); setOpen(false); setSearch('') }}
+                className={`w-full text-left px-3 py-2 text-sm hover:bg-green-50 transition-colors ${!value ? 'text-green-600 font-medium bg-green-50' : 'text-gray-700'}`}
+              >
+                全部短链
+              </button>
+            </li>
+            {filtered.length === 0 ? (
+              <li className="px-3 py-2 text-sm text-gray-400">无匹配结果</li>
+            ) : (
+              filtered.map((o) => (
+                <li key={o.id}>
+                  <button
+                    type="button"
+                    onClick={() => { onChange(o.slug); setOpen(false); setSearch('') }}
+                    className={`w-full text-left px-3 py-2 text-sm hover:bg-green-50 transition-colors ${value === o.slug ? 'text-green-600 font-medium bg-green-50' : 'text-gray-700'}`}
+                  >
+                    <span className="font-mono text-xs bg-gray-100 px-1 py-0.5 rounded mr-1.5">{o.slug}</span>
+                    {o.title && <span className="text-gray-500">{o.title}</span>}
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
 }
 
 /** Shorten a referer URL to its hostname (or a friendly label). */
@@ -92,34 +190,80 @@ export default function LogsPage() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [filterSlug, setFilterSlug] = useState('')
-  const [filterSlugInput, setFilterSlugInput] = useState('')
   const [stats, setStats] = useState<Stats | null>(null)
+  const [shortLinks, setShortLinks] = useState<ShortLinkOption[]>([])
 
-  const fetchStats = useCallback(async () => {
+  useEffect(() => {
+    supabase
+      .from('short_links')
+      .select('id, slug, title')
+      .order('created_at', { ascending: false })
+      .then(({ data }) => {
+        if (data) setShortLinks(data as ShortLinkOption[])
+      })
+  }, [])
+
+  const fetchStats = useCallback(async (slug: string) => {
     const todayStart = new Date()
     todayStart.setHours(0, 0, 0, 0)
 
-    // Use count-only queries for device types to avoid fetching all rows
     const [todayRes, mobileRes, desktopRes, countryRes] = await Promise.all([
-      supabase
-        .from('click_logs')
-        .select('id', { count: 'exact', head: true })
-        .gte('clicked_at', todayStart.toISOString()),
-      supabase
-        .from('click_logs')
-        .select('id', { count: 'exact', head: true })
-        .in('device_type', ['Mobile', 'Tablet']),
-      supabase
-        .from('click_logs')
-        .select('id', { count: 'exact', head: true })
-        .eq('device_type', 'Desktop'),
-      // Fetch a bounded list of non-null countries and aggregate client-side
-      // (Supabase JS client doesn't support GROUP BY directly without RPC)
-      supabase
-        .from('click_logs')
-        .select('country')
-        .not('country', 'is', null)
-        .limit(2000),
+      (() => {
+        if (slug) {
+          return supabase
+            .from('click_logs')
+            .select('id, short_links!inner(slug)', { count: 'exact', head: true })
+            .gte('clicked_at', todayStart.toISOString())
+            .eq('short_links.slug', slug)
+        }
+        return supabase
+          .from('click_logs')
+          .select('id', { count: 'exact', head: true })
+          .gte('clicked_at', todayStart.toISOString())
+      })(),
+      (() => {
+        if (slug) {
+          return supabase
+            .from('click_logs')
+            .select('id, short_links!inner(slug)', { count: 'exact', head: true })
+            .in('device_type', ['Mobile', 'Tablet'])
+            .eq('short_links.slug', slug)
+        }
+        return supabase
+          .from('click_logs')
+          .select('id', { count: 'exact', head: true })
+          .in('device_type', ['Mobile', 'Tablet'])
+      })(),
+      (() => {
+        if (slug) {
+          return supabase
+            .from('click_logs')
+            .select('id, short_links!inner(slug)', { count: 'exact', head: true })
+            .eq('device_type', 'Desktop')
+            .eq('short_links.slug', slug)
+        }
+        return supabase
+          .from('click_logs')
+          .select('id', { count: 'exact', head: true })
+          .eq('device_type', 'Desktop')
+      })(),
+      (() => {
+        // Fetch a bounded list of non-null countries and aggregate client-side
+        // (Supabase JS client doesn't support GROUP BY directly without RPC)
+        if (slug) {
+          return supabase
+            .from('click_logs')
+            .select('country, short_links!inner(slug)')
+            .not('country', 'is', null)
+            .eq('short_links.slug', slug)
+            .limit(2000)
+        }
+        return supabase
+          .from('click_logs')
+          .select('country')
+          .not('country', 'is', null)
+          .limit(2000)
+      })(),
     ])
 
     const todayCount = todayRes.count ?? 0
@@ -151,7 +295,7 @@ export default function LogsPage() {
       .range(from, to)
 
     if (filterSlug) {
-      query = query.ilike('short_links.slug', `%${escapeLikePattern(filterSlug)}%`)
+      query = query.eq('short_links.slug', filterSlug)
     }
 
     const { data, count, error } = await query
@@ -165,17 +309,11 @@ export default function LogsPage() {
 
   useEffect(() => {
     fetchLogs()
-    fetchStats()
-  }, [fetchLogs, fetchStats])
+    fetchStats(filterSlug)
+  }, [fetchLogs, fetchStats, filterSlug])
 
-  const handleSearch = () => {
-    setFilterSlug(filterSlugInput.trim())
-    setPage(1)
-  }
-
-  const handleReset = () => {
-    setFilterSlugInput('')
-    setFilterSlug('')
+  const handleFilterChange = (slug: string) => {
+    setFilterSlug(slug)
     setPage(1)
   }
 
@@ -194,11 +332,15 @@ export default function LogsPage() {
       {/* Stats cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-          <p className="text-xs text-gray-500 mb-1">今日点击</p>
+          <p className="text-xs text-gray-500 mb-1">
+            今日点击{filterSlug && <span className="ml-1 text-green-600">· {filterSlug}</span>}
+          </p>
           <p className="text-3xl font-bold text-gray-900">{stats?.todayCount ?? '—'}</p>
         </div>
         <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-          <p className="text-xs text-gray-500 mb-1">手机端占比</p>
+          <p className="text-xs text-gray-500 mb-1">
+            手机端占比{filterSlug && <span className="ml-1 text-green-600">· {filterSlug}</span>}
+          </p>
           <p className="text-3xl font-bold text-gray-900">
             {mobileRatio !== null ? `${mobileRatio}%` : '—'}
           </p>
@@ -209,33 +351,28 @@ export default function LogsPage() {
           )}
         </div>
         <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-          <p className="text-xs text-gray-500 mb-1">最多访问国家</p>
+          <p className="text-xs text-gray-500 mb-1">
+            最多访问国家{filterSlug && <span className="ml-1 text-green-600">· {filterSlug}</span>}
+          </p>
           <p className="text-3xl font-bold text-gray-900">{stats?.topCountry ?? '—'}</p>
         </div>
       </div>
 
       {/* Filter bar */}
       <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center gap-3 flex-wrap">
-        <input
-          type="text"
-          value={filterSlugInput}
-          onChange={(e) => setFilterSlugInput(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-          placeholder="搜索短链后缀..."
-          className="flex-1 min-w-48 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none"
+        <ShortLinkSelect
+          options={shortLinks}
+          value={filterSlug}
+          onChange={handleFilterChange}
         />
-        <button
-          onClick={handleSearch}
-          className="px-4 py-2 text-sm bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors"
-        >
-          搜索
-        </button>
-        <button
-          onClick={handleReset}
-          className="px-4 py-2 text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-        >
-          重置
-        </button>
+        {filterSlug && (
+          <button
+            onClick={() => handleFilterChange('')}
+            className="px-4 py-2 text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+          >
+            重置
+          </button>
+        )}
       </div>
 
       {/* Logs table */}
