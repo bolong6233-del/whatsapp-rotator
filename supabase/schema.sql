@@ -92,8 +92,20 @@ CREATE TABLE IF NOT EXISTS click_logs (
   user_agent TEXT,
   referer TEXT,
   country VARCHAR(10),
+  city TEXT,
+  os TEXT,
+  browser TEXT,
+  device_type TEXT,
   clicked_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- Migration: run these ALTER TABLE commands once in Supabase SQL Editor if the
+-- table already exists without the newer columns:
+--
+--   ALTER TABLE click_logs ADD COLUMN IF NOT EXISTS city TEXT;
+--   ALTER TABLE click_logs ADD COLUMN IF NOT EXISTS os TEXT;
+--   ALTER TABLE click_logs ADD COLUMN IF NOT EXISTS browser TEXT;
+--   ALTER TABLE click_logs ADD COLUMN IF NOT EXISTS device_type TEXT;
 
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_short_links_slug ON short_links(slug);

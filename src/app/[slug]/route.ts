@@ -25,6 +25,65 @@ const RESERVED_SLUGS = [
   'public',
 ]
 
+/**
+ * Lightweight User-Agent parser.
+ * Extracts OS, browser, and device type without any external dependency.
+ * Safe for use in Edge Runtime.
+ */
+function parseUserAgent(ua: string | null): {
+  os: string | null
+  browser: string | null
+  device_type: string | null
+} {
+  if (!ua) return { os: null, browser: null, device_type: null }
+
+  // Device type – check mobile/tablet signals before desktop fallback
+  let device_type: string
+  if (/Mobile|iPhone|iPod|Android.*Mobile|Windows Phone/.test(ua)) {
+    device_type = 'Mobile'
+  } else if (/iPad|Android(?!.*Mobile)|Tablet/.test(ua)) {
+    device_type = 'Tablet'
+  } else {
+    device_type = 'Desktop'
+  }
+
+  // Operating system
+  let os: string | null = null
+  if (/iPhone|iPod/.test(ua)) {
+    os = 'iOS'
+  } else if (/iPad/.test(ua)) {
+    os = 'iPadOS'
+  } else if (/Android/.test(ua)) {
+    os = 'Android'
+  } else if (/Windows/.test(ua)) {
+    os = 'Windows'
+  } else if (/Mac OS X/.test(ua)) {
+    os = 'macOS'
+  } else if (/Linux/.test(ua)) {
+    os = 'Linux'
+  }
+
+  // Browser – order matters: Edge/OPR must precede Chrome; Samsung must precede Chrome;
+  // Safari UA always contains "Safari/" but also "Chrome/" when it's actually Chrome,
+  // so Chrome must match before Safari.
+  let browser: string | null = null
+  if (/Edg\//.test(ua)) {
+    browser = 'Edge'
+  } else if (/OPR\/|Opera/.test(ua)) {
+    browser = 'Opera'
+  } else if (/SamsungBrowser/.test(ua)) {
+    browser = 'Samsung'
+  } else if (/Chrome\//.test(ua)) {
+    browser = 'Chrome'
+  } else if (/Firefox\//.test(ua)) {
+    browser = 'Firefox'
+  } else if (/Safari\//.test(ua) && !/Chrome\//.test(ua)) {
+    browser = 'Safari'
+  }
+
+  return { os, browser, device_type }
+}
+
 function buildRedirectUrl(phoneNumber: string, platform: string, autoReplyMessage?: string): string {
   const clean = phoneNumber.trim()
   switch (platform) {
@@ -115,6 +174,7 @@ export async function GET(
   const city = rawCity ? decodeURIComponent(rawCity) : null
 
   // Log the click asynchronously (don't await)
+  const { os, browser, device_type } = parseUserAgent(userAgent)
   supabase.from('click_logs').insert({
     short_link_id: link_id,
     whatsapp_number_id: number_id,
@@ -123,6 +183,9 @@ export async function GET(
     referer: referer,
     country: country,
     city: city,
+    os: os,
+    browser: browser,
+    device_type: device_type,
   }).then(({ error: logError }) => {
     if (logError) {
       console.error('[click_logs] Failed to insert click log:', logError.message)

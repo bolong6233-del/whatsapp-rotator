@@ -61,6 +61,9 @@ export interface ClickLog {
   referer: string | null
   country: string | null
   city: string | null
+  os: string | null
+  browser: string | null
+  device_type: string | null
   clicked_at: string
   whatsapp_numbers?: {
     phone_number: string
