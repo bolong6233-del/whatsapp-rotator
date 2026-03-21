@@ -105,6 +105,11 @@ export async function GET(
   const userAgent = request.headers.get('user-agent') || null
   const referer = request.headers.get('referer') || null
 
+  // Geo data from Vercel edge headers (populated automatically on Vercel deployments)
+  const country = request.headers.get('x-vercel-ip-country') || null
+  const rawCity = request.headers.get('x-vercel-ip-city')
+  const city = rawCity ? decodeURIComponent(rawCity) : null
+
   // Log the click asynchronously (don't await)
   supabase.from('click_logs').insert({
     short_link_id: link_id,
@@ -112,6 +117,8 @@ export async function GET(
     ip_address: ip,
     user_agent: userAgent,
     referer: referer,
+    country: country,
+    city: city,
   }).then(({ error: logError }) => {
     if (logError) {
       console.error('[click_logs] Failed to insert click log:', logError.message)

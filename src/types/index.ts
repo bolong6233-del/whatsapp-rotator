@@ -60,10 +60,15 @@ export interface ClickLog {
   user_agent: string | null
   referer: string | null
   country: string | null
+  city: string | null
   clicked_at: string
   whatsapp_numbers?: {
     phone_number: string
     label: string | null
+  }
+  short_links?: {
+    slug: string
+    title: string | null
   }
 }
 
