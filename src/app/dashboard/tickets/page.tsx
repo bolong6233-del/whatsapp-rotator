@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase-client'
 import { formatDate } from '@/lib/utils'
 import type { WorkOrder, TicketType, Platform, SyncNumber } from '@/types'
+import Pagination from '@/components/ui/Pagination'
 
 const TICKET_TYPES: TicketType[] = [
   '云控',
@@ -80,14 +81,13 @@ export default function TicketsPage() {
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([])
   const [totalCount, setTotalCount] = useState(0)
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [slugOptions, setSlugOptions] = useState<string[]>([])
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
   const [copiedId, setCopiedId] = useState<string | null>(null)
-
-  const PAGE_SIZE = 10
 
   // Modal state
   const [showModal, setShowModal] = useState(false)
@@ -97,8 +97,6 @@ export default function TicketsPage() {
   // Keep a ref to the latest workOrders to avoid stale closures in the interval
   const workOrdersRef = useRef<WorkOrder[]>([])
   workOrdersRef.current = workOrders
-
-  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE))
 
   const fetchSlugs = useCallback(async () => {
     const { data } = await supabase
@@ -117,13 +115,13 @@ export default function TicketsPage() {
         router.push('/login')
         return
       }
-      const from = (page - 1) * PAGE_SIZE
+      const from = (page - 1) * pageSize
       const { data, count, error } = await supabase
         .from('work_orders')
         .select('*', { count: 'exact' })
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
-        .range(from, from + PAGE_SIZE - 1)
+        .range(from, from + pageSize - 1)
       if (error) throw error
       if (data) {
         setWorkOrders(data as WorkOrder[])
@@ -134,7 +132,7 @@ export default function TicketsPage() {
     } finally {
       setLoading(false)
     }
-  }, [router, page])
+  }, [router, page, pageSize])
 
   // Sync a single work order by calling /api/sync/yunkon
   const syncWorkOrder = useCallback(async (order: WorkOrder): Promise<Partial<WorkOrder>> => {
@@ -316,6 +314,26 @@ export default function TicketsPage() {
       setWorkOrders((prev) =>
         prev.map((o) => (o.id === order.id ? { ...o, status: newStatus } : o))
       )
+
+      // When closing a work order, deactivate all associated WhatsApp numbers
+      if (newStatus === 'cancelled' && order.distribution_link_slug) {
+        try {
+          const { data: linkData } = await supabase
+            .from('short_links')
+            .select('id')
+            .eq('slug', order.distribution_link_slug)
+            .single()
+
+          if (linkData) {
+            await supabase
+              .from('whatsapp_numbers')
+              .update({ is_active: false })
+              .eq('short_link_id', linkData.id)
+          }
+        } catch (err) {
+          console.error('[handleToggleStatus] Failed to deactivate numbers for slug', order.distribution_link_slug, err)
+        }
+      }
     }
   }
 
@@ -606,29 +624,13 @@ export default function TicketsPage() {
         </div>
 
         {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
-            <span className="text-sm text-gray-500">
-              共 {totalCount} 条，第 {page}/{totalPages} 页
-            </span>
-            <div className="flex gap-1">
-              <button
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg disabled:opacity-40 hover:bg-gray-50 transition-colors"
-              >
-                上一页
-              </button>
-              <button
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={page === totalPages}
-                className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg disabled:opacity-40 hover:bg-gray-50 transition-colors"
-              >
-                下一页
-              </button>
-            </div>
-          </div>
-        )}
+        <Pagination
+          page={page}
+          pageSize={pageSize}
+          totalCount={totalCount}
+          onPageChange={setPage}
+          onPageSizeChange={(s) => { setPageSize(s); setPage(1) }}
+        />
         </div>
       )}
 

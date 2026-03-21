@@ -92,6 +92,9 @@ export async function GET(
     number_id,
     link_id,
     platform,
+    tiktok_pixel_enabled,
+    tiktok_pixel_id,
+    tiktok_access_token,
     auto_reply_enabled,
     auto_reply_messages,
     auto_reply_index,
@@ -114,6 +117,36 @@ export async function GET(
       console.error('[click_logs] Failed to insert click log:', logError.message)
     }
   })
+
+  // Fire TikTok Events API (S2S) asynchronously if pixel is configured
+  if (tiktok_pixel_enabled && tiktok_pixel_id && tiktok_access_token) {
+    const pageUrl = request.url
+    const eventId = `${link_id}-${Date.now()}`
+    const tiktokPayload = {
+      pixel_code: tiktok_pixel_id as string,
+      event: 'Contact',
+      event_id: eventId,
+      timestamp: new Date().toISOString(),
+      context: {
+        page: { url: pageUrl },
+        ip: ip || undefined,
+        user_agent: userAgent || undefined,
+      },
+    }
+    fetch(
+      `https://business-api.tiktok.com/open_api/v1.3/pixel/track/`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Token': tiktok_access_token as string,
+        },
+        body: JSON.stringify(tiktokPayload),
+      }
+    ).catch((err) => {
+      console.error('[TikTok Events API] Failed to send event:', err)
+    })
+  }
 
   // Determine auto-reply message (only for WhatsApp)
   let autoReplyMessage: string | undefined
