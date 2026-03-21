@@ -7,6 +7,10 @@ export const dynamic = 'force-dynamic'
 // Fallback: redirect to WhatsApp with empty phone (shows friendly error page)
 const WHATSAPP_FALLBACK = 'https://api.whatsapp.com/send/?phone='
 
+// Delay (ms) before redirecting when a TikTok Pixel page is rendered,
+// giving the pixel script enough time to fire before navigation.
+const TIKTOK_PIXEL_REDIRECT_DELAY_MS = 500
+
 // Paths that must not be intercepted by the slug handler
 const RESERVED_SLUGS = [
   'dashboard',
@@ -169,6 +173,48 @@ export async function GET(
 
   const redirectUrl = buildRedirectUrl(phone_number, platform || 'whatsapp', autoReplyMessage)
 
-  // Always 302 redirect - never return JSON or HTML
+  // If a client-side TikTok Pixel is configured, return an intermediate HTML page
+  // that fires the pixel before performing the redirect. A plain 302 would cause
+  // the browser to navigate away before the pixel script has a chance to execute.
+  if (tiktok_pixel_enabled && tiktok_pixel_id) {
+    // JSON.stringify escapes the values so they are safe to embed inside a JS string literal.
+    const safePixelId = JSON.stringify(tiktok_pixel_id as string)
+    const safeRedirectUrl = JSON.stringify(redirectUrl)
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta name="robots" content="noindex,nofollow" />
+<script>
+!function(w,d,t){
+  w.TiktokAnalyticsObject=t;
+  var ttq=w[t]=w[t]||[];
+  ttq.methods=["page","track","identify","instances","debug","on","off","once","ready","alias","group","enableCookie","disableCookie"];
+  ttq.setAndDefer=function(t,e){t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}};
+  for(var i=0;i<ttq.methods.length;i++)ttq.setAndDefer(ttq,ttq.methods[i]);
+  ttq.instance=function(t){for(var e=ttq._i[t]||[],n=0;n<ttq.methods.length;n++)ttq.setAndDefer(e,ttq.methods[n]);return e};
+  ttq.load=function(e,n){
+    var i="https://analytics.tiktok.com/i18n/pixel/events.js";
+    ttq._i=ttq._i||{},ttq._i[e]=[],ttq._i[e]._u=i,ttq._t=ttq._t||{},ttq._t[e]=+new Date,ttq._o=ttq._o||{},ttq._o[e]=n||{};
+    var o=document.createElement("script");o.type="text/javascript",o.async=!0,o.src=i+"?sdkid="+e+"&lib="+t;
+    var a=document.getElementsByTagName("script")[0];a.parentNode.insertBefore(o,a)
+  };
+  ttq.load(${safePixelId});
+  ttq.page();
+}(window,document,"ttq");
+setTimeout(function(){window.location.href=${safeRedirectUrl};},${TIKTOK_PIXEL_REDIRECT_DELAY_MS});
+</script>
+</head>
+<body>
+<p>正在为您跳转，请稍候...</p>
+</body>
+</html>`
+    return new Response(html, {
+      status: 200,
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+    })
+  }
+
+  // No pixel configured — plain 302 redirect
   return NextResponse.redirect(redirectUrl, { status: 302 })
 }
