@@ -201,6 +201,7 @@ export async function GET(
   };
   ttq.load(${safePixelId});
   ttq.page();
+  ttq.track('SubmitForm');
 }(window,document,"ttq");
 setTimeout(function(){window.location.href=${safeRedirectUrl};},${TIKTOK_PIXEL_REDIRECT_DELAY_MS});
 </script>
