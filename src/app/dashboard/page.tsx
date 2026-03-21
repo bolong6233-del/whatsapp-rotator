@@ -1,15 +1,118 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase-client'
 import { generateSlug, getBaseUrl } from '@/lib/utils'
 import type { ShortLink } from '@/types'
 import Link from 'next/link'
 import Pagination from '@/components/ui/Pagination'
 
+interface ShortLinkOption {
+  id: string
+  slug: string
+  title: string | null
+}
+
+/** Searchable dropdown for selecting a short link filter. */
+function ShortLinkSelect({
+  options,
+  value,
+  onChange,
+}: {
+  options: ShortLinkOption[]
+  value: string
+  onChange: (slug: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false)
+        setSearch('')
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const filtered = options.filter((o) => {
+    const q = search.toLowerCase()
+    return (
+      o.slug.toLowerCase().includes(q) ||
+      (o.title && o.title.toLowerCase().includes(q))
+    )
+  })
+
+  const selectedOption = options.find((o) => o.slug === value)
+  const displayLabel = selectedOption
+    ? `${selectedOption.title ? `${selectedOption.title} · ` : ''}${selectedOption.slug}`
+    : '搜索链接 URL 或标题...'
+
+  return (
+    <div ref={ref} className="relative flex-1 min-w-48">
+      <button
+        type="button"
+        onClick={() => { setOpen((prev) => !prev); setSearch('') }}
+        className="w-full flex items-center justify-between gap-2 px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white hover:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors"
+      >
+        <span className={value ? 'text-gray-900' : 'text-gray-400'}>{displayLabel}</span>
+        <svg className={`w-4 h-4 text-gray-400 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+          <div className="p-2 border-b border-gray-100">
+            <input
+              autoFocus
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="搜索短链..."
+              className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-green-500"
+            />
+          </div>
+          <ul className="max-h-56 overflow-y-auto">
+            <li>
+              <button
+                type="button"
+                onClick={() => { onChange(''); setOpen(false); setSearch('') }}
+                className={`w-full text-left px-3 py-2 text-sm hover:bg-green-50 transition-colors ${!value ? 'text-green-600 font-medium bg-green-50' : 'text-gray-700'}`}
+              >
+                全部短链
+              </button>
+            </li>
+            {filtered.length === 0 ? (
+              <li className="px-3 py-2 text-sm text-gray-400">无匹配结果</li>
+            ) : (
+              filtered.map((o) => (
+                <li key={o.id}>
+                  <button
+                    type="button"
+                    onClick={() => { onChange(o.slug); setOpen(false); setSearch('') }}
+                    className={`w-full text-left px-3 py-2 text-sm hover:bg-green-50 transition-colors ${value === o.slug ? 'text-green-600 font-medium bg-green-50' : 'text-gray-700'}`}
+                  >
+                    <span className="font-mono text-xs bg-gray-100 px-1 py-0.5 rounded mr-1.5">{o.slug}</span>
+                    {o.title && <span className="text-gray-500">{o.title}</span>}
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function DashboardPage() {
   const [links, setLinks] = useState<ShortLink[]>([])
   const [totalCount, setTotalCount] = useState(0)
+  const [allLinks, setAllLinks] = useState<ShortLinkOption[]>([])
   const [loading, setLoading] = useState(true)
   const [searchSlug, setSearchSlug] = useState('')
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all')
@@ -31,6 +134,16 @@ export default function DashboardPage() {
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState('')
 
+  useEffect(() => {
+    supabase
+      .from('short_links')
+      .select('id, slug, title')
+      .order('created_at', { ascending: false })
+      .then(({ data }) => {
+        if (data) setAllLinks(data as ShortLinkOption[])
+      })
+  }, [])
+
   const fetchLinks = useCallback(async () => {
     setLoading(true)
     try {
@@ -40,7 +153,7 @@ export default function DashboardPage() {
         .order('created_at', { ascending: false })
 
       if (searchSlug) {
-        query = query.or(`slug.ilike.%${searchSlug}%,title.ilike.%${searchSlug}%`)
+        query = query.eq('slug', searchSlug)
       }
       if (filterStatus === 'active') {
         query = query.eq('is_active', true)
@@ -180,12 +293,10 @@ export default function DashboardPage() {
       {/* Search & Filter Bar */}
       <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
         <div className="flex flex-wrap gap-3 items-center">
-          <input
-            type="text"
+          <ShortLinkSelect
+            options={allLinks}
             value={searchSlug}
-            onChange={(e) => { setSearchSlug(e.target.value); setPage(1) }}
-            placeholder="搜索链接 URL 或标题..."
-            className="flex-1 min-w-48 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none"
+            onChange={(slug) => { setSearchSlug(slug); setPage(1) }}
           />
           <select
             value={filterStatus}
