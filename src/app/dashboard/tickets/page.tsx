@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase-client'
 import { formatDate } from '@/lib/utils'
-import type { WorkOrder, TicketType, Platform } from '@/types'
+import type { WorkOrder, TicketType, Platform, SyncNumber } from '@/types'
+import Pagination from '@/components/ui/Pagination'
 
-const TICKET_TYPE_OPTIONS: TicketType[] = [
+const TICKET_TYPES: TicketType[] = [
   '云控',
   '海王SCRM',
   '太极云控',
@@ -16,73 +17,290 @@ const TICKET_TYPE_OPTIONS: TicketType[] = [
   '译发发SCRM',
 ]
 
+const NUMBER_TYPES: { value: Platform; label: string }[] = [
+  { value: 'whatsapp', label: 'WhatsApp' },
+  { value: 'telegram', label: 'Telegram' },
+  { value: 'line', label: 'Line' },
+  { value: 'custom', label: 'Custom' },
+]
+
 const STATUS_LABELS: Record<string, string> = {
   active: '进行中',
   completed: '已完成',
-  expired: '已过期',
+  expired: '已到期',
   cancelled: '已取消',
 }
 
 const STATUS_COLORS: Record<string, string> = {
   active: 'bg-green-100 text-green-700',
   completed: 'bg-blue-100 text-blue-700',
-  expired: 'bg-gray-100 text-gray-600',
-  cancelled: 'bg-red-100 text-red-600',
+  expired: 'bg-gray-100 text-gray-500',
+  cancelled: 'bg-red-100 text-red-700',
 }
 
-const PLATFORM_OPTIONS: { value: Platform; label: string }[] = [
-  { value: 'whatsapp', label: 'WhatsApp' },
-  { value: 'telegram', label: 'Telegram' },
-  { value: 'line', label: 'LINE' },
-  { value: 'custom', label: '自定义' },
-]
+function getNow(): string {
+  const d = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
 
-export default function WorkOrdersPage() {
+function getNowPlus24h(): string {
+  const d = new Date(Date.now() + 24 * 60 * 60 * 1000)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function getInitialForm() {
+  return {
+    ticket_type: '云控' as TicketType,
+    ticket_name: '',
+    ticket_link: '',
+    distribution_link_slug: '',
+    number_type: 'whatsapp' as Platform,
+    start_time: getNow(),
+    end_time: getNowPlus24h(),
+    total_quantity: 0,
+    download_ratio: 0,
+    account: '',
+    password: '',
+  }
+}
+
+const TABLE_COL_COUNT = 15 // total columns: 1 expand arrow + 14 data columns
+
+function OnlineStatusBadge({ online }: { online: number }) {
+  if (online === 1) {
+    return <span className="inline-flex items-center gap-1 text-green-600 font-medium"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" />在线</span>
+  }
+  const label = online === 0 ? '无号码' : online === 2 ? '异常' : '离线'
+  return <span className="inline-flex items-center gap-1 text-red-500 font-medium"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" />{label}</span>
+}
+
+export default function TicketsPage() {
   const router = useRouter()
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([])
+  const [totalCount, setTotalCount] = useState(0)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
+  const [syncing, setSyncing] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [slugOptions, setSlugOptions] = useState<string[]>([])
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
+  const [copiedId, setCopiedId] = useState<string | null>(null)
 
-  // Create modal state
+  // Modal state
   const [showModal, setShowModal] = useState(false)
-  const [creating, setCreating] = useState(false)
-  const [modalTicketType, setModalTicketType] = useState<TicketType>('云控')
-  const [modalTicketName, setModalTicketName] = useState('')
-  const [modalTicketLink, setModalTicketLink] = useState('')
-  const [modalDistributionSlug, setModalDistributionSlug] = useState('')
-  const [modalNumberType, setModalNumberType] = useState<Platform>('whatsapp')
-  const [modalStartTime, setModalStartTime] = useState('')
-  const [modalEndTime, setModalEndTime] = useState('')
-  const [modalTotalQty, setModalTotalQty] = useState('')
-  const [modalDownloadRatio, setModalDownloadRatio] = useState('')
-  const [modalAccount, setModalAccount] = useState('')
-  const [modalPassword, setModalPassword] = useState('')
+  const [editingOrder, setEditingOrder] = useState<WorkOrder | null>(null)
+  const [form, setForm] = useState(getInitialForm())
 
-  // Sync state
-  const [syncingId, setSyncingId] = useState<string | null>(null)
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+  // Keep a ref to the latest workOrders to avoid stale closures in the interval
+  const workOrdersRef = useRef<WorkOrder[]>([])
+  workOrdersRef.current = workOrders
 
-  const fetchData = useCallback(async () => {
-    setLoading(true)
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-    if (!user) {
-      router.push('/login')
-      return
+  const fetchSlugs = useCallback(async () => {
+    const { data } = await supabase
+      .from('short_links')
+      .select('slug')
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+    setSlugOptions((data || []).map((r: { slug: string }) => r.slug))
+  }, [])
+
+  const fetchWorkOrders = useCallback(async () => {
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      if (authError) throw authError
+      if (!user) {
+        router.push('/login')
+        return
+      }
+      const from = (page - 1) * pageSize
+      const { data, count, error } = await supabase
+        .from('work_orders')
+        .select('*', { count: 'exact' })
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .range(from, from + pageSize - 1)
+      if (error) throw error
+      if (data) {
+        setWorkOrders(data as WorkOrder[])
+        setTotalCount(count || 0)
+      }
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setLoading(false)
     }
-    const res = await fetch('/api/work-orders')
-    if (res.ok) {
-      const data = await res.json()
-      setWorkOrders(data)
+  }, [router, page, pageSize])
+
+  // Sync a single work order by calling /api/sync/yunkon
+  const syncWorkOrder = useCallback(async (order: WorkOrder): Promise<Partial<WorkOrder>> => {
+    try {
+      const res = await fetch('/api/sync/yunkon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticket_link: order.ticket_link }),
+      })
+      const result = await res.json()
+      if (!result.success) return {}
+
+      const { numbers, total_count, total_sum, total_day_sum, online_count, offline_count } = result.data
+      const updates: Partial<WorkOrder> = {
+        sync_total_sum: total_sum,
+        sync_total_day_sum: total_day_sum,
+        sync_total_numbers: total_count,
+        sync_online_count: online_count,
+        sync_offline_count: offline_count,
+        sync_numbers: numbers as SyncNumber[],
+        last_synced_at: new Date().toISOString(),
+      }
+
+      // Auto-complete when total_sum reaches the threshold
+      if (total_sum >= order.total_quantity && order.total_quantity > 0) {
+        updates.status = 'completed'
+      }
+
+      // Persist sync results to the database
+      const persistRes = await fetch(`/api/work-orders/${order.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      })
+      if (!persistRes.ok) {
+        console.error('[syncWorkOrder] Failed to persist sync results for order', order.id)
+      }
+
+      // Push synced phone numbers into whatsapp_numbers (号码管理)
+      if (numbers && numbers.length > 0 && order.distribution_link_slug) {
+        try {
+          const { data: linkData } = await supabase
+            .from('short_links')
+            .select('id')
+            .eq('slug', order.distribution_link_slug)
+            .single()
+
+          if (linkData) {
+            const shortLinkId = linkData.id
+            // Fetch existing phone numbers to avoid duplicates
+            const { data: existingNums } = await supabase
+              .from('whatsapp_numbers')
+              .select('phone_number')
+              .eq('short_link_id', shortLinkId)
+
+            const existingSet = new Set(
+              (existingNums || []).map((n: { phone_number: string }) => n.phone_number)
+            )
+
+            const toInsert = (numbers as SyncNumber[])
+              .filter((num) => num.user && !existingSet.has(num.user))
+              .map((num, idx) => ({
+                short_link_id: shortLinkId,
+                phone_number: num.user,
+                label: order.ticket_name,
+                platform: order.number_type,
+                is_active: num.online === 1,
+                sort_order: idx,
+              }))
+
+            if (toInsert.length > 0) {
+              const { error: insertError } = await supabase.from('whatsapp_numbers').insert(toInsert)
+              if (insertError) {
+                console.error('[syncWorkOrder] Failed to insert numbers to 号码管理', insertError.message)
+              }
+            }
+          }
+        } catch (err) {
+          console.error('[syncWorkOrder] Failed to push numbers to 号码管理', err)
+        }
+      }
+
+      return updates
+    } catch {
+      return {}
     }
-    setLoading(false)
-  }, [router])
+  }, [])
+
+  // Sync all active 云控 orders
+  const syncAllActive = useCallback(async () => {
+    const orders = workOrdersRef.current
+    const active = orders.filter((o) => o.status === 'active' && o.ticket_type === '云控')
+    if (active.length === 0) return
+
+    const updatesMap: Record<string, Partial<WorkOrder>> = {}
+    await Promise.all(
+      active.map(async (order) => {
+        const updates = await syncWorkOrder(order)
+        if (Object.keys(updates).length > 0) {
+          updatesMap[order.id] = updates
+        }
+      })
+    )
+
+    if (Object.keys(updatesMap).length > 0) {
+      setWorkOrders((prev) =>
+        prev.map((o) => (updatesMap[o.id] ? { ...o, ...updatesMap[o.id] } : o))
+      )
+    }
+  }, [syncWorkOrder])
 
   useEffect(() => {
-    fetchData()
-  }, [fetchData])
+    fetchWorkOrders()
+    fetchSlugs()
+  }, [fetchWorkOrders, fetchSlugs])
+
+  // Auto-sync every minute for active 云控 orders
+  useEffect(() => {
+    syncAllActive()
+    const interval = setInterval(syncAllActive, 60000)
+    return () => clearInterval(interval)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const handleManualRefresh = async () => {
+    setSyncing(true)
+    try {
+      await syncAllActive()
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  const handleOpenModal = () => {
+    setEditingOrder(null)
+    setForm(getInitialForm())
+    setSubmitError(null)
+    setShowModal(true)
+  }
+
+  const handleEdit = (e: React.MouseEvent, order: WorkOrder) => {
+    e.stopPropagation()
+    setEditingOrder(order)
+    setForm({
+      ticket_type: order.ticket_type,
+      ticket_name: order.ticket_name,
+      ticket_link: order.ticket_link,
+      distribution_link_slug: order.distribution_link_slug,
+      number_type: order.number_type,
+      start_time: order.start_time.slice(0, 16),
+      end_time: order.end_time.slice(0, 16),
+      total_quantity: order.total_quantity,
+      download_ratio: order.download_ratio,
+      account: order.account || '',
+      password: order.password || '',
+    })
+    setSubmitError(null)
+    setShowModal(true)
+  }
+
+  const handleDelete = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation()
+    if (!window.confirm('确认删除该工单？')) return
+    const res = await fetch(`/api/work-orders/${id}`, { method: 'DELETE' })
+    if (res.ok) {
+      fetchWorkOrders()
+    }
+  }
 
   const handleToggleStatus = async (e: React.MouseEvent, order: WorkOrder) => {
     e.stopPropagation()
@@ -119,107 +337,96 @@ export default function WorkOrdersPage() {
     }
   }
 
-  const handleDelete = async (e: React.MouseEvent, orderId: string) => {
+  const handleCopy = async (e: React.MouseEvent, order: WorkOrder) => {
     e.stopPropagation()
-    if (!confirm('确定要删除此工单吗？此操作不可撤销。')) return
-    const res = await fetch(`/api/work-orders/${orderId}`, { method: 'DELETE' })
-    if (res.ok) {
-      setWorkOrders((prev) => prev.filter((o) => o.id !== orderId))
-      setSuccess('工单已删除')
-      setTimeout(() => setSuccess(''), 3000)
-    }
-  }
-
-  const handleSync = async (e: React.MouseEvent, order: WorkOrder) => {
-    e.stopPropagation()
-    if (!order.ticket_link) return
-    setSyncingId(order.id)
     try {
-      const res = await fetch('/api/sync/yunkon', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticket_link: order.ticket_link }),
-      })
-      const json = await res.json()
-      if (res.ok && json.success) {
-        const { data } = json
-        const updateRes = await fetch(`/api/work-orders/${order.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sync_total_sum: data.total_sum,
-            sync_total_day_sum: data.total_day_sum,
-            sync_total_numbers: data.total_count,
-            sync_online_count: data.online_count,
-            sync_offline_count: data.offline_count,
-            sync_numbers: data.numbers,
-            last_synced_at: new Date().toISOString(),
-          }),
-        })
-        if (updateRes.ok) {
-          const updated = await updateRes.json()
-          setWorkOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)))
-          setSuccess('同步成功')
-          setTimeout(() => setSuccess(''), 3000)
-        }
-      } else {
-        setError('同步失败：' + (json.error || '未知错误'))
-        setTimeout(() => setError(''), 5000)
-      }
-    } catch (err) {
-      console.error('[handleSync]', err)
-      setError('同步请求失败')
-      setTimeout(() => setError(''), 5000)
-    } finally {
-      setSyncingId(null)
+      await navigator.clipboard.writeText(order.ticket_link)
+      setCopiedId(order.id)
+      setTimeout(() => setCopiedId(null), 2000)
+    } catch {
+      // fallback
     }
   }
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!modalTicketName.trim() || !modalTicketLink.trim() || !modalDistributionSlug.trim() || !modalStartTime || !modalEndTime) {
-      setError('请填写所有必填字段')
+    setSubmitError(null)
+
+    const payload = {
+      ticket_type: form.ticket_type,
+      ticket_name: form.ticket_name,
+      ticket_link: form.ticket_link,
+      distribution_link_slug: form.distribution_link_slug,
+      number_type: form.number_type,
+      start_time: form.start_time,
+      end_time: form.end_time,
+      total_quantity: form.total_quantity,
+      download_ratio: form.download_ratio,
+      account: form.account || null,
+      password: form.password || null,
+    }
+
+    if (editingOrder) {
+      // Edit mode
+      const res = await fetch(`/api/work-orders/${editingOrder.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        setSubmitError(err.error || '更新工单失败，请稍后重试')
+        return
+      }
+      const updated: WorkOrder = await res.json()
+      setWorkOrders((prev) => prev.map((o) => (o.id === updated.id ? { ...o, ...updated } : o)))
+      setShowModal(false)
+      setEditingOrder(null)
       return
     }
-    setCreating(true)
+
+    // Create mode
     const res = await fetch('/api/work-orders', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ticket_type: modalTicketType,
-        ticket_name: modalTicketName.trim(),
-        ticket_link: modalTicketLink.trim(),
-        distribution_link_slug: modalDistributionSlug.trim(),
-        number_type: modalNumberType,
-        start_time: modalStartTime,
-        end_time: modalEndTime,
-        total_quantity: modalTotalQty ? Number(modalTotalQty) : 0,
-        download_ratio: modalDownloadRatio ? Number(modalDownloadRatio) : 0,
-        account: modalAccount.trim() || null,
-        password: modalPassword.trim() || null,
-      }),
+      body: JSON.stringify(payload),
     })
-    if (res.ok) {
-      const created = await res.json()
-      setWorkOrders((prev) => [created, ...prev])
-      setSuccess('工单创建成功')
-      setTimeout(() => setSuccess(''), 3000)
-      setShowModal(false)
-      setModalTicketName('')
-      setModalTicketLink('')
-      setModalDistributionSlug('')
-      setModalStartTime('')
-      setModalEndTime('')
-      setModalTotalQty('')
-      setModalDownloadRatio('')
-      setModalAccount('')
-      setModalPassword('')
-    } else {
-      const json = await res.json()
-      setError('创建失败：' + (json.error || '未知错误'))
-      setTimeout(() => setError(''), 5000)
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      setSubmitError(err.error || '创建工单失败，请稍后重试')
+      return
     }
-    setCreating(false)
+    const newOrder: WorkOrder = await res.json()
+
+    fetchWorkOrders()
+    setShowModal(false)
+
+    // Immediately sync if it's a 云控 order
+    if (newOrder.ticket_type === '云控' && newOrder.ticket_link) {
+      const updates = await syncWorkOrder(newOrder)
+      if (Object.keys(updates).length > 0) {
+        setWorkOrders((prev) =>
+          prev.map((o) => (o.id === newOrder.id ? { ...o, ...updates } : o))
+        )
+      }
+    }
+  }
+
+  const updateForm = (field: string, value: string | number) => {
+    setForm((prev) => ({ ...prev, [field]: value }))
+  }
+
+  const toggleExpand = (id: string) => {
+    setExpandedRows((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
   }
 
   if (loading) {
@@ -234,320 +441,411 @@ export default function WorkOrdersPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">工单管理</h1>
-        <button
-          onClick={() => setShowModal(true)}
-          className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium transition-colors"
-        >
-          + 新建工单
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleManualRefresh}
+            disabled={syncing}
+            className="px-4 py-2 text-sm bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white rounded-lg transition-colors flex items-center gap-1"
+          >
+            {syncing ? '同步中...' : '🔄 刷新'}
+          </button>
+          <button
+            onClick={handleOpenModal}
+            className="px-4 py-2 text-sm bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors"
+          >
+            + 新增
+          </button>
+        </div>
       </div>
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm">
-          {error}
-        </div>
-      )}
-      {success && (
-        <div className="bg-green-50 border border-green-200 text-green-600 px-4 py-3 rounded-lg text-sm">
-          {success}
-        </div>
-      )}
-
+      {/* Work Order List */}
       {workOrders.length === 0 ? (
-        <div className="bg-white rounded-xl p-12 text-center shadow-sm border border-gray-100">
-          <p className="text-gray-400 text-sm">暂无工单，点击&ldquo;新建工单&rdquo;创建第一个工单</p>
+        <div className="bg-white rounded-xl p-12 shadow-sm border border-gray-100 text-center">
+          <p className="text-gray-400 text-4xl mb-3">🎫</p>
+          <p className="text-gray-500">暂无工单</p>
+          <button
+            onClick={handleOpenModal}
+            className="mt-4 inline-block px-4 py-2 bg-green-500 text-white rounded-lg text-sm hover:bg-green-600 transition-colors"
+          >
+            + 新增工单
+          </button>
         </div>
       ) : (
-        <div className="space-y-4">
-          {workOrders.map((order) => (
-            <div
-              key={order.id}
-              className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden"
-            >
-              <div className="p-5">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h2 className="font-semibold text-gray-900">{order.ticket_name}</h2>
-                      <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${STATUS_COLORS[order.status]}`}>
-                        {STATUS_LABELS[order.status]}
-                      </span>
-                      <span className="px-2 py-0.5 text-xs rounded-full bg-purple-100 text-purple-700 font-medium">
-                        {order.ticket_type}
-                      </span>
-                      <span className="px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-600 font-medium">
-                        {order.number_type}
-                      </span>
-                    </div>
-                    <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-xs text-gray-500">
-                      <span>分发链接：{order.distribution_link_slug}</span>
-                      <span>开始：{formatDate(order.start_time)}</span>
-                      <span>结束：{formatDate(order.end_time)}</span>
-                      {order.total_quantity > 0 && <span>总量：{order.total_quantity}</span>}
-                      {order.download_ratio > 0 && <span>下载比例：{order.download_ratio}%</span>}
-                    </div>
-                    {(order.sync_total_numbers !== undefined && order.sync_total_numbers !== null) && (
-                      <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-xs text-gray-500">
-                        <span>设备总数：{order.sync_total_numbers}</span>
-                        <span className="text-green-600">在线：{order.sync_online_count ?? 0}</span>
-                        <span className="text-red-500">离线：{order.sync_offline_count ?? 0}</span>
-                        <span>累计：{order.sync_total_sum ?? 0}</span>
-                        <span>今日：{order.sync_total_day_sum ?? 0}</span>
-                        {order.last_synced_at && <span>上次同步：{formatDate(order.last_synced_at)}</span>}
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {order.ticket_link && (
-                      <button
-                        onClick={(e) => handleSync(e, order)}
-                        disabled={syncingId === order.id}
-                        className="px-3 py-1.5 text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 disabled:opacity-50 rounded-lg transition-colors font-medium"
-                      >
-                        {syncingId === order.id ? '同步中...' : '同步'}
-                      </button>
-                    )}
-                    {(order.status === 'active' || order.status === 'cancelled') && (
-                      <button
-                        onClick={(e) => handleToggleStatus(e, order)}
-                        className={`px-3 py-1.5 text-xs rounded-lg transition-colors font-medium ${
-                          order.status === 'active'
-                            ? 'bg-red-50 text-red-600 hover:bg-red-100'
-                            : 'bg-green-50 text-green-600 hover:bg-green-100'
-                        }`}
-                      >
-                        {order.status === 'active' ? '取消工单' : '重新启用'}
-                      </button>
-                    )}
-                    {order.sync_numbers && order.sync_numbers.length > 0 && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setExpandedId(expandedId === order.id ? null : order.id)
-                        }}
-                        className="px-3 py-1.5 text-xs bg-gray-50 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors font-medium"
-                      >
-                        {expandedId === order.id ? '收起' : '查看设备'}
-                      </button>
-                    )}
-                    <button
-                      onClick={(e) => handleDelete(e, order.id)}
-                      className="px-3 py-1.5 text-xs text-red-400 hover:text-red-600 transition-colors"
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 text-left text-gray-500">
+                <th className="px-4 py-3 font-medium w-8" />
+                <th className="px-4 py-3 font-medium">工单类型</th>
+                <th className="px-4 py-3 font-medium">工单名称</th>
+                <th className="px-4 py-3 font-medium">工单链接</th>
+                <th className="px-4 py-3 font-medium">分流链接</th>
+                <th className="px-4 py-3 font-medium">号码类型</th>
+                <th className="px-4 py-3 font-medium">开始时间</th>
+                <th className="px-4 py-3 font-medium">到期时间</th>
+                <th className="px-4 py-3 font-medium">工单总量</th>
+                <th className="px-4 py-3 font-medium">下号比率</th>
+                <th className="px-4 py-3 font-medium">同步状态</th>
+                <th className="px-4 py-3 font-medium">当日引流</th>
+                <th className="px-4 py-3 font-medium">在线号码</th>
+                <th className="px-4 py-3 font-medium">最后同步</th>
+                <th className="px-4 py-3 font-medium">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {workOrders.map((order) => {
+                const isExpanded = expandedRows.has(order.id)
+                const canExpand = order.ticket_type === '云控' && (order.sync_numbers?.length ?? 0) > 0
+                return (
+                  <>
+                    <tr
+                      key={order.id}
+                      className={`border-b border-gray-50 hover:bg-gray-50 ${canExpand ? 'cursor-pointer' : ''}`}
+                      onClick={() => canExpand && toggleExpand(order.id)}
                     >
-                      删除
-                    </button>
-                  </div>
-                </div>
-              </div>
+                      <td className="px-4 py-3 text-gray-400">
+                        {canExpand ? (isExpanded ? '▾' : '▸') : ''}
+                      </td>
+                      <td className="px-4 py-3">{order.ticket_type}</td>
+                      <td className="px-4 py-3">{order.ticket_name}</td>
+                      <td className="px-4 py-3 max-w-[160px] truncate">
+                        <a
+                          href={order.ticket_link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-500 hover:underline"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {order.ticket_link}
+                        </a>
+                      </td>
+                      <td className="px-4 py-3">{order.distribution_link_slug}</td>
+                      <td className="px-4 py-3 capitalize">{order.number_type}</td>
+                      <td className="px-4 py-3">{formatDate(order.start_time)}</td>
+                      <td className="px-4 py-3">{formatDate(order.end_time)}</td>
+                      <td className="px-4 py-3">{order.total_quantity}</td>
+                      <td className="px-4 py-3">{order.download_ratio}</td>
+                      <td className="px-4 py-3">
+                        {order.last_synced_at
+                          ? <span className="text-green-600 font-medium">同步成功</span>
+                          : order.ticket_type === '云控'
+                            ? <span className="text-red-500 font-medium">失败</span>
+                            : <span className="text-gray-400">-</span>}
+                      </td>
+                      <td className="px-4 py-3">
+                        {order.sync_total_day_sum !== undefined
+                          ? `${order.sync_total_day_sum}/${order.total_quantity}`
+                          : '-'}
+                      </td>
+                      <td className="px-4 py-3">
+                        {order.sync_online_count !== undefined
+                          ? `${order.sync_online_count}/${order.sync_total_numbers ?? 0}`
+                          : '-'}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">
+                        {order.last_synced_at
+                          ? new Date(order.last_synced_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                          : '-'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                          {/* Toggle switch */}
+                          <button
+                            type="button"
+                            onClick={(e) => handleToggleStatus(e, order)}
+                            aria-label={order.status === 'active' ? '停用工单' : '启用工单'}
+                            className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${order.status === 'active' ? 'bg-blue-500' : 'bg-gray-300'}`}
+                            title={order.status === 'active' ? '点击停用' : '点击启用'}
+                          >
+                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform duration-200 ${order.status === 'active' ? 'translate-x-4' : 'translate-x-0'}`} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => handleEdit(e, order)}
+                            className="text-blue-500 hover:text-blue-700 text-xs whitespace-nowrap"
+                          >
+                            ✏ 修改
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => handleCopy(e, order)}
+                            className="text-blue-500 hover:text-blue-700 text-xs whitespace-nowrap"
+                          >
+                            {copiedId === order.id ? '已复制' : '📋 拷贝'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => handleDelete(e, order.id)}
+                            className="text-red-500 hover:text-red-700 text-xs whitespace-nowrap"
+                          >
+                            🗑 删除
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    {isExpanded && order.sync_numbers && order.sync_numbers.length > 0 && (
+                      <tr key={`${order.id}-detail`} className="bg-gray-50">
+                        <td colSpan={TABLE_COL_COUNT} className="px-8 py-3">
+                          <table className="w-full text-xs border border-gray-200 rounded-lg overflow-hidden">
+                            <thead>
+                              <tr className="bg-gray-100 text-gray-500">
+                                <th className="px-3 py-2 text-left font-medium">ID</th>
+                                <th className="px-3 py-2 text-left font-medium">账号</th>
+                                <th className="px-3 py-2 text-left font-medium">昵称</th>
+                                <th className="px-3 py-2 text-left font-medium">状态</th>
+                                <th className="px-3 py-2 text-left font-medium">去重引流数</th>
+                                <th className="px-3 py-2 text-left font-medium">今日引流</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {order.sync_numbers.map((num) => (
+                                <tr key={num.id} className={`border-t border-gray-100 ${num.online !== 1 ? 'bg-red-50' : ''}`}>
+                                  <td className="px-3 py-2">{num.id}</td>
+                                  <td className="px-3 py-2">{num.user}</td>
+                                  <td className="px-3 py-2">{num.nickname}</td>
+                                  <td className="px-3 py-2">
+                                    <OnlineStatusBadge online={num.online} />
+                                  </td>
+                                  <td className="px-3 py-2">{num.sum}</td>
+                                  <td className="px-3 py-2">{num.day_sum}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </td>
+                      </tr>
+                    )}
+                  </>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
 
-              {expandedId === order.id && order.sync_numbers && order.sync_numbers.length > 0 && (
-                <div className="border-t border-gray-100 px-5 pb-4">
-                  <div className="mt-3 overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="text-gray-500 border-b border-gray-100">
-                          <th className="py-2 px-3 text-left font-medium">昵称</th>
-                          <th className="py-2 px-3 text-left font-medium">账号</th>
-                          <th className="py-2 px-3 text-center font-medium">状态</th>
-                          <th className="py-2 px-3 text-right font-medium">累计</th>
-                          <th className="py-2 px-3 text-right font-medium">今日</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-50">
-                        {order.sync_numbers.map((num) => (
-                          <tr key={num.id} className="hover:bg-gray-50">
-                            <td className="py-2 px-3 text-gray-800">{num.nickname}</td>
-                            <td className="py-2 px-3 text-gray-500">{num.user}</td>
-                            <td className="py-2 px-3 text-center">
-                              <span className={`px-1.5 py-0.5 rounded-full text-xs font-medium ${num.online === 1 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                                {num.online === 1 ? '在线' : '离线'}
-                              </span>
-                            </td>
-                            <td className="py-2 px-3 text-right text-gray-700">{num.sum}</td>
-                            <td className="py-2 px-3 text-right text-gray-700">{num.day_sum}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
+        {/* Pagination */}
+        <Pagination
+          page={page}
+          pageSize={pageSize}
+          totalCount={totalCount}
+          onPageChange={setPage}
+          onPageSizeChange={(s) => { setPageSize(s); setPage(1) }}
+        />
         </div>
       )}
 
-      {/* Create Work Order Modal */}
+      {/* Create / Edit Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-5">
-                <h2 className="text-lg font-bold text-gray-900">新建工单</h2>
-                <button
-                  onClick={() => setShowModal(false)}
-                  className="text-gray-400 hover:text-gray-600 transition-colors text-xl leading-none"
-                >
-                  ×
-                </button>
-              </div>
-              <form onSubmit={handleCreate} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    工单类型 <span className="text-red-500">*</span>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <h2 className="text-base font-bold text-gray-900">{editingOrder ? '编辑工单' : '添加工单管理'}</h2>
+              <button
+                onClick={() => { setShowModal(false); setEditingOrder(null) }}
+                className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="p-6">
+              <div className="grid grid-cols-2 gap-x-8 gap-y-5">
+                {/* Row 1: 工单类型 | 工单名称 */}
+                <div className="flex items-center gap-3">
+                  <label className="text-sm text-gray-700 whitespace-nowrap w-20 flex-shrink-0">
+                    <span className="text-red-500">*</span> 工单类型
                   </label>
                   <select
-                    value={modalTicketType}
-                    onChange={(e) => setModalTicketType(e.target.value as TicketType)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none bg-white text-sm"
+                    value={form.ticket_type}
+                    onChange={(e) => updateForm('ticket_type', e.target.value)}
+                    required
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white text-sm"
                   >
-                    {TICKET_TYPE_OPTIONS.map((t) => (
+                    {TICKET_TYPES.map((t) => (
                       <option key={t} value={t}>{t}</option>
                     ))}
                   </select>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    工单名称 <span className="text-red-500">*</span>
+
+                <div className="flex items-center gap-3">
+                  <label className="text-sm text-gray-700 whitespace-nowrap w-20 flex-shrink-0">
+                    <span className="text-red-500">*</span> 工单名称
                   </label>
                   <input
                     type="text"
-                    value={modalTicketName}
-                    onChange={(e) => setModalTicketName(e.target.value)}
+                    value={form.ticket_name}
+                    onChange={(e) => updateForm('ticket_name', e.target.value)}
                     required
-                    placeholder="唯一标识名称，用于匹配号码 label"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none text-sm"
+                    placeholder="请输入工单名称"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    工单链接 <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="url"
-                    value={modalTicketLink}
-                    onChange={(e) => setModalTicketLink(e.target.value)}
-                    required
-                    placeholder="https://..."
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    分发链接 Slug <span className="text-red-500">*</span>
+
+                {/* Row 2: 工单链接 (full width) */}
+                <div className="col-span-2 flex items-center gap-3">
+                  <label className="text-sm text-gray-700 whitespace-nowrap w-20 flex-shrink-0">
+                    <span className="text-red-500">*</span> 工单链接
                   </label>
                   <input
                     type="text"
-                    value={modalDistributionSlug}
-                    onChange={(e) => setModalDistributionSlug(e.target.value)}
+                    value={form.ticket_link}
+                    onChange={(e) => updateForm('ticket_link', e.target.value)}
                     required
-                    placeholder="例如：abc123"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none text-sm"
+                    placeholder="请输入工单链接"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">号码类型</label>
+
+                {/* Row 3: 分流链接 | 号码类型 */}
+                <div className="flex items-center gap-3">
+                  <label className="text-sm text-gray-700 whitespace-nowrap w-20 flex-shrink-0">
+                    <span className="text-red-500">*</span> 分流链接
+                  </label>
                   <select
-                    value={modalNumberType}
-                    onChange={(e) => setModalNumberType(e.target.value as Platform)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none bg-white text-sm"
+                    value={form.distribution_link_slug}
+                    onChange={(e) => updateForm('distribution_link_slug', e.target.value)}
+                    required
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white text-sm"
                   >
-                    {PLATFORM_OPTIONS.map((p) => (
-                      <option key={p.value} value={p.value}>{p.label}</option>
+                    <option value="">请选择链接</option>
+                    {slugOptions.map((slug) => (
+                      <option key={slug} value={slug}>{slug}</option>
                     ))}
                   </select>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      开始时间 <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="datetime-local"
-                      value={modalStartTime}
-                      onChange={(e) => setModalStartTime(e.target.value)}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      结束时间 <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="datetime-local"
-                      value={modalEndTime}
-                      onChange={(e) => setModalEndTime(e.target.value)}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none text-sm"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">总量</label>
-                    <input
-                      type="number"
-                      value={modalTotalQty}
-                      onChange={(e) => setModalTotalQty(e.target.value)}
-                      min="0"
-                      placeholder="0"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">下载比例 (%)</label>
-                    <input
-                      type="number"
-                      value={modalDownloadRatio}
-                      onChange={(e) => setModalDownloadRatio(e.target.value)}
-                      min="0"
-                      max="100"
-                      placeholder="0"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none text-sm"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">账号</label>
-                    <input
-                      type="text"
-                      value={modalAccount}
-                      onChange={(e) => setModalAccount(e.target.value)}
-                      placeholder="可选"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">密码</label>
-                    <input
-                      type="text"
-                      value={modalPassword}
-                      onChange={(e) => setModalPassword(e.target.value)}
-                      placeholder="可选"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none text-sm"
-                    />
-                  </div>
-                </div>
-                <div className="flex gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowModal(false)}
-                    className="flex-1 py-2.5 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium transition-colors"
+
+                <div className="flex items-center gap-3">
+                  <label className="text-sm text-gray-700 whitespace-nowrap w-20 flex-shrink-0">
+                    <span className="text-red-500">*</span> 号码类型
+                  </label>
+                  <select
+                    value={form.number_type}
+                    onChange={(e) => updateForm('number_type', e.target.value)}
+                    required
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white text-sm"
                   >
-                    取消
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={creating}
-                    className="flex-1 py-2.5 bg-green-500 hover:bg-green-600 disabled:bg-green-300 text-white rounded-lg text-sm font-medium transition-colors"
-                  >
-                    {creating ? '创建中...' : '创建工单'}
-                  </button>
+                    {NUMBER_TYPES.map((t) => (
+                      <option key={t.value} value={t.value}>{t.label}</option>
+                    ))}
+                  </select>
                 </div>
-              </form>
-            </div>
+
+                {/* Row 4: 开始时间 | 到期时间 */}
+                <div className="flex items-center gap-3">
+                  <label className="text-sm text-gray-700 whitespace-nowrap w-20 flex-shrink-0">
+                    <span className="text-red-500">*</span> 开始时间
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={form.start_time}
+                    onChange={(e) => updateForm('start_time', e.target.value)}
+                    required
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
+                  />
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <label className="text-sm text-gray-700 whitespace-nowrap w-20 flex-shrink-0">
+                    <span className="text-red-500">*</span> 到期时间
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={form.end_time}
+                    onChange={(e) => updateForm('end_time', e.target.value)}
+                    required
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
+                  />
+                </div>
+
+                {/* Row 5: 工单总量 | 下号比率 */}
+                <div className="flex items-center gap-3">
+                  <label className="text-sm text-gray-700 whitespace-nowrap w-20 flex-shrink-0">
+                    <span className="text-red-500">*</span> 工单总量
+                  </label>
+                  <input
+                    type="number"
+                    value={form.total_quantity}
+                    onChange={(e) => updateForm('total_quantity', Number(e.target.value))}
+                    required
+                    min={1}
+                    placeholder="工单总量"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
+                  />
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <label className="text-sm text-gray-700 whitespace-nowrap w-20 flex-shrink-0">
+                    下号比率
+                  </label>
+                  <div className="flex items-center border border-gray-300 rounded-lg overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => updateForm('download_ratio', Math.max(0, form.download_ratio - 1))}
+                      className="px-3 py-2 text-gray-600 hover:bg-gray-100 text-base font-medium transition-colors"
+                    >
+                      −
+                    </button>
+                    <span className="px-4 py-2 text-sm text-gray-800 min-w-[3rem] text-center border-x border-gray-300">
+                      {form.download_ratio}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => updateForm('download_ratio', form.download_ratio + 1)}
+                      className="px-3 py-2 text-gray-600 hover:bg-gray-100 text-base font-medium transition-colors"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+
+                {/* Row 6: 工单账号 | 工单密码 */}
+                <div className="flex items-center gap-3">
+                  <label className="text-sm text-gray-700 whitespace-nowrap w-20 flex-shrink-0">
+                    工单账号
+                  </label>
+                  <input
+                    type="text"
+                    value={form.account}
+                    onChange={(e) => updateForm('account', e.target.value)}
+                    placeholder="请输入工单账户"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
+                  />
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <label className="text-sm text-gray-700 whitespace-nowrap w-20 flex-shrink-0">
+                    工单密码
+                  </label>
+                  <input
+                    type="password"
+                    value={form.password}
+                    onChange={(e) => updateForm('password', e.target.value)}
+                    placeholder="请输入工单密码（可选）"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
+                  />
+                </div>
+              </div>
+
+              {/* Footer Buttons */}
+              {submitError && (
+                <p className="text-sm text-red-500 mt-4">{submitError}</p>
+              )}
+              <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => { setShowModal(false); setEditingOrder(null) }}
+                  className="px-6 py-2 text-sm text-gray-600 border border-gray-300 bg-white hover:bg-gray-50 rounded-lg font-medium transition-colors"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-colors"
+                >
+                  {editingOrder ? '保存' : '确定'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
