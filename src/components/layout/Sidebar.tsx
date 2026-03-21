@@ -7,6 +7,7 @@ const navItems = [
   { href: '/dashboard', label: '短链列表' },
   { href: '/dashboard/tickets', label: '工单管理' },
   { href: '/dashboard/numbers', label: '号码管理' },
+  { href: '/dashboard/logs', label: '访问记录' },
 ]
 
 export default function Sidebar() {
