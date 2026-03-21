@@ -315,14 +315,31 @@ export default function TicketsPage() {
         prev.map((o) => (o.id === order.id ? { ...o, status: newStatus } : o))
       )
 
-      if (order.ticket_name) {
+      // Get exact phone numbers synced by this work order
+      const phoneNumbers = order.sync_numbers?.map((n) => n.user).filter(Boolean) || []
+
+      if (phoneNumbers.length > 0 && order.distribution_link_slug) {
         try {
-          await supabase
-            .from('whatsapp_numbers')
-            .update({ is_active: newStatus === 'active' })
-            .eq('label', order.ticket_name)
+          const { data: linkData } = await supabase
+            .from('short_links')
+            .select('id')
+            .eq('slug', order.distribution_link_slug)
+            .single()
+
+          if (linkData) {
+            // Chunk updates to avoid URL length limits on the 'in' filter
+            const chunkSize = 100
+            for (let i = 0; i < phoneNumbers.length; i += chunkSize) {
+              const chunk = phoneNumbers.slice(i, i + chunkSize)
+              await supabase
+                .from('whatsapp_numbers')
+                .update({ is_active: newStatus === 'active' })
+                .eq('short_link_id', linkData.id)
+                .in('phone_number', chunk)
+            }
+          }
         } catch (err) {
-          console.error('[handleToggleStatus] 无法更新工单对应的号码状态:', order.ticket_name, err)
+          console.error('[handleToggleStatus] Failed to update numbers for slug', order.distribution_link_slug, err)
         }
       }
     }
