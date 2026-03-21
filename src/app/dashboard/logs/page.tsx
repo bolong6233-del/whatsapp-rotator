@@ -3,23 +3,13 @@
 /*
  * 访问记录 / IP Tracking page
  *
- * Required Supabase SQL (run once in Supabase SQL Editor):
+ * Required Supabase SQL (run once in Supabase SQL Editor if upgrading an
+ * existing database – new installs use schema.sql which already includes them):
  *
- *   -- Add city column if it doesn't exist
  *   ALTER TABLE click_logs ADD COLUMN IF NOT EXISTS city TEXT;
- *
- *   -- Full table definition for reference:
- *   -- CREATE TABLE click_logs (
- *   --   id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
- *   --   short_link_id UUID NOT NULL REFERENCES short_links(id) ON DELETE CASCADE,
- *   --   whatsapp_number_id UUID REFERENCES whatsapp_numbers(id) ON DELETE SET NULL,
- *   --   ip_address  TEXT,
- *   --   country     TEXT,
- *   --   city        TEXT,
- *   --   user_agent  TEXT,
- *   --   referer     TEXT,
- *   --   clicked_at  TIMESTAMPTZ DEFAULT NOW()
- *   -- );
+ *   ALTER TABLE click_logs ADD COLUMN IF NOT EXISTS os TEXT;
+ *   ALTER TABLE click_logs ADD COLUMN IF NOT EXISTS browser TEXT;
+ *   ALTER TABLE click_logs ADD COLUMN IF NOT EXISTS device_type TEXT;
  */
 
 import { useState, useEffect, useCallback } from 'react'
@@ -32,6 +22,69 @@ function escapeLikePattern(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
 }
 
+/** Shorten a referer URL to its hostname (or a friendly label). */
+function formatReferer(referer: string | null): string {
+  if (!referer) return '直接访问'
+  try {
+    const url = new URL(referer)
+    const host = url.hostname.replace(/^www\./, '')
+    return host || referer
+  } catch {
+    return referer
+  }
+}
+
+/** Small coloured badge. */
+function Badge({ label, color }: { label: string; color: string }) {
+  return (
+    <span
+      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${color}`}
+    >
+      {label}
+    </span>
+  )
+}
+
+function OsBadge({ os }: { os: string | null }) {
+  if (!os) return <span className="text-gray-400">-</span>
+  const map: Record<string, string> = {
+    iOS: 'bg-gray-100 text-gray-700',
+    iPadOS: 'bg-gray-100 text-gray-700',
+    Android: 'bg-green-100 text-green-700',
+    Windows: 'bg-blue-100 text-blue-700',
+    macOS: 'bg-purple-100 text-purple-700',
+    Linux: 'bg-yellow-100 text-yellow-700',
+  }
+  return <Badge label={os} color={map[os] ?? 'bg-gray-100 text-gray-600'} />
+}
+
+function BrowserBadge({ browser }: { browser: string | null }) {
+  if (!browser) return <span className="text-gray-400">-</span>
+  const map: Record<string, string> = {
+    Chrome: 'bg-yellow-100 text-yellow-700',
+    Safari: 'bg-blue-100 text-blue-700',
+    Firefox: 'bg-orange-100 text-orange-700',
+    Edge: 'bg-indigo-100 text-indigo-700',
+    Opera: 'bg-red-100 text-red-700',
+    Samsung: 'bg-teal-100 text-teal-700',
+  }
+  return <Badge label={browser} color={map[browser] ?? 'bg-gray-100 text-gray-600'} />
+}
+
+function DeviceBadge({ device }: { device: string | null }) {
+  if (!device) return <span className="text-gray-400">-</span>
+  if (device === 'Mobile') return <Badge label="📱 手机" color="bg-pink-100 text-pink-700" />
+  if (device === 'Tablet') return <Badge label="📟 平板" color="bg-purple-100 text-purple-700" />
+  return <Badge label="🖥️ 电脑" color="bg-blue-100 text-blue-700" />
+}
+
+interface Stats {
+  todayCount: number
+  mobileCount: number
+  desktopCount: number
+  topCountry: string | null
+}
+
 export default function LogsPage() {
   const [logs, setLogs] = useState<ClickLog[]>([])
   const [totalCount, setTotalCount] = useState(0)
@@ -40,6 +93,48 @@ export default function LogsPage() {
   const [pageSize, setPageSize] = useState(20)
   const [filterSlug, setFilterSlug] = useState('')
   const [filterSlugInput, setFilterSlugInput] = useState('')
+  const [stats, setStats] = useState<Stats | null>(null)
+
+  const fetchStats = useCallback(async () => {
+    const todayStart = new Date()
+    todayStart.setHours(0, 0, 0, 0)
+
+    const [todayRes, deviceRes, countryRes] = await Promise.all([
+      supabase
+        .from('click_logs')
+        .select('id', { count: 'exact', head: true })
+        .gte('clicked_at', todayStart.toISOString()),
+      supabase
+        .from('click_logs')
+        .select('device_type'),
+      supabase
+        .from('click_logs')
+        .select('country'),
+    ])
+
+    const todayCount = todayRes.count ?? 0
+
+    let mobileCount = 0
+    let desktopCount = 0
+    if (deviceRes.data) {
+      for (const row of deviceRes.data as { device_type: string | null }[]) {
+        if (row.device_type === 'Mobile' || row.device_type === 'Tablet') mobileCount++
+        else if (row.device_type === 'Desktop') desktopCount++
+      }
+    }
+
+    let topCountry: string | null = null
+    if (countryRes.data) {
+      const freq: Record<string, number> = {}
+      for (const row of countryRes.data as { country: string | null }[]) {
+        if (row.country) freq[row.country] = (freq[row.country] ?? 0) + 1
+      }
+      const sorted = Object.entries(freq).sort((a, b) => b[1] - a[1])
+      topCountry = sorted[0]?.[0] ?? null
+    }
+
+    setStats({ todayCount, mobileCount, desktopCount, topCountry })
+  }, [])
 
   const fetchLogs = useCallback(async () => {
     setLoading(true)
@@ -67,7 +162,8 @@ export default function LogsPage() {
 
   useEffect(() => {
     fetchLogs()
-  }, [fetchLogs])
+    fetchStats()
+  }, [fetchLogs, fetchStats])
 
   const handleSearch = () => {
     setFilterSlug(filterSlugInput.trim())
@@ -80,11 +176,39 @@ export default function LogsPage() {
     setPage(1)
   }
 
+  const mobileRatio =
+    stats && stats.mobileCount + stats.desktopCount > 0
+      ? Math.round((stats.mobileCount / (stats.mobileCount + stats.desktopCount)) * 100)
+      : null
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">访问记录</h1>
         <span className="text-sm text-gray-500">共 {totalCount} 条记录</span>
+      </div>
+
+      {/* Stats cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+          <p className="text-xs text-gray-500 mb-1">今日点击</p>
+          <p className="text-3xl font-bold text-gray-900">{stats?.todayCount ?? '—'}</p>
+        </div>
+        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+          <p className="text-xs text-gray-500 mb-1">手机端占比</p>
+          <p className="text-3xl font-bold text-gray-900">
+            {mobileRatio !== null ? `${mobileRatio}%` : '—'}
+          </p>
+          {stats && (
+            <p className="text-xs text-gray-400 mt-1">
+              手机 {stats.mobileCount} · 电脑 {stats.desktopCount}
+            </p>
+          )}
+        </div>
+        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+          <p className="text-xs text-gray-500 mb-1">最多访问国家</p>
+          <p className="text-3xl font-bold text-gray-900">{stats?.topCountry ?? '—'}</p>
+        </div>
       </div>
 
       {/* Filter bar */}
@@ -128,10 +252,12 @@ export default function LogsPage() {
                 <tr className="text-left text-gray-500 border-b border-gray-100">
                   <th className="py-3 px-4 font-medium">访问时间</th>
                   <th className="py-3 px-4 font-medium">短链</th>
+                  <th className="py-3 px-4 font-medium">访客位置</th>
                   <th className="py-3 px-4 font-medium">IP 地址</th>
-                  <th className="py-3 px-4 font-medium">国家/地区</th>
-                  <th className="py-3 px-4 font-medium">城市</th>
-                  <th className="py-3 px-4 font-medium">设备/浏览器</th>
+                  <th className="py-3 px-4 font-medium">设备</th>
+                  <th className="py-3 px-4 font-medium">操作系统</th>
+                  <th className="py-3 px-4 font-medium">浏览器</th>
+                  <th className="py-3 px-4 font-medium">来源</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -152,19 +278,26 @@ export default function LogsPage() {
                         <span className="ml-2 text-gray-500 text-xs">{log.short_links.title}</span>
                       )}
                     </td>
-                    <td className="py-3 px-4 text-gray-600 font-mono text-xs">
+                    <td className="py-3 px-4 text-gray-600 whitespace-nowrap">
+                      {log.country || log.city
+                        ? [log.country, log.city].filter(Boolean).join(' · ')
+                        : '-'}
+                    </td>
+                    <td className="py-3 px-4 text-gray-600 font-mono text-xs whitespace-nowrap">
                       {log.ip_address || '-'}
                     </td>
-                    <td className="py-3 px-4 text-gray-600">
-                      {log.country || '-'}
+                    <td className="py-3 px-4">
+                      <DeviceBadge device={log.device_type ?? null} />
                     </td>
-                    <td className="py-3 px-4 text-gray-600">
-                      {log.city || '-'}
+                    <td className="py-3 px-4">
+                      <OsBadge os={log.os ?? null} />
                     </td>
-                    <td className="py-3 px-4 text-gray-500 text-xs truncate max-w-xs">
-                      {log.user_agent ? (
-                        <span title={log.user_agent}>{log.user_agent}</span>
-                      ) : '-'}
+                    <td className="py-3 px-4">
+                      <BrowserBadge browser={log.browser ?? null} />
+                    </td>
+                    <td className="py-3 px-4 text-gray-500 text-xs max-w-[160px] truncate"
+                        title={log.referer ?? ''}>
+                      {formatReferer(log.referer ?? null)}
                     </td>
                   </tr>
                 ))}
