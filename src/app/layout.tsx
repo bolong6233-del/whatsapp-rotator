@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import TikTokPixel from '@/components/TikTokPixel'
 
 export const metadata: Metadata = {
   title: '无敌牛子分流系统',
@@ -13,7 +14,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="zh-CN">
-      <body className="font-sans">{children}</body>
+      <body className="font-sans">
+        <TikTokPixel />
+        {children}
+      </body>
     </html>
   )
 }
