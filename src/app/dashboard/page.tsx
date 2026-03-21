@@ -5,8 +5,7 @@ import { supabase } from '@/lib/supabase-client'
 import { generateSlug, getBaseUrl } from '@/lib/utils'
 import type { ShortLink } from '@/types'
 import Link from 'next/link'
-
-const PAGE_SIZE = 10
+import Pagination from '@/components/ui/Pagination'
 
 export default function DashboardPage() {
   const [links, setLinks] = useState<ShortLink[]>([])
@@ -15,6 +14,7 @@ export default function DashboardPage() {
   const [searchSlug, setSearchSlug] = useState('')
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all')
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [success, setSuccess] = useState('')
 
@@ -48,8 +48,8 @@ export default function DashboardPage() {
         query = query.eq('is_active', false)
       }
 
-      const from = (page - 1) * PAGE_SIZE
-      query = query.range(from, from + PAGE_SIZE - 1)
+      const from = (page - 1) * pageSize
+      query = query.range(from, from + pageSize - 1)
 
       const { data, count, error } = await query
       if (error) throw error
@@ -60,13 +60,11 @@ export default function DashboardPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, searchSlug, filterStatus])
+  }, [page, pageSize, searchSlug, filterStatus])
 
   useEffect(() => {
     fetchLinks()
   }, [fetchLinks])
-
-  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE))
 
   const toggleSelect = (id: string) => {
     setSelected((prev) => {
@@ -321,29 +319,13 @@ export default function DashboardPage() {
         )}
 
         {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
-            <span className="text-sm text-gray-500">
-              共 {totalCount} 条，第 {page}/{totalPages} 页
-            </span>
-            <div className="flex gap-1">
-              <button
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg disabled:opacity-40 hover:bg-gray-50 transition-colors"
-              >
-                上一页
-              </button>
-              <button
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={page === totalPages}
-                className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg disabled:opacity-40 hover:bg-gray-50 transition-colors"
-              >
-                下一页
-              </button>
-            </div>
-          </div>
-        )}
+        <Pagination
+          page={page}
+          pageSize={pageSize}
+          totalCount={totalCount}
+          onPageChange={setPage}
+          onPageSizeChange={(s) => { setPageSize(s); setPage(1) }}
+        />
       </div>
 
       {/* Create Modal */}
