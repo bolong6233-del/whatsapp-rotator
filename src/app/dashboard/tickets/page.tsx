@@ -255,7 +255,7 @@ export default function WorkOrdersPage() {
 
       {workOrders.length === 0 ? (
         <div className="bg-white rounded-xl p-12 text-center shadow-sm border border-gray-100">
-          <p className="text-gray-400 text-sm">暂无工单，点击"新建工单"创建第一个工单</p>
+          <p className="text-gray-400 text-sm">暂无工单，点击&ldquo;新建工单&rdquo;创建第一个工单</p>
         </div>
       ) : (
         <div className="space-y-4">
