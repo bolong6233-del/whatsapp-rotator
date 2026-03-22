@@ -18,8 +18,8 @@ export async function GET() {
     .single()
 
   if (error || !profile) {
-    // Return a default agent profile if not found (e.g. before migration ran)
-    return NextResponse.json({ id: user.id, email: user.email, role: 'agent', status: 'active' })
+    // Return a default guest profile if not found (safe default — avoids granting unverified agent access)
+    return NextResponse.json({ id: user.id, email: user.email, role: 'guest', status: 'active' })
   }
 
   return NextResponse.json(profile)
