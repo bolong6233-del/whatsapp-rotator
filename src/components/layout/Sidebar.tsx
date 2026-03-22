@@ -19,7 +19,7 @@ export default function Sidebar({ role = 'agent', isAdmin }: { role?: string; is
   const pathname = usePathname()
 
   // Support legacy isAdmin prop and new role prop
-  const canManageAgents = role === 'admin' || role === 'root' || isAdmin === true
+  const canManageAgents = role === 'admin' || role === 'root' || role === 'root_admin' || isAdmin === true
   const allItems = canManageAgents ? [...navItems, ...adminNavItems] : navItems
 
   return (
