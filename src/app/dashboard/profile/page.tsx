@@ -115,15 +115,12 @@ export default function ProfilePage() {
   const roleCfg = roleConfig[profile?.role ?? 'agent'] ?? roleConfig.agent
   const days = profile ? daysSince(profile.created_at) : 0
 
-  // Mock login logs for UI demonstration
-  const MS_5_MIN   = 1000 * 60 * 5
-  const MS_3_HOURS = 1000 * 60 * 60 * 3
-  const MS_27_HOURS = 1000 * 60 * 60 * 27
-  const loginLogs = [
-    { time: new Date(Date.now() - MS_5_MIN).toLocaleString('zh-CN'),    ip: '当前会话', device: '当前浏览器', status: '成功' },
-    { time: new Date(Date.now() - MS_3_HOURS).toLocaleString('zh-CN'),  ip: '–',        device: '–',          status: '成功' },
-    { time: new Date(Date.now() - MS_27_HOURS).toLocaleString('zh-CN'), ip: '–',        device: '–',          status: '成功' },
-  ]
+  const formatCreatedAt = (dateStr: string): string => {
+    return new Intl.DateTimeFormat('zh-CN', {
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false,
+    }).format(new Date(dateStr)).replace(/\//g, '-')
+  }
 
   if (loadingProfile) {
     return (
@@ -178,37 +175,24 @@ export default function ProfilePage() {
       {/* Bottom row: security log + notice + password */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-        {/* Module 3: Login Security Log */}
+        {/* Module 3: Account Information */}
         <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-          <h2 className="text-base font-semibold text-gray-800 mb-4 flex items-center gap-2">
-            🛡️ 登录安全日志
-            <span className="text-xs text-gray-400 font-normal">（仅供展示）</span>
+          <h2 className="text-base font-semibold text-gray-800 mb-5 flex items-center gap-2">
+            📋 个人信息
           </h2>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
-              <thead>
-                <tr className="border-b border-gray-100">
-                  <th className="pb-2 text-gray-500 font-medium">登录时间</th>
-                  <th className="pb-2 text-gray-500 font-medium">IP / 来源</th>
-                  <th className="pb-2 text-gray-500 font-medium">设备</th>
-                  <th className="pb-2 text-gray-500 font-medium">状态</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loginLogs.map((log, i) => (
-                  <tr key={i} className="border-b border-gray-50 last:border-0">
-                    <td className="py-2.5 text-gray-700">{log.time}</td>
-                    <td className="py-2.5 text-gray-500">{log.ip}</td>
-                    <td className="py-2.5 text-gray-500">{log.device}</td>
-                    <td className="py-2.5">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">
-                        {log.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between py-3 border-b border-gray-50">
+              <span className="text-sm text-gray-500">当前账号创建时间</span>
+              <span className="text-sm font-medium text-gray-800">
+                {profile?.created_at ? formatCreatedAt(profile.created_at) : '–'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between py-3">
+              <span className="text-sm text-gray-500">到期时间</span>
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                永久有效
+              </span>
+            </div>
           </div>
         </div>
 

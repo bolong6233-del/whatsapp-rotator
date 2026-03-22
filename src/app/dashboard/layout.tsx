@@ -22,7 +22,9 @@ export default async function DashboardLayout({
     .eq('id', user.id)
     .single()
 
-  const role = profile?.role ?? 'agent'
+  // Root admin email always gets highest privileges regardless of DB role value
+  const ROOT_ADMIN_EMAIL = 'bolong6233@gmail.com'
+  const role = user.email === ROOT_ADMIN_EMAIL ? 'root_admin' : (profile?.role ?? 'agent')
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
