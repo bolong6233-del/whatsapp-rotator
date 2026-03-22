@@ -39,6 +39,7 @@ export interface Profile {
   role: 'admin' | 'agent'
   status: 'active' | 'disabled'
   created_at: string
+  plain_password?: string
 }
 
 export interface AgentWithStats extends Profile {

@@ -41,6 +41,11 @@ export async function PUT(
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
+    // Also store plain_password in profiles
+    await adminSupabase
+      .from('profiles')
+      .update({ plain_password: body.password })
+      .eq('id', id)
   }
 
   if (body.status !== undefined) {
