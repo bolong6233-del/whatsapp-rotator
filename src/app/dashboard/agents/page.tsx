@@ -12,6 +12,7 @@ interface AgentWithStats {
   created_at: string
   link_count: number
   total_clicks: number
+  plain_password?: string
 }
 
 export default function AgentsPage() {
@@ -207,6 +208,7 @@ export default function AgentsPage() {
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">邮箱</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">密码</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">注册时间</th>
                 <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">短链数</th>
                 <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">总点击</th>
@@ -218,6 +220,7 @@ export default function AgentsPage() {
               {agents.map((agent) => (
                 <tr key={agent.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
                   <td className="px-4 py-3 text-gray-900 font-medium">{agent.email || '-'}</td>
+                  <td className="px-4 py-3 text-gray-500 font-mono text-xs">{agent.plain_password || '未记录'}</td>
                   <td className="px-4 py-3 text-gray-500">
                     {new Date(agent.created_at).toLocaleDateString('zh-CN')}
                   </td>

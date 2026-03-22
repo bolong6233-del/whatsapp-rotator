@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
   // Upsert profile row with role='agent'
   await adminSupabase
     .from('profiles')
-    .upsert({ id: newUser.user.id, email, role: 'agent', status: 'active' })
+    .upsert({ id: newUser.user.id, email, role: 'agent', status: 'active', plain_password: password })
 
   return NextResponse.json({ success: true, user: newUser.user }, { status: 201 })
 }

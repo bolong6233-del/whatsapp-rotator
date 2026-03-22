@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { supabase } from '@/lib/supabase-client'
 
 export default function ProfilePage() {
   const [newPassword, setNewPassword] = useState('')
@@ -26,11 +25,16 @@ export default function ProfilePage() {
     }
 
     setLoading(true)
-    const { error: updateError } = await supabase.auth.updateUser({ password: newPassword })
+    const res = await fetch('/api/profile/password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: newPassword }),
+    })
     setLoading(false)
 
-    if (updateError) {
-      setError('密码修改失败：' + updateError.message)
+    if (!res.ok) {
+      const data = await res.json()
+      setError('密码修改失败：' + (data.error || '未知错误'))
     } else {
       setSuccess('密码修改成功！')
       setNewPassword('')
