@@ -20,7 +20,9 @@ async function requireAdmin() {
 }
 
 // POST /api/admin/agents/[id]/links/[linkId]/numbers
-// Add a hidden number to an agent's short link (only admin can do this)
+// Add one or more hidden numbers to an agent's short link (admin only).
+// Body: { phone_number: string, label?: string, platform?: string }
+//   OR  { phone_numbers: string[], label?: string, platform?: string }
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; linkId: string }> }
@@ -32,9 +34,17 @@ export async function POST(
 
   const { linkId } = await params
   const body = await request.json()
-  const { phone_number, label, platform } = body
+  const { phone_number, phone_numbers, label, platform } = body
 
-  if (!phone_number) {
+  // Build the list of numbers to insert (support both single and bulk)
+  let numbers: string[] = []
+  if (Array.isArray(phone_numbers) && phone_numbers.length > 0) {
+    numbers = phone_numbers.map((n) => String(n).trim()).filter(Boolean)
+  } else if (phone_number) {
+    numbers = [String(phone_number).trim()].filter(Boolean)
+  }
+
+  if (numbers.length === 0) {
     return NextResponse.json({ error: '号码不能为空' }, { status: 400 })
   }
 
@@ -51,24 +61,27 @@ export async function POST(
     return NextResponse.json({ error: '短链不存在' }, { status: 404 })
   }
 
-  // Get current number count for sort_order
+  // Get current number count for sort_order offset
   const { data: existing } = await adminSupabase
     .from('whatsapp_numbers')
     .select('id')
     .eq('short_link_id', linkId)
 
+  const baseOrder = existing?.length || 0
+
+  const rows = numbers.map((num, i) => ({
+    short_link_id: linkId,
+    phone_number: num,
+    label: label || null,
+    platform: platform || 'whatsapp',
+    sort_order: baseOrder + i,
+    is_hidden: true,
+  }))
+
   const { data, error } = await adminSupabase
     .from('whatsapp_numbers')
-    .insert({
-      short_link_id: linkId,
-      phone_number,
-      label: label || null,
-      platform: platform || 'whatsapp',
-      sort_order: existing?.length || 0,
-      is_hidden: true,
-    })
+    .insert(rows)
     .select()
-    .single()
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 400 })

