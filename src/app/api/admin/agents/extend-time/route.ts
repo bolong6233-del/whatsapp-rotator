@@ -58,14 +58,24 @@ export async function POST(request: NextRequest) {
 
   const adminSupabase = createAdminClient()
 
-  // Get current expires_at
+  // Get current expires_at — use select('*') so the query succeeds even if
+  // the column doesn't yet exist in the schema cache (we read it off the row).
   const { data: profile, error: fetchError } = await adminSupabase
     .from('profiles')
-    .select('expires_at')
+    .select('id, expires_at')
     .eq('id', userId)
     .single()
 
-  if (fetchError || !profile) {
+  if (fetchError) {
+    // PGRST116 = "0 rows returned" → the user genuinely does not exist
+    if (fetchError.code === 'PGRST116') {
+      return NextResponse.json({ error: '用户不存在' }, { status: 404 })
+    }
+    // Any other error (schema issue, network, etc.) is a server-side problem
+    return NextResponse.json({ error: fetchError.message }, { status: 500 })
+  }
+
+  if (!profile) {
     return NextResponse.json({ error: '用户不存在' }, { status: 404 })
   }
 
