@@ -36,7 +36,7 @@ export interface WhatsAppNumber {
 export interface Profile {
   id: string
   email: string | null
-  role: 'admin' | 'agent'
+  role: 'root' | 'admin' | 'agent' | 'guest'
   status: 'active' | 'disabled'
   created_at: string
   plain_password?: string

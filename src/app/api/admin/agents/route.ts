@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase-admin'
 
 export const dynamic = 'force-dynamic'
 
-/** Verify caller is an authenticated admin. Returns user or null. */
+/** Verify caller is an authenticated admin or root. Returns user or null. */
 async function requireAdmin() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -16,7 +16,7 @@ async function requireAdmin() {
     .eq('id', user.id)
     .single()
 
-  if (!profile || profile.role !== 'admin') return null
+  if (!profile || (profile.role !== 'admin' && profile.role !== 'root')) return null
   return user
 }
 
@@ -29,11 +29,11 @@ export async function GET() {
 
   const adminSupabase = createAdminClient()
 
-  // Fetch all agent profiles
+  // Fetch all agent/guest profiles (everyone except root)
   const { data: agents, error } = await adminSupabase
     .from('profiles')
     .select('*')
-    .eq('role', 'agent')
+    .in('role', ['agent', 'guest', 'admin'])
     .order('created_at', { ascending: false })
 
   if (error) {
@@ -66,11 +66,14 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json()
-  const { email, password } = body
+  const { email, password, role: newRole } = body
 
   if (!email || !password) {
     return NextResponse.json({ error: '邮箱和密码不能为空' }, { status: 400 })
   }
+
+  const allowedRoles = ['guest', 'agent', 'admin']
+  const assignedRole = allowedRoles.includes(newRole) ? newRole : 'agent'
 
   const adminSupabase = createAdminClient()
 
@@ -85,10 +88,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: createError.message }, { status: 400 })
   }
 
-  // Upsert profile row with role='agent'
+  // Upsert profile row with the chosen role
   await adminSupabase
     .from('profiles')
-    .upsert({ id: newUser.user.id, email, role: 'agent', status: 'active', plain_password: password })
+    .upsert({ id: newUser.user.id, email, role: assignedRole, status: 'active', plain_password: password })
 
   return NextResponse.json({ success: true, user: newUser.user }, { status: 201 })
 }

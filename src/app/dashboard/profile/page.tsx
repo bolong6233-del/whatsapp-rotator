@@ -1,13 +1,83 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { supabase } from '@/lib/supabase-client'
+
+interface ProfileData {
+  id: string
+  email: string | null
+  role: string
+  created_at: string
+}
+
+interface StatsData {
+  linkCount: number
+  numberCount: number
+  totalClicks: number
+}
+
+const roleConfig: Record<string, { label: string; color: string }> = {
+  root:  { label: '超级管理员', color: 'bg-red-100 text-red-700' },
+  admin: { label: '管理员',    color: 'bg-purple-100 text-purple-700' },
+  agent: { label: '高级代理',  color: 'bg-blue-100 text-blue-700' },
+  guest: { label: '游客',      color: 'bg-gray-100 text-gray-600' },
+}
+
+function getInitials(email: string | null): string {
+  if (!email) return '?'
+  return email.charAt(0).toUpperCase()
+}
+
+function daysSince(dateStr: string): number {
+  const created = new Date(dateStr)
+  const now = new Date()
+  return Math.floor((now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24))
+}
 
 export default function ProfilePage() {
+  const [profile, setProfile] = useState<ProfileData | null>(null)
+  const [stats, setStats] = useState<StatsData>({ linkCount: 0, numberCount: 0, totalClicks: 0 })
+  const [loadingProfile, setLoadingProfile] = useState(true)
+
+  // Password change state
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+
+  useEffect(() => {
+    async function loadData() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { data: prof } = await supabase
+        .from('profiles')
+        .select('id, email, role, created_at')
+        .eq('id', user.id)
+        .single()
+
+      if (prof) setProfile(prof as ProfileData)
+
+      // Fetch stats
+      const { data: links } = await supabase
+        .from('short_links')
+        .select('id, total_clicks')
+        .eq('user_id', user.id)
+
+      const linkCount = links?.length ?? 0
+      const totalClicks = links?.reduce((sum, l) => sum + (l.total_clicks ?? 0), 0) ?? 0
+
+      const { count: numberCount } = await supabase
+        .from('whatsapp_numbers')
+        .select('id', { count: 'exact', head: true })
+        .in('short_link_id', (links ?? []).map((l) => l.id))
+
+      setStats({ linkCount, numberCount: numberCount ?? 0, totalClicks })
+      setLoadingProfile(false)
+    }
+    loadData()
+  }, [])
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -42,12 +112,133 @@ export default function ProfilePage() {
     }
   }
 
-  return (
-    <div className="max-w-lg">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">个人中心</h1>
+  const roleCfg = roleConfig[profile?.role ?? 'agent'] ?? roleConfig.agent
+  const days = profile ? daysSince(profile.created_at) : 0
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-        <h2 className="text-base font-semibold text-gray-800 mb-5">修改密码</h2>
+  // Mock login logs for UI demonstration
+  const MS_5_MIN   = 1000 * 60 * 5
+  const MS_3_HOURS = 1000 * 60 * 60 * 3
+  const MS_27_HOURS = 1000 * 60 * 60 * 27
+  const loginLogs = [
+    { time: new Date(Date.now() - MS_5_MIN).toLocaleString('zh-CN'),    ip: '当前会话', device: '当前浏览器', status: '成功' },
+    { time: new Date(Date.now() - MS_3_HOURS).toLocaleString('zh-CN'),  ip: '–',        device: '–',          status: '成功' },
+    { time: new Date(Date.now() - MS_27_HOURS).toLocaleString('zh-CN'), ip: '–',        device: '–',          status: '成功' },
+  ]
+
+  if (loadingProfile) {
+    return (
+      <div className="flex items-center justify-center h-48 text-gray-400 text-sm">
+        加载中...
+      </div>
+    )
+  }
+
+  return (
+    <div className="max-w-5xl mx-auto space-y-6">
+      <h1 className="text-2xl font-bold text-gray-900">个人中心</h1>
+
+      {/* Top row: profile card + stats */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        {/* Module 1: Profile Card */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex flex-col items-center text-center">
+          {/* Avatar */}
+          <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-2xl font-bold mb-4 select-none">
+            {getInitials(profile?.email ?? null)}
+          </div>
+          <p className="text-gray-900 font-semibold text-sm break-all">{profile?.email ?? '–'}</p>
+          <span className={`mt-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${roleCfg.color}`}>
+            {roleCfg.label}
+          </span>
+          <p className="mt-3 text-xs text-gray-400">
+            已加入系统 <span className="font-semibold text-gray-600">{days}</span> 天
+          </p>
+        </div>
+
+        {/* Module 2: Stats Overview */}
+        <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 flex flex-col justify-between">
+            <p className="text-xs text-gray-500 font-medium">我的短链</p>
+            <p className="text-3xl font-bold text-gray-900 mt-2">{stats.linkCount}</p>
+            <p className="text-xs text-gray-400 mt-1">条短链</p>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 flex flex-col justify-between">
+            <p className="text-xs text-gray-500 font-medium">我的号码</p>
+            <p className="text-3xl font-bold text-gray-900 mt-2">{stats.numberCount}</p>
+            <p className="text-xs text-gray-400 mt-1">个 WhatsApp 号码</p>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 flex flex-col justify-between">
+            <p className="text-xs text-gray-500 font-medium">累计获客</p>
+            <p className="text-3xl font-bold text-green-600 mt-2">{stats.totalClicks.toLocaleString()}</p>
+            <p className="text-xs text-gray-400 mt-1">次点击</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Bottom row: security log + notice + password */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        {/* Module 3: Login Security Log */}
+        <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+          <h2 className="text-base font-semibold text-gray-800 mb-4 flex items-center gap-2">
+            🛡️ 登录安全日志
+            <span className="text-xs text-gray-400 font-normal">（仅供展示）</span>
+          </h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs text-left">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  <th className="pb-2 text-gray-500 font-medium">登录时间</th>
+                  <th className="pb-2 text-gray-500 font-medium">IP / 来源</th>
+                  <th className="pb-2 text-gray-500 font-medium">设备</th>
+                  <th className="pb-2 text-gray-500 font-medium">状态</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loginLogs.map((log, i) => (
+                  <tr key={i} className="border-b border-gray-50 last:border-0">
+                    <td className="py-2.5 text-gray-700">{log.time}</td>
+                    <td className="py-2.5 text-gray-500">{log.ip}</td>
+                    <td className="py-2.5 text-gray-500">{log.device}</td>
+                    <td className="py-2.5">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">
+                        {log.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Module 4: System Notice / Contact Admin */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex flex-col justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-gray-800 mb-3 flex items-center gap-2">
+              📢 系统公告
+            </h2>
+            <p className="text-sm text-gray-600 leading-relaxed">
+              如需提升短链配额或遇到问题，请联系您的专属管理员。
+            </p>
+          </div>
+          <a
+            href="https://t.me/TKJZYL"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-5 inline-flex items-center justify-center gap-2 w-full px-4 py-2.5 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L7.19 13.981l-2.965-.924c-.644-.203-.658-.644.136-.953l11.57-4.461c.537-.194 1.006.131.963.578z" />
+            </svg>
+            联系管理员 @TKJZYL
+          </a>
+        </div>
+      </div>
+
+      {/* Password Change */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 max-w-lg">
+        <h2 className="text-base font-semibold text-gray-800 mb-5">🔒 修改密码</h2>
 
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg mb-4 text-sm">

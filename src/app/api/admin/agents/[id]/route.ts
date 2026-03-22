@@ -15,7 +15,7 @@ async function requireAdmin() {
     .eq('id', user.id)
     .single()
 
-  if (!profile || profile.role !== 'admin') return null
+  if (!profile || (profile.role !== 'admin' && profile.role !== 'root')) return null
   return user
 }
 
@@ -53,6 +53,21 @@ export async function PUT(
     const { error } = await adminSupabase
       .from('profiles')
       .update({ status: body.status })
+      .eq('id', id)
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
+  }
+
+  if (body.role !== undefined) {
+    const allowedRoles = ['guest', 'agent', 'admin']
+    if (!allowedRoles.includes(body.role)) {
+      return NextResponse.json({ error: '无效的角色' }, { status: 400 })
+    }
+    const { error } = await adminSupabase
+      .from('profiles')
+      .update({ role: body.role })
       .eq('id', id)
 
     if (error) {

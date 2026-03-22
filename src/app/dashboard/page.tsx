@@ -122,6 +122,7 @@ export default function DashboardPage() {
   const [success, setSuccess] = useState('')
   const [copyToast, setCopyToast] = useState('')
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [userRole, setUserRole] = useState<string>('agent')
 
   // Create modal state
   const [showModal, setShowModal] = useState(false)
@@ -137,8 +138,16 @@ export default function DashboardPage() {
   const [createError, setCreateError] = useState('')
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) setCurrentUserId(user.id)
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (user) {
+        setCurrentUserId(user.id)
+        const { data: prof } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single()
+        if (prof?.role) setUserRole(prof.role)
+      }
     })
   }, [])
 
@@ -347,7 +356,9 @@ export default function DashboardPage() {
       <div className="flex items-center gap-2 flex-wrap">
         <button
           onClick={() => { setNewSlug(generateSlug()); setCreateError(''); setShowModal(true) }}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 rounded transition-colors"
+          disabled={userRole === 'guest'}
+          title={userRole === 'guest' ? '游客账号无法创建短链' : undefined}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
           新增
