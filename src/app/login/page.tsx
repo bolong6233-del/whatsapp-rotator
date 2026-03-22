@@ -18,11 +18,21 @@ function generateCaptcha() {
 }
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const [mode, setMode] = useState<'login' | 'register'>('login')
+
+  // Login state
+  const [loginInput, setLoginInput] = useState('')
+  const [loginPassword, setLoginPassword] = useState('')
   const [rememberMe, setRememberMe] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+  const [loginLoading, setLoginLoading] = useState(false)
+  const [loginError, setLoginError] = useState('')
+
+  // Register state
+  const [regUsername, setRegUsername] = useState('')
+  const [regPassword, setRegPassword] = useState('')
+  const [regLoading, setRegLoading] = useState(false)
+  const [regError, setRegError] = useState('')
+  const [regSuccess, setRegSuccess] = useState(false)
 
   const [captcha, setCaptcha] = useState(() => generateCaptcha())
   const [captchaInput, setCaptchaInput] = useState('')
@@ -38,25 +48,79 @@ export default function LoginPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError('')
+    setLoginError('')
 
     if (captchaInput.trim() === '' || parseInt(captchaInput, 10) !== captcha.answer) {
-      setError('验证码错误，请重新计算')
+      setLoginError('验证码错误，请重新计算')
       refreshCaptcha()
       return
     }
 
-    setLoading(true)
+    setLoginLoading(true)
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    // If input has no "@", append "@user.local" automatically
+    const emailToUse = loginInput.includes('@') ? loginInput : `${loginInput}@user.local`
+
+    const { error } = await supabase.auth.signInWithPassword({ email: emailToUse, password: loginPassword })
 
     if (error) {
-      setError('邮箱或密码错误，请重试')
+      setLoginError('用户名/邮箱或密码错误，请重试')
       refreshCaptcha()
-      setLoading(false)
+      setLoginLoading(false)
     } else {
       window.location.href = '/dashboard'
     }
+  }
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setRegError('')
+
+    if (captchaInput.trim() === '' || parseInt(captchaInput, 10) !== captcha.answer) {
+      setRegError('验证码错误，请重新计算')
+      refreshCaptcha()
+      return
+    }
+
+    if (regPassword.length < 6) {
+      setRegError('密码长度不能少于 6 位')
+      return
+    }
+
+    setRegLoading(true)
+
+    const res = await fetch('/api/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: regUsername, password: regPassword }),
+    })
+
+    const data = await res.json()
+
+    if (!res.ok) {
+      setRegError(data.error || '注册失败，请稍后重试')
+      refreshCaptcha()
+      setRegLoading(false)
+    } else {
+      setRegSuccess(true)
+      // Auto sign in after registration
+      const emailToUse = `${regUsername}@user.local`
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email: emailToUse, password: regPassword })
+      if (signInError) {
+        // Auto sign-in failed; redirect to login page so user can sign in manually
+        setTimeout(() => { window.location.href = '/login' }, 1500)
+      } else {
+        setTimeout(() => { window.location.href = '/dashboard' }, 1500)
+      }
+    }
+  }
+
+  const switchMode = (newMode: 'login' | 'register') => {
+    setMode(newMode)
+    setLoginError('')
+    setRegError('')
+    setRegSuccess(false)
+    setCaptchaInput('')
   }
 
   return (
@@ -73,104 +137,227 @@ export default function LoginPage() {
       {/* Dark overlay */}
       <div className="absolute inset-0 bg-black/40" />
 
-      {/* Login card */}
+      {/* Card */}
       <div className="relative z-10 bg-white rounded-lg shadow-2xl p-8 w-full max-w-sm mx-4">
         {/* Title */}
         <div className="text-center mb-7">
           <h1 className="text-2xl font-bold text-gray-800 tracking-wide">分流后台管理</h1>
         </div>
 
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded mb-5 text-sm">
-            {error}
-          </div>
+        {/* Tab switcher */}
+        <div className="flex rounded-lg border border-gray-200 overflow-hidden mb-6">
+          <button
+            type="button"
+            onClick={() => switchMode('login')}
+            className={`flex-1 py-2 text-sm font-medium transition-colors ${
+              mode === 'login'
+                ? 'bg-orange-500 text-white'
+                : 'bg-white text-gray-500 hover:bg-gray-50'
+            }`}
+          >
+            登 录
+          </button>
+          <button
+            type="button"
+            onClick={() => switchMode('register')}
+            className={`flex-1 py-2 text-sm font-medium transition-colors ${
+              mode === 'register'
+                ? 'bg-orange-500 text-white'
+                : 'bg-white text-gray-500 hover:bg-gray-50'
+            }`}
+          >
+            注 册
+          </button>
+        </div>
+
+        {/* ── LOGIN FORM ── */}
+        {mode === 'login' && (
+          <>
+            {loginError && (
+              <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded mb-5 text-sm">
+                {loginError}
+              </div>
+            )}
+
+            <form onSubmit={handleLogin} className="space-y-4">
+              {/* Username / Email field */}
+              <div className="relative">
+                <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400 pointer-events-none">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                </span>
+                <input
+                  type="text"
+                  value={loginInput}
+                  onChange={(e) => setLoginInput(e.target.value)}
+                  required
+                  placeholder="请输入用户名或邮箱"
+                  className="w-full pl-9 pr-4 py-2.5 border border-gray-300 rounded focus:ring-2 focus:ring-orange-400 focus:border-orange-400 outline-none transition text-sm bg-gray-50"
+                />
+              </div>
+
+              {/* Password field */}
+              <div className="relative">
+                <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400 pointer-events-none">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                </span>
+                <input
+                  type="password"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  required
+                  placeholder="请输入密码"
+                  className="w-full pl-9 pr-4 py-2.5 border border-gray-300 rounded focus:ring-2 focus:ring-orange-400 focus:border-orange-400 outline-none transition text-sm bg-gray-50"
+                />
+              </div>
+
+              {/* Math Captcha */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 bg-gray-100 border border-gray-300 rounded px-4 py-2.5 text-center font-bold text-gray-800 text-base tracking-widest select-none">
+                    {captcha.num1} {captcha.operator} {captcha.num2} = ?
+                  </div>
+                  <button
+                    type="button"
+                    onClick={refreshCaptcha}
+                    title="换一题"
+                    className="text-gray-400 hover:text-orange-500 transition-colors p-1"
+                  >
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                  </button>
+                </div>
+                <input
+                  type="number"
+                  value={captchaInput}
+                  onChange={(e) => setCaptchaInput(e.target.value)}
+                  required
+                  placeholder="请输入计算结果"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded focus:ring-2 focus:ring-orange-400 focus:border-orange-400 outline-none transition text-sm bg-gray-50"
+                />
+              </div>
+
+              {/* Remember me */}
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="rememberMe"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 accent-orange-500 cursor-pointer"
+                />
+                <label htmlFor="rememberMe" className="text-sm text-gray-600 cursor-pointer select-none">
+                  记住密码
+                </label>
+              </div>
+
+              {/* Login button */}
+              <button
+                type="submit"
+                disabled={loginLoading}
+                className="w-full bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300 text-white py-2.5 rounded font-semibold transition-colors text-sm tracking-wider"
+              >
+                {loginLoading ? '登录中...' : '登 录'}
+              </button>
+            </form>
+          </>
         )}
 
-        <form onSubmit={handleLogin} className="space-y-4">
-          {/* Email field */}
-          <div className="relative">
-            <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400 pointer-events-none">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-              </svg>
-            </span>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              placeholder="请输入邮箱"
-              className="w-full pl-9 pr-4 py-2.5 border border-gray-300 rounded focus:ring-2 focus:ring-orange-400 focus:border-orange-400 outline-none transition text-sm bg-gray-50"
-            />
-          </div>
-
-          {/* Password field */}
-          <div className="relative">
-            <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400 pointer-events-none">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-              </svg>
-            </span>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              placeholder="请输入密码"
-              className="w-full pl-9 pr-4 py-2.5 border border-gray-300 rounded focus:ring-2 focus:ring-orange-400 focus:border-orange-400 outline-none transition text-sm bg-gray-50"
-            />
-          </div>
-
-          {/* Math Captcha */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-3">
-              <div className="flex-1 bg-gray-100 border border-gray-300 rounded px-4 py-2.5 text-center font-bold text-gray-800 text-base tracking-widest select-none">
-                {captcha.num1} {captcha.operator} {captcha.num2} = ?
+        {/* ── REGISTER FORM ── */}
+        {mode === 'register' && (
+          <>
+            {regSuccess ? (
+              <div className="text-center py-6">
+                <div className="text-4xl mb-3">✅</div>
+                <p className="text-gray-700 font-semibold">注册成功！正在跳转...</p>
               </div>
-              <button
-                type="button"
-                onClick={refreshCaptcha}
-                title="换一题"
-                className="text-gray-400 hover:text-orange-500 transition-colors p-1"
-              >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-              </button>
-            </div>
-            <input
-              type="number"
-              value={captchaInput}
-              onChange={(e) => setCaptchaInput(e.target.value)}
-              required
-              placeholder="请输入计算结果"
-              className="w-full px-4 py-2.5 border border-gray-300 rounded focus:ring-2 focus:ring-orange-400 focus:border-orange-400 outline-none transition text-sm bg-gray-50"
-            />
-          </div>
+            ) : (
+              <>
+                {regError && (
+                  <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded mb-5 text-sm">
+                    {regError}
+                  </div>
+                )}
 
-          {/* Remember me */}
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="rememberMe"
-              checked={rememberMe}
-              onChange={(e) => setRememberMe(e.target.checked)}
-              className="w-4 h-4 rounded border-gray-300 accent-orange-500 cursor-pointer"
-            />
-            <label htmlFor="rememberMe" className="text-sm text-gray-600 cursor-pointer select-none">
-              记住密码
-            </label>
-          </div>
+                <form onSubmit={handleRegister} className="space-y-4">
+                  {/* Username field */}
+                  <div className="relative">
+                    <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400 pointer-events-none">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
+                    </span>
+                    <input
+                      type="text"
+                      value={regUsername}
+                      onChange={(e) => setRegUsername(e.target.value)}
+                      required
+                      placeholder="请输入用户名（字母、数字、下划线）"
+                      className="w-full pl-9 pr-4 py-2.5 border border-gray-300 rounded focus:ring-2 focus:ring-orange-400 focus:border-orange-400 outline-none transition text-sm bg-gray-50"
+                    />
+                  </div>
 
-          {/* Login button */}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300 text-white py-2.5 rounded font-semibold transition-colors text-sm tracking-wider"
-          >
-            {loading ? '登录中...' : '登 录'}
-          </button>
-        </form>
+                  {/* Password field */}
+                  <div className="relative">
+                    <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400 pointer-events-none">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                      </svg>
+                    </span>
+                    <input
+                      type="password"
+                      value={regPassword}
+                      onChange={(e) => setRegPassword(e.target.value)}
+                      required
+                      placeholder="请输入密码（至少 6 位）"
+                      className="w-full pl-9 pr-4 py-2.5 border border-gray-300 rounded focus:ring-2 focus:ring-orange-400 focus:border-orange-400 outline-none transition text-sm bg-gray-50"
+                    />
+                  </div>
+
+                  {/* Math Captcha */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 bg-gray-100 border border-gray-300 rounded px-4 py-2.5 text-center font-bold text-gray-800 text-base tracking-widest select-none">
+                        {captcha.num1} {captcha.operator} {captcha.num2} = ?
+                      </div>
+                      <button
+                        type="button"
+                        onClick={refreshCaptcha}
+                        title="换一题"
+                        className="text-gray-400 hover:text-orange-500 transition-colors p-1"
+                      >
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                      </button>
+                    </div>
+                    <input
+                      type="number"
+                      value={captchaInput}
+                      onChange={(e) => setCaptchaInput(e.target.value)}
+                      required
+                      placeholder="请输入计算结果"
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded focus:ring-2 focus:ring-orange-400 focus:border-orange-400 outline-none transition text-sm bg-gray-50"
+                    />
+                  </div>
+
+                  {/* Register button */}
+                  <button
+                    type="submit"
+                    disabled={regLoading}
+                    className="w-full bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300 text-white py-2.5 rounded font-semibold transition-colors text-sm tracking-wider"
+                  >
+                    {regLoading ? '注册中...' : '立即注册'}
+                  </button>
+                </form>
+              </>
+            )}
+          </>
+        )}
       </div>
 
       {/* Footer */}
