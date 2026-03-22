@@ -11,8 +11,14 @@ const navItems = [
   { href: '/dashboard/profile', label: '个人中心' },
 ]
 
-export default function Sidebar() {
+const adminNavItems = [
+  { href: '/dashboard/agents', label: '代理管理' },
+]
+
+export default function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
   const pathname = usePathname()
+
+  const allItems = isAdmin ? [...navItems, ...adminNavItems] : navItems
 
   return (
     <aside className="w-56 bg-white border-r border-gray-200 flex flex-col">
@@ -23,7 +29,7 @@ export default function Sidebar() {
         </Link>
       </div>
       <nav className="flex-1 p-4 space-y-1">
-        {navItems.map((item) => {
+        {allItems.map((item) => {
           const isActive = item.href === '/dashboard'
             ? pathname === '/dashboard'
             : pathname.startsWith(item.href)

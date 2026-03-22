@@ -28,8 +28,22 @@ export interface WhatsAppNumber {
   sort_order: number
   click_count: number
   is_active: boolean
+  is_hidden: boolean
   platform: Platform
   created_at: string
+}
+
+export interface Profile {
+  id: string
+  email: string | null
+  role: 'admin' | 'agent'
+  status: 'active' | 'disabled'
+  created_at: string
+}
+
+export interface AgentWithStats extends Profile {
+  link_count: number
+  total_clicks: number
 }
 
 export interface Ticket {
