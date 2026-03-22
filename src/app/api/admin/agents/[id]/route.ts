@@ -4,10 +4,15 @@ import { createAdminClient } from '@/lib/supabase-admin'
 
 export const dynamic = 'force-dynamic'
 
+const ROOT_ADMIN_EMAIL = 'bolong6233@gmail.com'
+
 async function requireAdmin() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
+
+  // Root admin email always has full access regardless of DB role value
+  if (user.email === ROOT_ADMIN_EMAIL) return user
 
   const { data: profile } = await supabase
     .from('profiles')
@@ -15,7 +20,7 @@ async function requireAdmin() {
     .eq('id', user.id)
     .single()
 
-  if (!profile || (profile.role !== 'admin' && profile.role !== 'root')) return null
+  if (!profile || !(['admin', 'root', 'root_admin'] as string[]).includes(profile.role)) return null
   return user
 }
 

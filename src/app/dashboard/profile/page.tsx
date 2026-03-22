@@ -16,8 +16,11 @@ interface StatsData {
   totalClicks: number
 }
 
+const ROOT_ADMIN_EMAIL = 'bolong6233@gmail.com'
+
 const roleConfig: Record<string, { label: string; color: string }> = {
-  root:  { label: '超级管理员', color: 'bg-red-100 text-red-700' },
+  root_admin: { label: '超级管理员', color: 'bg-yellow-100 text-yellow-700' },
+  root:  { label: '超级管理员', color: 'bg-yellow-100 text-yellow-700' },
   admin: { label: '管理员',    color: 'bg-purple-100 text-purple-700' },
   agent: { label: '高级代理',  color: 'bg-blue-100 text-blue-700' },
   guest: { label: '游客',      color: 'bg-gray-100 text-gray-600' },
@@ -112,7 +115,9 @@ export default function ProfilePage() {
     }
   }
 
-  const roleCfg = roleConfig[profile?.role ?? 'agent'] ?? roleConfig.agent
+  const roleCfg = profile?.email === ROOT_ADMIN_EMAIL
+    ? roleConfig.root_admin
+    : (roleConfig[profile?.role ?? 'agent'] ?? roleConfig.agent)
   const days = profile ? daysSince(profile.created_at) : 0
 
   const formatCreatedAt = (dateStr: string): string => {
