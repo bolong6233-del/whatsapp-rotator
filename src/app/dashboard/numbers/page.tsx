@@ -136,6 +136,8 @@ export default function NumbersPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
 
   // Modal state
   const [showModal, setShowModal] = useState(false)
@@ -147,24 +149,43 @@ export default function NumbersPage() {
   const [adding, setAdding] = useState(false)
 
   useEffect(() => {
-    supabase
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) return
+      setCurrentUserId(user.id)
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+      setIsAdmin(profile?.role === 'admin')
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!currentUserId) return
+    let query = supabase
       .from('whatsapp_numbers')
       .select('phone_number')
       .order('phone_number', { ascending: true })
-      .then(({ data }) => {
-        if (data) {
-          const unique = Array.from(new Set(data.map((r: { phone_number: string }) => r.phone_number)))
-          setAllPhones(unique)
-        }
-      })
-  }, [])
+    if (!isAdmin) {
+      query = query.eq('is_hidden', false)
+    }
+    query.then(({ data }) => {
+      if (data) {
+        const unique = Array.from(new Set(data.map((r: { phone_number: string }) => r.phone_number)))
+        setAllPhones(unique)
+      }
+    })
+  }, [currentUserId, isAdmin])
 
   const fetchData = useCallback(async () => {
+    if (!currentUserId) return
     setLoading(true)
     try {
       const { data: linksData, error: linksError } = await supabase
         .from('short_links')
         .select('*')
+        .eq('user_id', currentUserId)
         .order('created_at', { ascending: false })
 
       if (linksError) throw linksError
@@ -174,6 +195,10 @@ export default function NumbersPage() {
         .from('whatsapp_numbers')
         .select('*, short_links(id, slug, title)', { count: 'exact' })
         .order('created_at', { ascending: false })
+
+      if (!isAdmin) {
+        query = query.eq('is_hidden', false)
+      }
 
       if (filterPlatform !== 'all') {
         query = query.eq('platform', filterPlatform)
@@ -202,7 +227,7 @@ export default function NumbersPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, pageSize, filterPlatform, filterLink, filterStatus, searchPhone])
+  }, [page, pageSize, filterPlatform, filterLink, filterStatus, searchPhone, currentUserId, isAdmin])
 
   useEffect(() => {
     fetchData()

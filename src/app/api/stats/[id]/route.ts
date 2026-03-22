@@ -36,12 +36,18 @@ export async function GET(
 
   const isAdmin = profile?.role === 'admin'
 
-  // Fetch numbers visible to this user (RLS already filters is_hidden for agents)
-  const { data: numbers } = await supabase
+  // Fetch numbers visible to this user; explicitly exclude hidden numbers for non-admins
+  let numbersQuery = supabase
     .from('whatsapp_numbers')
     .select('*')
     .eq('short_link_id', id)
     .order('click_count', { ascending: false })
+
+  if (!isAdmin) {
+    numbersQuery = numbersQuery.eq('is_hidden', false)
+  }
+
+  const { data: numbers } = await numbersQuery
 
   // Fetch all click logs
   const { data: allLogs } = await supabase

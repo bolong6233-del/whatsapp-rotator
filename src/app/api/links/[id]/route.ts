@@ -14,6 +14,13 @@ export async function GET(
     return NextResponse.json({ error: '未授权' }, { status: 401 })
   }
 
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single()
+  const isAdmin = profile?.role === 'admin'
+
   const { id } = await params
   const { data, error } = await supabase
     .from('short_links')
@@ -24,6 +31,12 @@ export async function GET(
 
   if (error || !data) {
     return NextResponse.json({ error: '未找到' }, { status: 404 })
+  }
+
+  if (!isAdmin && data.whatsapp_numbers) {
+    data.whatsapp_numbers = data.whatsapp_numbers.filter(
+      (n: { is_hidden: boolean }) => !n.is_hidden
+    )
   }
 
   return NextResponse.json(data)
