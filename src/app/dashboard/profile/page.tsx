@@ -61,7 +61,23 @@ export default function ProfilePage() {
         .eq('id', user.id)
         .single()
 
-      if (prof) setProfile(prof as ProfileData)
+      if (prof) {
+        // Prefer profile data but fall back to session user data for critical fields
+        setProfile({
+          ...prof,
+          email: prof.email ?? user.email ?? null,
+          created_at: prof.created_at ?? user.created_at,
+        } as ProfileData)
+      } else {
+        // Profile row not found (e.g. root admin before migration) — use auth session data
+        setProfile({
+          id: user.id,
+          email: user.email || null,
+          role: user.email === ROOT_ADMIN_EMAIL ? 'root_admin' : 'agent',
+          created_at: user.created_at,
+          expires_at: null,
+        })
+      }
 
       // Fetch stats
       const { data: links } = await supabase
