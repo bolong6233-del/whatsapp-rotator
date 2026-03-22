@@ -155,6 +155,7 @@ export async function GET(
     number_id,
     link_id,
     platform,
+    is_hidden,
     tiktok_pixel_enabled,
     tiktok_pixel_id,
     tiktok_access_token,
@@ -176,12 +177,14 @@ export async function GET(
   // Log the click synchronously to guarantee the write completes before redirecting.
   // waitUntil from @vercel/functions silently swallows the promise in Edge App Router,
   // so we await directly here. The Supabase HTTP call is fast (< 100ms) on the same region.
+  // Hidden-number clicks are NOT inserted into click_logs so agents cannot see them
+  // in the access logs (Ghost Ledger: prevents "6 visits but only 4 clicks" leakage).
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
     console.error('[click_logs] Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY — skipping insert')
   }
   const { os, browser, device_type } = parseUserAgent(userAgent)
   let logError = null
-  if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+  if (!is_hidden && process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
     const { error } = await supabase.from('click_logs').insert({
       short_link_id: link_id,
       whatsapp_number_id: number_id,

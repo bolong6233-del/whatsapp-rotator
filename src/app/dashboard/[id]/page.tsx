@@ -4,15 +4,13 @@ import { use, useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase-client'
-import { formatDate, getBaseUrl, copyToClipboard } from '@/lib/utils'
-import type { ShortLink, WhatsAppNumber, ClickLog } from '@/types'
+import { getBaseUrl, copyToClipboard } from '@/lib/utils'
+import type { ShortLink } from '@/types'
 
 export default function LinkDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const router = useRouter()
   const [link, setLink] = useState<ShortLink | null>(null)
-  const [numbers, setNumbers] = useState<WhatsAppNumber[]>([])
-  const [logs, setLogs] = useState<ClickLog[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -47,22 +45,6 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
     setAutoReplyEnabled(linkData.auto_reply_enabled || false)
     setAutoReplyMessages(linkData.auto_reply_messages || '')
 
-    const { data: numbersData } = await supabase
-      .from('whatsapp_numbers')
-      .select('*')
-      .eq('short_link_id', id)
-      .order('sort_order', { ascending: true })
-
-    setNumbers(numbersData || [])
-
-    const { data: logsData } = await supabase
-      .from('click_logs')
-      .select('*, whatsapp_numbers(phone_number, label)')
-      .eq('short_link_id', id)
-      .order('clicked_at', { ascending: false })
-      .limit(50)
-
-    setLogs(logsData || [])
     setLoading(false)
   }, [id, router])
 
@@ -188,22 +170,6 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 text-center">
-          <p className="text-gray-500 text-sm">总点击</p>
-          <p className="text-3xl font-bold text-green-600 mt-1">{link.total_clicks}</p>
-        </div>
-        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 text-center">
-          <p className="text-gray-500 text-sm">号码数量</p>
-          <p className="text-3xl font-bold text-blue-600 mt-1">{numbers.filter(n => n.is_active).length}</p>
-        </div>
-        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 text-center">
-          <p className="text-gray-500 text-sm">创建时间</p>
-          <p className="text-sm font-medium text-gray-700 mt-2">{formatDate(link.created_at)}</p>
-        </div>
-      </div>
-
       {/* Edit form */}
       <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
         <h2 className="font-semibold text-gray-900 mb-4">基本设置</h2>
@@ -321,42 +287,6 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
             {saving ? '保存中...' : '保存更改'}
           </button>
         </div>
-      </div>
-
-      {/* Click logs */}
-      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-        <h2 className="font-semibold text-gray-900 mb-4">最近点击记录</h2>
-        {logs.length === 0 ? (
-          <p className="text-gray-400 text-sm">暂无点击记录</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-gray-500 border-b border-gray-100">
-                  <th className="pb-3 font-medium">时间</th>
-                  <th className="pb-3 font-medium">分配号码</th>
-                  <th className="pb-3 font-medium">IP 地址</th>
-                  <th className="pb-3 font-medium">来源</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {logs.map((log) => (
-                  <tr key={log.id} className="hover:bg-gray-50">
-                    <td className="py-2.5 text-gray-600">{formatDate(log.clicked_at)}</td>
-                    <td className="py-2.5 text-gray-800">
-                      {log.whatsapp_numbers?.phone_number || '-'}
-                      {log.whatsapp_numbers?.label && (
-                        <span className="text-gray-400 ml-1">({log.whatsapp_numbers.label})</span>
-                      )}
-                    </td>
-                    <td className="py-2.5 text-gray-500">{log.ip_address || '-'}</td>
-                    <td className="py-2.5 text-gray-500 truncate max-w-xs">{log.referer || '直接访问'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
       </div>
     </div>
   )

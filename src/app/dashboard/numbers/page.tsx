@@ -121,6 +121,98 @@ function PhoneSelect({
   )
 }
 
+/** Searchable dropdown for selecting a short link in the Add Number modal. */
+function LinkSelect({
+  options,
+  value,
+  onChange,
+}: {
+  options: ShortLink[]
+  value: string
+  onChange: (id: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false)
+        setSearch('')
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const filtered = options.filter((l) => {
+    const q = search.toLowerCase()
+    return (l.title || '').toLowerCase().includes(q) || l.slug.toLowerCase().includes(q)
+  })
+
+  const selected = options.find((l) => l.id === value)
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => { setOpen((prev) => !prev); setSearch('') }}
+        className="w-full flex items-center justify-between gap-2 px-3 py-2.5 border border-gray-300 rounded-lg text-sm bg-white hover:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors"
+      >
+        <span className={selected ? 'text-gray-900' : 'text-gray-400'}>
+          {selected ? (selected.title || selected.slug) : '请选择要绑定的短链'}
+        </span>
+        <svg className={`w-4 h-4 text-gray-400 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+          <div className="p-2 border-b border-gray-100">
+            <input
+              autoFocus
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="输入链接名称快速搜索..."
+              className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-green-500"
+            />
+          </div>
+          <ul className="max-h-56 overflow-y-auto">
+            <li>
+              <button
+                type="button"
+                onClick={() => { onChange(''); setOpen(false); setSearch('') }}
+                className={`w-full text-left px-3 py-2 text-sm hover:bg-green-50 transition-colors ${!value ? 'text-green-600 font-medium bg-green-50' : 'text-gray-700'}`}
+              >
+                请选择要绑定的短链
+              </button>
+            </li>
+            {filtered.length === 0 ? (
+              <li className="px-3 py-2 text-sm text-gray-400">无匹配结果</li>
+            ) : (
+              filtered.map((l) => (
+                <li key={l.id}>
+                  <button
+                    type="button"
+                    onClick={() => { onChange(l.id); setOpen(false); setSearch('') }}
+                    className={`w-full text-left px-3 py-2 text-sm hover:bg-green-50 transition-colors ${value === l.id ? 'text-green-600 font-medium bg-green-50' : 'text-gray-700'}`}
+                  >
+                    {l.title || l.slug}
+                    {l.title && <span className="text-gray-400 ml-1 text-xs font-mono">({l.slug})</span>}
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function NumbersPage() {
   const [numbers, setNumbers] = useState<NumberWithLink[]>([])
   const [totalCount, setTotalCount] = useState(0)
@@ -579,16 +671,11 @@ export default function NumbersPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   选择链接 <span className="text-red-500">*</span>
                 </label>
-                <select
+                <LinkSelect
+                  options={links}
                   value={modalLinkId}
-                  onChange={(e) => setModalLinkId(e.target.value)}
-                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none bg-white"
-                >
-                  <option value="">请选择要绑定的短链</option>
-                  {links.map((l) => (
-                    <option key={l.id} value={l.id}>{l.title || l.slug}</option>
-                  ))}
-                </select>
+                  onChange={setModalLinkId}
+                />
               </div>
 
               <div>
