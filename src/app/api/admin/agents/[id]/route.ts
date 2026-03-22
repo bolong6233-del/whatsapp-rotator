@@ -24,6 +24,10 @@ async function requireAdmin() {
   return user
 }
 
+function isRootAdmin(user: { email?: string | null }) {
+  return user.email === ROOT_ADMIN_EMAIL
+}
+
 // PUT /api/admin/agents/[id] — update agent (password or status)
 export async function PUT(
   request: NextRequest,
@@ -66,9 +70,14 @@ export async function PUT(
   }
 
   if (body.role !== undefined) {
-    const allowedRoles = ['guest', 'agent', 'admin']
+    // Prevent users from changing their own role
+    if (id === adminUser.id) {
+      return NextResponse.json({ error: '不能修改自己的角色' }, { status: 403 })
+    }
+    // Only Root Admin can assign the 'admin' role
+    const allowedRoles = isRootAdmin(adminUser) ? ['guest', 'agent', 'admin'] : ['guest', 'agent']
     if (!allowedRoles.includes(body.role)) {
-      return NextResponse.json({ error: '无效的角色' }, { status: 400 })
+      return NextResponse.json({ error: '无权限分配该角色' }, { status: 403 })
     }
     const { error } = await adminSupabase
       .from('profiles')
