@@ -77,7 +77,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: '邮箱和密码不能为空' }, { status: 400 })
   }
 
-  const allowedRoles = ['guest', 'agent', 'admin']
+  // Only Root Admin can assign the 'admin' role
+  const isRoot = adminUser.email === ROOT_ADMIN_EMAIL
+  const allowedRoles = isRoot ? ['guest', 'agent', 'admin'] : ['guest', 'agent']
   const assignedRole = allowedRoles.includes(newRole) ? newRole : 'agent'
 
   const adminSupabase = createAdminClient()

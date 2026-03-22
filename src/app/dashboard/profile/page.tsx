@@ -8,6 +8,7 @@ interface ProfileData {
   email: string | null
   role: string
   created_at: string
+  expires_at: string | null
 }
 
 interface StatsData {
@@ -56,7 +57,7 @@ export default function ProfilePage() {
 
       const { data: prof } = await supabase
         .from('profiles')
-        .select('id, email, role, created_at')
+        .select('id, email, role, created_at, expires_at')
         .eq('id', user.id)
         .single()
 
@@ -115,10 +116,14 @@ export default function ProfilePage() {
     }
   }
 
-  const roleCfg = profile?.email === ROOT_ADMIN_EMAIL
+  const isRootAdmin = profile?.email === ROOT_ADMIN_EMAIL
+  const roleCfg = isRootAdmin
     ? roleConfig.root_admin
     : (roleConfig[profile?.role ?? 'agent'] ?? roleConfig.agent)
   const days = profile ? daysSince(profile.created_at) : 0
+  const now = new Date()
+  const expiresAt = profile?.expires_at ? new Date(profile.expires_at) : null
+  const isExpired = expiresAt !== null && expiresAt < now
 
   const formatCreatedAt = (dateStr: string): string => {
     return new Intl.DateTimeFormat('zh-CN', {
@@ -194,9 +199,21 @@ export default function ProfilePage() {
             </div>
             <div className="flex items-center justify-between py-3">
               <span className="text-sm text-gray-500">到期时间</span>
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
-                永久有效
-              </span>
+              {isRootAdmin ? (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                  永久有效
+                </span>
+              ) : profile?.expires_at ? (
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                  isExpired ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'
+                }`}>
+                  {formatCreatedAt(profile.expires_at)}
+                </span>
+              ) : (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
+                  未分配
+                </span>
+              )}
             </div>
           </div>
         </div>
