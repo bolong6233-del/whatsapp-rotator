@@ -34,12 +34,23 @@ export async function GET() {
 
   const adminSupabase = createAdminClient()
 
-  // Fetch all agent/guest profiles (everyone except root)
-  const { data: agents, error } = await adminSupabase
+  const isRoot = adminUser.email === ROOT_ADMIN_EMAIL
+
+  // Root admin sees ALL profiles; normal admins see only profiles they created.
+  let query = adminSupabase
     .from('profiles')
     .select('*')
-    .in('role', ['agent', 'guest', 'admin'])
     .order('created_at', { ascending: false })
+
+  if (!isRoot) {
+    // Normal admins only see accounts they explicitly created
+    query = query.eq('created_by', adminUser.id)
+  } else {
+    // Root admin sees everyone except themselves
+    query = query.neq('email', ROOT_ADMIN_EMAIL)
+  }
+
+  const { data: agents, error } = await query
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
@@ -96,9 +107,20 @@ export async function POST(request: NextRequest) {
   }
 
   // Upsert profile row with the chosen role
-  await adminSupabase
+  const { error: upsertError } = await adminSupabase
     .from('profiles')
-    .upsert({ id: newUser.user.id, email, role: assignedRole, status: 'active', plain_password: password })
+    .upsert({
+      id: newUser.user.id,
+      email,
+      role: assignedRole,
+      status: 'active',
+      plain_password: password,
+      created_by: adminUser.id,
+    }, { onConflict: 'id' })
+
+  if (upsertError) {
+    return NextResponse.json({ error: upsertError.message }, { status: 500 })
+  }
 
   return NextResponse.json({ success: true, user: newUser.user }, { status: 201 })
 }

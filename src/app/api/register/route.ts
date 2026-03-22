@@ -39,16 +39,39 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: '注册失败，请稍后重试' }, { status: 400 })
   }
 
-  // Upsert profile row with role 'guest' and plain_password
-  await adminSupabase
+  // Upsert profile row — insert if missing (trigger may not have run),
+  // or update if the trigger already inserted it with a different role.
+  // Using onConflict: 'id' ensures DO UPDATE (not DO NOTHING) on conflict.
+  const { error: upsertError } = await adminSupabase
     .from('profiles')
-    .upsert({
-      id: newUser.user.id,
-      email,
-      role: 'guest',
-      status: 'active',
-      plain_password: password,
-    })
+    .upsert(
+      {
+        id: newUser.user.id,
+        email,
+        role: 'guest',
+        status: 'active',
+        plain_password: password,
+      },
+      { onConflict: 'id' }
+    )
+
+  if (upsertError) {
+    // Belt-and-suspenders: if upsert failed (e.g. row exists from trigger),
+    // force an explicit UPDATE to guarantee role is 'guest'.
+    const { error: updateError } = await adminSupabase
+      .from('profiles')
+      .update({ role: 'guest', plain_password: password, status: 'active' })
+      .eq('id', newUser.user.id)
+
+    if (updateError) {
+      // Auth user was created but profile couldn't be set to 'guest'.
+      // Return error so the client is aware; admin can fix via the agents page.
+      return NextResponse.json(
+        { error: '账号已创建，但角色设置失败，请联系管理员' },
+        { status: 500 }
+      )
+    }
+  }
 
   return NextResponse.json({ success: true }, { status: 201 })
 }
