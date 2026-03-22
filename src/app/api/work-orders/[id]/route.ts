@@ -104,6 +104,35 @@ export async function DELETE(
   }
 
   const { id } = await params
+
+  // 1. Fetch work order to get ticket_name and distribution_link_slug
+  const { data: workOrder } = await supabase
+    .from('work_orders')
+    .select('ticket_name, distribution_link_slug')
+    .eq('id', id)
+    .eq('user_id', user.id)
+    .single()
+
+  if (workOrder && workOrder.distribution_link_slug) {
+    // 2. Find the short_link_id
+    const { data: linkData } = await supabase
+      .from('short_links')
+      .select('id')
+      .eq('slug', workOrder.distribution_link_slug)
+      .eq('user_id', user.id)
+      .single()
+
+    if (linkData) {
+      // 3. Delete the associated numbers from whatsapp_numbers
+      await supabase
+        .from('whatsapp_numbers')
+        .delete()
+        .eq('short_link_id', linkData.id)
+        .eq('label', workOrder.ticket_name)
+    }
+  }
+
+  // 4. Delete the work order
   const { error } = await supabase
     .from('work_orders')
     .delete()
