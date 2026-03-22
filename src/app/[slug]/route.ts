@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-export const runtime = 'edge'
+export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 // Fallback: redirect to WhatsApp with empty phone (shows friendly error page)
@@ -176,19 +176,26 @@ export async function GET(
   // Log the click synchronously to guarantee the write completes before redirecting.
   // waitUntil from @vercel/functions silently swallows the promise in Edge App Router,
   // so we await directly here. The Supabase HTTP call is fast (< 100ms) on the same region.
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    console.error('[click_logs] Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY — skipping insert')
+  }
   const { os, browser, device_type } = parseUserAgent(userAgent)
-  const { error: logError } = await supabase.from('click_logs').insert({
-    short_link_id: link_id,
-    whatsapp_number_id: number_id,
-    ip_address: ip,
-    user_agent: userAgent,
-    referer: referer,
-    country: country,
-    city: city,
-    os: os,
-    browser: browser,
-    device_type: device_type,
-  })
+  let logError = null
+  if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    const { error } = await supabase.from('click_logs').insert({
+      short_link_id: link_id,
+      whatsapp_number_id: number_id,
+      ip_address: ip,
+      user_agent: userAgent,
+      referer: referer,
+      country: country,
+      city: city,
+      os: os,
+      browser: browser,
+      device_type: device_type,
+    })
+    logError = error
+  }
   if (logError) {
     console.error('[click_logs] Failed to insert click log:', logError.message)
   }
