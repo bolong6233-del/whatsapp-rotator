@@ -15,9 +15,18 @@ export default async function DashboardLayout({
     redirect('/login')
   }
 
+  // Fetch user profile to determine role
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role, status')
+    .eq('id', user.id)
+    .single()
+
+  const isAdmin = profile?.role === 'admin'
+
   return (
     <div className="min-h-screen bg-gray-50 flex">
-      <Sidebar />
+      <Sidebar isAdmin={isAdmin} />
       <div className="flex-1 flex flex-col min-w-0">
         <Navbar user={user} />
         <main className="flex-1 p-6">

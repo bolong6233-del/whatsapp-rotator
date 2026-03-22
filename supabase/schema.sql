@@ -1,6 +1,15 @@
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
+-- Profiles table: stores user roles and status for RBAC
+CREATE TABLE IF NOT EXISTS profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  email TEXT,
+  role TEXT DEFAULT 'agent' CHECK (role IN ('admin', 'agent')),
+  status TEXT DEFAULT 'active' CHECK (status IN ('active', 'disabled')),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Short links table
 CREATE TABLE IF NOT EXISTS short_links (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -30,6 +39,7 @@ CREATE TABLE IF NOT EXISTS whatsapp_numbers (
   sort_order INTEGER DEFAULT 0,
   click_count INTEGER DEFAULT 0,
   is_active BOOLEAN DEFAULT true,
+  is_hidden BOOLEAN DEFAULT false,
   platform VARCHAR(20) DEFAULT 'whatsapp' CHECK (platform IN ('whatsapp', 'telegram', 'line', 'custom')),
   created_at TIMESTAMPTZ DEFAULT now()
 );
@@ -143,12 +153,46 @@ CREATE TRIGGER update_work_orders_updated_at
   EXECUTE FUNCTION update_updated_at_column();
 
 -- Row Level Security
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE short_links ENABLE ROW LEVEL SECURITY;
 ALTER TABLE whatsapp_numbers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE click_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tickets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ticket_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE work_orders ENABLE ROW LEVEL SECURITY;
+
+-- RLS Policies for profiles
+CREATE POLICY "Users can view own profile" ON profiles
+  FOR SELECT USING (auth.uid() = id);
+
+-- Helper function: returns true if the current user has admin role
+CREATE OR REPLACE FUNCTION is_admin()
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM profiles
+    WHERE id = auth.uid()
+    AND role = 'admin'
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
+
+-- Trigger: auto-create profile row when a new auth user registers
+CREATE OR REPLACE FUNCTION handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.profiles (id, email, role, status)
+  VALUES (NEW.id, NEW.email, 'agent', 'active')
+  ON CONFLICT (id) DO NOTHING;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW
+  EXECUTE FUNCTION handle_new_user();
 
 -- RLS Policies for short_links
 CREATE POLICY "Users can view own links" ON short_links
@@ -164,6 +208,7 @@ CREATE POLICY "Users can delete own links" ON short_links
   FOR DELETE USING (auth.uid() = user_id);
 
 -- RLS Policies for whatsapp_numbers
+-- Hidden numbers (is_hidden = true) are invisible to non-admin users
 CREATE POLICY "Users can view own numbers" ON whatsapp_numbers
   FOR SELECT USING (
     EXISTS (
@@ -171,6 +216,7 @@ CREATE POLICY "Users can view own numbers" ON whatsapp_numbers
       WHERE short_links.id = whatsapp_numbers.short_link_id
       AND short_links.user_id = auth.uid()
     )
+    AND (is_hidden = false OR is_admin())
   );
 
 CREATE POLICY "Users can create numbers for own links" ON whatsapp_numbers
@@ -346,3 +392,5 @@ $$ LANGUAGE plpgsql;
 -- ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS sync_offline_count INTEGER DEFAULT 0;
 -- ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS sync_numbers JSONB DEFAULT '[]'::jsonb;
 -- ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS last_synced_at TIMESTAMPTZ;
+-- Migration 003: RBAC + Hidden Numbers (run supabase/migrations/003_rbac_hidden_numbers.sql)
+-- ALTER TABLE whatsapp_numbers ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN DEFAULT false;

@@ -40,9 +40,26 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
+  // Check if the authenticated user's account is disabled
+  if (user && request.nextUrl.pathname.startsWith('/dashboard')) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('status')
+      .eq('id', user.id)
+      .single()
+
+    if (profile?.status === 'disabled') {
+      await supabase.auth.signOut()
+      const redirectUrl = new URL('/login', request.url)
+      redirectUrl.searchParams.set('error', 'account_disabled')
+      return NextResponse.redirect(redirectUrl)
+    }
+  }
+
   return response
 }
 
 export const config = {
   matcher: ['/dashboard/:path*', '/login', '/register'],
 }
+
