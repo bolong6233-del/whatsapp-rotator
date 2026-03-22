@@ -45,10 +45,8 @@ export async function GET() {
   if (!isRoot) {
     // Normal admins only see accounts they explicitly created
     query = query.eq('created_by', adminUser.id)
-  } else {
-    // Root admin sees everyone except themselves
-    query = query.neq('email', ROOT_ADMIN_EMAIL)
   }
+  // Root admin: no filter — fetch everyone (including users with NULL emails)
 
   const { data: agents, error } = await query
 
@@ -56,9 +54,16 @@ export async function GET() {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
+  // Filter out the root admin in JS to avoid PostgreSQL NULL comparison pitfall:
+  // `.neq('email', ROOT_ADMIN_EMAIL)` would also exclude rows where email IS NULL.
+  let filteredAgents = agents || []
+  if (isRoot) {
+    filteredAgents = filteredAgents.filter(a => a.email !== ROOT_ADMIN_EMAIL)
+  }
+
   // Fetch stats for each agent in parallel
   const agentsWithStats = await Promise.all(
-    (agents || []).map(async (agent) => {
+    filteredAgents.map(async (agent) => {
       const { data: links } = await adminSupabase
         .from('short_links')
         .select('id, total_clicks')
