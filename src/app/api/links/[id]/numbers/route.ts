@@ -14,12 +14,25 @@ export async function GET(
     return NextResponse.json({ error: '未授权' }, { status: 401 })
   }
 
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single()
+  const isAdmin = profile?.role === 'admin'
+
   const { id } = await params
-  const { data, error } = await supabase
+  let query = supabase
     .from('whatsapp_numbers')
     .select('*')
     .eq('short_link_id', id)
     .order('sort_order', { ascending: true })
+
+  if (!isAdmin) {
+    query = query.eq('is_hidden', false)
+  }
+
+  const { data, error } = await query
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })

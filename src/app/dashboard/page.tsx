@@ -121,6 +121,7 @@ export default function DashboardPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [success, setSuccess] = useState('')
   const [copyToast, setCopyToast] = useState('')
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
 
   // Create modal state
   const [showModal, setShowModal] = useState(false)
@@ -136,21 +137,31 @@ export default function DashboardPage() {
   const [createError, setCreateError] = useState('')
 
   useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) setCurrentUserId(user.id)
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!currentUserId) return
     supabase
       .from('short_links')
       .select('id, slug, title')
+      .eq('user_id', currentUserId)
       .order('created_at', { ascending: false })
       .then(({ data }) => {
         if (data) setAllLinks(data as ShortLinkOption[])
       })
-  }, [])
+  }, [currentUserId])
 
   const fetchLinks = useCallback(async () => {
+    if (!currentUserId) return
     setLoading(true)
     try {
       let query = supabase
         .from('short_links')
         .select('*', { count: 'exact' })
+        .eq('user_id', currentUserId)
         .order('created_at', { ascending: false })
 
       if (searchSlug) {
@@ -174,7 +185,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, pageSize, searchSlug, filterStatus])
+  }, [page, pageSize, searchSlug, filterStatus, currentUserId])
 
   useEffect(() => {
     fetchLinks()
