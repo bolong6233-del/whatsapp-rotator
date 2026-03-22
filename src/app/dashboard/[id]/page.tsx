@@ -5,35 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase-client'
 import { formatDate, getBaseUrl, copyToClipboard } from '@/lib/utils'
-import type { ShortLink, WhatsAppNumber, ClickLog, Platform } from '@/types'
-
-const PLATFORM_OPTIONS: { value: Platform; label: string }[] = [
-  { value: 'whatsapp', label: 'WhatsApp' },
-  { value: 'telegram', label: 'Telegram' },
-  { value: 'line', label: 'LINE' },
-  { value: 'custom', label: '自定义' },
-]
-
-function getPlatformPlaceholder(platform: Platform): string {
-  if (platform === 'telegram') return 'Telegram 用户名'
-  if (platform === 'line') return 'LINE ID'
-  if (platform === 'custom') return '完整 URL（如：https://example.com）'
-  return '号码（如：8613800138000）'
-}
-
-const PLATFORM_LABELS: Record<Platform, string> = {
-  whatsapp: 'WA',
-  telegram: 'TG',
-  line: 'LINE',
-  custom: '自定义',
-}
-
-const PLATFORM_COLORS: Record<Platform, string> = {
-  whatsapp: 'bg-green-100 text-green-700',
-  telegram: 'bg-blue-100 text-blue-700',
-  line: 'bg-emerald-100 text-emerald-700',
-  custom: 'bg-purple-100 text-purple-700',
-}
+import type { ShortLink, WhatsAppNumber, ClickLog } from '@/types'
 
 export default function LinkDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
@@ -46,9 +18,6 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [copied, setCopied] = useState(false)
-  const [newPhone, setNewPhone] = useState('')
-  const [newLabel, setNewLabel] = useState('')
-  const [newPlatform, setNewPlatform] = useState<Platform>('whatsapp')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [tiktokPixelEnabled, setTiktokPixelEnabled] = useState(false)
@@ -134,50 +103,6 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
     setSaving(false)
   }
 
-  const handleAddNumber = async () => {
-    if (!newPhone.trim()) return
-
-    const { error } = await supabase.from('whatsapp_numbers').insert({
-      short_link_id: id,
-      phone_number: newPhone.trim(),
-      label: newLabel.trim() || null,
-      sort_order: numbers.length,
-      platform: newPlatform,
-    })
-
-    if (error) {
-      setError('添加失败：' + error.message)
-    } else {
-      setNewPhone('')
-      setNewLabel('')
-      setNewPlatform('whatsapp')
-      fetchData()
-    }
-  }
-
-  const handleDeleteNumber = async (numberId: string) => {
-    if (!confirm('确定要删除此号码吗？')) return
-
-    const { error } = await supabase
-      .from('whatsapp_numbers')
-      .delete()
-      .eq('id', numberId)
-
-    if (error) {
-      setError('删除失败：' + error.message)
-    } else {
-      fetchData()
-    }
-  }
-
-  const handleToggleNumber = async (numberId: string, isActive: boolean) => {
-    await supabase
-      .from('whatsapp_numbers')
-      .update({ is_active: !isActive })
-      .eq('id', numberId)
-    fetchData()
-  }
-
   const handleDeleteLink = async () => {
     if (!confirm('确定要删除此短链吗？此操作不可撤销。')) return
 
@@ -205,7 +130,6 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
   if (!link) return null
 
   const shortUrl = `${getBaseUrl()}/${link.slug}`
-  const maxClicks = numbers.length > 0 ? Math.max(...numbers.map((n) => n.click_count), 1) : 1
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -395,82 +319,6 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
             className="px-6 py-2.5 bg-green-500 hover:bg-green-600 disabled:bg-green-300 text-white rounded-lg font-medium transition-colors"
           >
             {saving ? '保存中...' : '保存更改'}
-          </button>
-        </div>
-      </div>
-
-      {/* Numbers */}
-      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-        <h2 className="font-semibold text-gray-900 mb-4">号码管理</h2>
-
-        {/* Number click stats bars */}
-        <div className="space-y-3 mb-6">
-          {numbers.map((num) => (
-            <div key={num.id} className="flex items-center gap-3">
-              <div className="flex-1">
-                <div className="flex justify-between text-sm mb-1">
-                  <span className="text-gray-700 font-medium flex items-center gap-1.5">
-                    <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${PLATFORM_COLORS[num.platform || 'whatsapp']}`}>
-                      {PLATFORM_LABELS[num.platform || 'whatsapp']}
-                    </span>
-                    {num.phone_number}
-                    {num.label && <span className="text-gray-400">({num.label})</span>}
-                  </span>
-                  <span className="text-gray-500">{num.click_count} 次</span>
-                </div>
-                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-green-400 rounded-full transition-all"
-                    style={{ width: `${(num.click_count / maxClicks) * 100}%` }}
-                  />
-                </div>
-              </div>
-              <button
-                onClick={() => handleToggleNumber(num.id, num.is_active)}
-                className={`text-xs px-2 py-1 rounded ${num.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}
-              >
-                {num.is_active ? '启用' : '停用'}
-              </button>
-              <button
-                onClick={() => handleDeleteNumber(num.id)}
-                className="text-red-400 hover:text-red-600 text-sm transition-colors"
-              >
-                删除
-              </button>
-            </div>
-          ))}
-        </div>
-
-        {/* Add number */}
-        <div className="flex gap-2 pt-4 border-t border-gray-100">
-          <select
-            value={newPlatform}
-            onChange={(e) => setNewPlatform(e.target.value as Platform)}
-            className="w-28 px-2 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none bg-white"
-          >
-            {PLATFORM_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-          <input
-            type="text"
-            value={newPhone}
-            onChange={(e) => setNewPhone(e.target.value)}
-            placeholder={getPlatformPlaceholder(newPlatform)}
-            className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
-          />
-          <input
-            type="text"
-            value={newLabel}
-            onChange={(e) => setNewLabel(e.target.value)}
-            placeholder="备注（可选）"
-            className="w-28 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
-          />
-          <button
-            onClick={handleAddNumber}
-            className="px-4 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm transition-colors"
-          >
-            添加
           </button>
         </div>
       </div>
