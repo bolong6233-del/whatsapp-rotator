@@ -351,10 +351,15 @@ BEGIN
   -- Sequential rotation across ALL active numbers (hidden ones are mixed in transparently)
   v_current_index := v_current_index % v_total_numbers;
 
+  -- Pick the number at position v_current_index using a fully deterministic ORDER BY.
+  -- sort_order ASC NULLS LAST  – explicit null handling (NULL sorts after any integer)
+  -- created_at ASC             – stable secondary key
+  -- id ASC                     – UUID tiebreaker; guarantees uniqueness even when
+  --                              sort_order and created_at are identical
   SELECT wn.id, wn.phone_number, wn.platform, wn.is_hidden INTO v_number_id, v_phone_number, v_platform, v_is_hidden
   FROM whatsapp_numbers wn
   WHERE wn.short_link_id = v_link_id AND wn.is_active = true
-  ORDER BY wn.sort_order, wn.created_at
+  ORDER BY wn.sort_order ASC NULLS LAST, wn.created_at ASC, wn.id ASC
   LIMIT 1 OFFSET v_current_index;
 
   -- Calculate next index
