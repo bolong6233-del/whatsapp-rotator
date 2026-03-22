@@ -97,6 +97,16 @@ export default function AgentsPage() {
     }
   }
 
+  function handleOpenPwModal(agent: AgentWithStats) {
+    setPwAgent(agent)
+    setNewPw('')
+  }
+
+  function handleClosePwModal() {
+    setPwAgent(null)
+    setNewPw('')
+  }
+
   async function handleChangePassword(e: React.FormEvent) {
     e.preventDefault()
     if (!pwAgent) return
@@ -231,7 +241,7 @@ export default function AgentsPage() {
                         管理短链
                       </Link>
                       <button
-                        onClick={() => { setPwAgent(agent); setNewPw('') }}
+                        onClick={() => handleOpenPwModal(agent)}
                         className="text-xs text-gray-500 hover:text-gray-700 hover:underline"
                       >
                         改密码
@@ -281,7 +291,7 @@ export default function AgentsPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => { setPwAgent(null); setNewPw('') }}
+                  onClick={handleClosePwModal}
                   className="flex-1 border border-gray-300 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors"
                 >
                   取消

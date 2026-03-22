@@ -95,6 +95,15 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
     fetchData()
   }, [fetchData])
 
+  function handleToggleAddingFor(e: React.MouseEvent, linkId: string) {
+    e.stopPropagation()
+    setAddingFor(addingFor === linkId ? null : linkId)
+    setExpandedLinkId(linkId)
+    setNewPhone('')
+    setNewLabel('')
+    setNewPlatform('whatsapp')
+  }
+
   async function handleAddHiddenNumber(linkId: string, e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
@@ -211,14 +220,7 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0">
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setAddingFor(addingFor === link.id ? null : link.id)
-                      setExpandedLinkId(link.id)
-                      setNewPhone('')
-                      setNewLabel('')
-                      setNewPlatform('whatsapp')
-                    }}
+                    onClick={(e) => handleToggleAddingFor(e, link.id)}
                     className="text-xs bg-orange-50 text-orange-600 border border-orange-200 px-3 py-1.5 rounded-lg hover:bg-orange-100 transition-colors font-medium"
                   >
                     + 注入隐藏号码

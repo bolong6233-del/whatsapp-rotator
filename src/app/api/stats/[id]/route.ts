@@ -65,9 +65,7 @@ export async function GET(
 
     if (hiddenNumbers && hiddenNumbers.length > 0) {
       const hiddenIds = new Set(hiddenNumbers.map((n) => n.id))
-      logs = logs.filter(
-        (log) => !log.whatsapp_number_id || !hiddenIds.has(log.whatsapp_number_id)
-      )
+      logs = logs.filter((log) => !hiddenIds.has(log.whatsapp_number_id))
     }
   }
 
