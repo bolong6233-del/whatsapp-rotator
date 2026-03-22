@@ -49,6 +49,26 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: '未授权' }, { status: 401 })
   }
 
+  // Enforce role/expiry restrictions
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role, expires_at')
+    .eq('id', user.id)
+    .single()
+
+  const role = profile?.role ?? 'guest'
+
+  if (role === 'guest') {
+    return NextResponse.json({ error: '游客账号无法创建短链，请联系管理员开通权限' }, { status: 403 })
+  }
+
+  if (role === 'agent') {
+    const expiresAt = profile?.expires_at ? new Date(profile.expires_at) : null
+    if (!expiresAt || expiresAt < new Date()) {
+      return NextResponse.json({ error: '您的账号已到期或未分配使用时间，请联系管理员续费' }, { status: 403 })
+    }
+  }
+
   const body = await request.json()
   const { slug, title, description, numbers, tiktok_pixel_enabled, tiktok_pixel_id, tiktok_access_token } = body
 
