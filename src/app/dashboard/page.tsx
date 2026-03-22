@@ -120,6 +120,7 @@ export default function DashboardPage() {
   const [pageSize, setPageSize] = useState(10)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [success, setSuccess] = useState('')
+  const [copyToast, setCopyToast] = useState('')
 
   // Create modal state
   const [showModal, setShowModal] = useState(false)
@@ -202,6 +203,14 @@ export default function DashboardPage() {
     await supabase.from('short_links').delete().in('id', Array.from(selected))
     setSelected(new Set())
     fetchLinks()
+  }
+
+  const handleCopyLink = (slug: string) => {
+    const url = `${getBaseUrl()}/${slug}`
+    navigator.clipboard.writeText(url).then(() => {
+      setCopyToast('✅ 链接已复制')
+      setTimeout(() => setCopyToast(''), 2500)
+    })
   }
 
   const handleToggleStatus = async () => {
@@ -290,6 +299,13 @@ export default function DashboardPage() {
         <div className="bg-green-50 border border-green-200 text-green-600 px-4 py-3 rounded-lg text-sm">{success}</div>
       )}
 
+      {/* Copy toast */}
+      {copyToast && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 bg-white border border-green-200 text-green-700 px-5 py-2.5 rounded-lg shadow-lg text-sm font-medium">
+          {copyToast}
+        </div>
+      )}
+
       {/* Search & Filter Bar */}
       <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
         <div className="flex flex-wrap gap-3 items-center">
@@ -317,35 +333,39 @@ export default function DashboardPage() {
       </div>
 
       {/* Action Bar */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         <button
           onClick={() => { setNewSlug(generateSlug()); setCreateError(''); setShowModal(true) }}
-          className="px-4 py-2 text-sm bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 rounded transition-colors"
         >
-          + 新增
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
+          新增
         </button>
-        {selected.size > 0 && (
-          <>
-            <Link
-              href={selected.size === 1 ? `/dashboard/${Array.from(selected)[0]}` : '#'}
-              className="px-4 py-2 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors"
-            >
-              修改
-            </Link>
-            <button
-              onClick={handleToggleStatus}
-              className="px-4 py-2 text-sm bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg transition-colors"
-            >
-              切换状态
-            </button>
-            <button
-              onClick={handleDelete}
-              className="px-4 py-2 text-sm bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors"
-            >
-              删除
-            </button>
-          </>
-        )}
+        <button
+          onClick={() => {
+            if (selected.size !== 1) return
+            window.location.href = `/dashboard/${Array.from(selected)[0]}`
+          }}
+          disabled={selected.size !== 1}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-green-50 hover:bg-green-100 text-green-600 border border-green-200 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+          修改
+        </button>
+        <button
+          onClick={handleDelete}
+          disabled={selected.size === 0}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+          删除
+        </button>
+        <button
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-orange-50 hover:bg-orange-100 text-orange-600 border border-orange-200 rounded transition-colors"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+          导出
+        </button>
       </div>
 
       {/* Table */}
@@ -365,23 +385,23 @@ export default function DashboardPage() {
                       className="rounded"
                     />
                   </th>
-                  <th className="py-3 px-4 font-medium">链接 ID (Slug)</th>
+                  <th className="py-3 px-4 font-medium">序号</th>
                   <th className="py-3 px-4 font-medium">链接 URL</th>
-                  <th className="py-3 px-4 font-medium">标题</th>
-                  <th className="py-3 px-4 font-medium">点击量</th>
+                  <th className="py-3 px-4 font-medium">链接描述</th>
+                  <th className="py-3 px-4 font-medium">回复语</th>
                   <th className="py-3 px-4 font-medium">状态</th>
                   <th className="py-3 px-4 font-medium">操作</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className="divide-y divide-gray-100">
                 {links.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="py-12 text-center text-gray-400">
-                      暂无短链，点击 + 新增 创建第一个
+                      暂无短链，点击 新增 创建第一个
                     </td>
                   </tr>
                 ) : (
-                  links.map((link) => (
+                  links.map((link, index) => (
                     <tr key={link.id} className="hover:bg-gray-50">
                       <td className="py-3 px-4">
                         <input
@@ -391,35 +411,61 @@ export default function DashboardPage() {
                           className="rounded"
                         />
                       </td>
-                      <td className="py-3 px-4">
-                        <span className="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded text-gray-700">
-                          {link.slug}
-                        </span>
+                      <td className="py-3 px-4 text-gray-600 text-sm">
+                        {(page - 1) * pageSize + index + 1}
                       </td>
                       <td className="py-3 px-4">
-                        <a
-                          href={`${getBaseUrl()}/${link.slug}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-green-600 hover:text-green-800 text-xs font-mono truncate max-w-xs block"
+                        <button
+                          type="button"
+                          onClick={() => handleCopyLink(link.slug)}
+                          className="inline-flex items-center gap-1.5 text-blue-600 hover:text-blue-800 transition-colors group"
+                          title="点击复制链接"
                         >
-                          {getBaseUrl().replace(/^https?:\/\//, '')}/{link.slug}
-                        </a>
+                          <svg className="w-3.5 h-3.5 text-blue-400 group-hover:text-blue-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                          </svg>
+                          <span className="text-sm font-mono">{link.slug}</span>
+                        </button>
                       </td>
-                      <td className="py-3 px-4 text-gray-700">{link.title || '-'}</td>
-                      <td className="py-3 px-4 text-gray-600">{link.total_clicks}</td>
+                      <td className="py-3 px-4 text-gray-700 text-sm">{link.description || '-'}</td>
+                      <td className="py-3 px-4 text-gray-600 text-sm">
+                        {link.auto_reply_enabled && link.auto_reply_messages
+                          ? <span className="truncate max-w-[120px] block">{link.auto_reply_messages.split('\n')[0]}</span>
+                          : '-'}
+                      </td>
                       <td className="py-3 px-4">
-                        <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${link.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                        <span className={`px-2 py-0.5 text-xs rounded font-medium ${link.is_active ? 'bg-blue-50 text-blue-600 border border-blue-100' : 'bg-gray-100 text-gray-500'}`}>
                           {link.is_active ? '正常' : '关闭'}
                         </span>
                       </td>
                       <td className="py-3 px-4">
-                        <Link
-                          href={`/dashboard/${link.id}`}
-                          className="text-xs text-blue-600 hover:text-blue-800 transition-colors"
-                        >
-                          管理
-                        </Link>
+                        <div className="flex items-center gap-2">
+                          <Link
+                            href={`/dashboard/${link.id}`}
+                            className="text-xs text-blue-600 hover:text-blue-800 transition-colors inline-flex items-center gap-0.5"
+                          >
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                            修改
+                          </Link>
+                          <button
+                            onClick={async () => {
+                              if (!confirm('确定要删除此短链吗？')) return
+                              await supabase.from('short_links').delete().eq('id', link.id)
+                              fetchLinks()
+                            }}
+                            className="text-xs text-red-500 hover:text-red-700 transition-colors inline-flex items-center gap-0.5"
+                          >
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            删除
+                          </button>
+                          <Link
+                            href={`/dashboard/${link.id}`}
+                            className="text-xs text-blue-600 hover:text-blue-800 transition-colors inline-flex items-center gap-0.5"
+                          >
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z" /></svg>
+                            更多
+                          </Link>
+                        </div>
                       </td>
                     </tr>
                   ))

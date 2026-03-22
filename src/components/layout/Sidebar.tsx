@@ -8,6 +8,7 @@ const navItems = [
   { href: '/dashboard/tickets', label: '工单管理' },
   { href: '/dashboard/numbers', label: '号码管理' },
   { href: '/dashboard/logs', label: '访问记录' },
+  { href: '/dashboard/profile', label: '个人中心' },
 ]
 
 export default function Sidebar() {
@@ -18,7 +19,7 @@ export default function Sidebar() {
       <div className="p-5 border-b border-gray-200">
         <Link href="/dashboard" className="flex items-center gap-2">
           <span className="text-2xl">💬</span>
-          <span className="font-bold text-gray-900">无敌牛子</span>
+          <span className="font-bold text-gray-900">分流后台管理</span>
         </Link>
       </div>
       <nav className="flex-1 p-4 space-y-1">
