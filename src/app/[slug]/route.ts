@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { waitUntil } from '@vercel/functions'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
@@ -174,29 +173,25 @@ export async function GET(
   const rawCity = request.headers.get('x-vercel-ip-city')
   const city = rawCity ? decodeURIComponent(rawCity) : null
 
-  // Log the click using waitUntil so Vercel keeps the function alive long enough
-  // to finish the background write without adding latency to the redirect.
+  // Log the click synchronously to guarantee the write completes before redirecting.
+  // waitUntil from @vercel/functions silently swallows the promise in Edge App Router,
+  // so we await directly here. The Supabase HTTP call is fast (< 100ms) on the same region.
   const { os, browser, device_type } = parseUserAgent(userAgent)
-  waitUntil(
-    Promise.resolve(
-      supabase.from('click_logs').insert({
-        short_link_id: link_id,
-        whatsapp_number_id: number_id,
-        ip_address: ip,
-        user_agent: userAgent,
-        referer: referer,
-        country: country,
-        city: city,
-        os: os,
-        browser: browser,
-        device_type: device_type,
-      }).then(({ error: logError }) => {
-        if (logError) {
-          console.error('[click_logs] Failed to insert click log:', logError.message)
-        }
-      })
-    )
-  )
+  const { error: logError } = await supabase.from('click_logs').insert({
+    short_link_id: link_id,
+    whatsapp_number_id: number_id,
+    ip_address: ip,
+    user_agent: userAgent,
+    referer: referer,
+    country: country,
+    city: city,
+    os: os,
+    browser: browser,
+    device_type: device_type,
+  })
+  if (logError) {
+    console.error('[click_logs] Failed to insert click log:', logError.message)
+  }
 
   // Fire TikTok Events API (S2S) asynchronously if pixel is configured
   if (tiktok_pixel_enabled && tiktok_pixel_id && tiktok_access_token) {
@@ -213,8 +208,7 @@ export async function GET(
         user_agent: userAgent || undefined,
       },
     }
-    waitUntil(
-      fetch(
+    await fetch(
         `https://business-api.tiktok.com/open_api/v1.3/pixel/track/`,
         {
           method: 'POST',
@@ -227,7 +221,6 @@ export async function GET(
       ).catch((err) => {
         console.error('[TikTok Events API] Failed to send event:', err)
       })
-    )
   }
 
   // Determine auto-reply message (only for WhatsApp)
