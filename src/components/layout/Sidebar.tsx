@@ -15,10 +15,12 @@ const adminNavItems = [
   { href: '/dashboard/agents', label: '代理管理' },
 ]
 
-export default function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
+export default function Sidebar({ role = 'agent', isAdmin }: { role?: string; isAdmin?: boolean }) {
   const pathname = usePathname()
 
-  const allItems = isAdmin ? [...navItems, ...adminNavItems] : navItems
+  // Support legacy isAdmin prop and new role prop
+  const canManageAgents = role === 'admin' || role === 'root' || isAdmin === true
+  const allItems = canManageAgents ? [...navItems, ...adminNavItems] : navItems
 
   return (
     <aside className="w-56 bg-white border-r border-gray-200 flex flex-col">

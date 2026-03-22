@@ -15,6 +15,26 @@ interface AgentWithStats {
   plain_password?: string
 }
 
+const roleOptions = [
+  { value: 'agent', label: '高级代理' },
+  { value: 'guest', label: '游客' },
+  { value: 'admin', label: '管理员' },
+]
+
+const roleBadge: Record<string, string> = {
+  root:  'bg-red-100 text-red-700',
+  admin: 'bg-purple-100 text-purple-700',
+  agent: 'bg-blue-100 text-blue-700',
+  guest: 'bg-gray-100 text-gray-600',
+}
+
+const roleLabel: Record<string, string> = {
+  root:  '超级管理员',
+  admin: '管理员',
+  agent: '高级代理',
+  guest: '游客',
+}
+
 export default function AgentsPage() {
   const router = useRouter()
   const [agents, setAgents] = useState<AgentWithStats[]>([])
@@ -26,6 +46,7 @@ export default function AgentsPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [newEmail, setNewEmail] = useState('')
   const [newPassword, setNewPassword] = useState('')
+  const [newRole, setNewRole] = useState('agent')
   const [creating, setCreating] = useState(false)
 
   // Change password modal
@@ -62,14 +83,15 @@ export default function AgentsPage() {
     const res = await fetch('/api/admin/agents', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: newEmail, password: newPassword }),
+      body: JSON.stringify({ email: newEmail, password: newPassword, role: newRole }),
     })
     const data = await res.json()
 
     if (res.ok) {
-      setSuccess('代理账号创建成功')
+      setSuccess('账号创建成功')
       setNewEmail('')
       setNewPassword('')
+      setNewRole('agent')
       setShowCreate(false)
       fetchAgents()
     } else {
@@ -91,6 +113,22 @@ export default function AgentsPage() {
 
     if (res.ok) {
       setSuccess(`账号已${label}`)
+      fetchAgents()
+    } else {
+      const data = await res.json()
+      setError(data.error || '操作失败')
+    }
+  }
+
+  async function handleChangeRole(agent: AgentWithStats, role: string) {
+    const res = await fetch(`/api/admin/agents/${agent.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role }),
+    })
+
+    if (res.ok) {
+      setSuccess('角色已更新')
       fetchAgents()
     } else {
       const data = await res.json()
@@ -142,7 +180,7 @@ export default function AgentsPage() {
           onClick={() => setShowCreate(!showCreate)}
           className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors"
         >
-          + 新建代理账号
+          + 新建账号
         </button>
       </div>
 
@@ -160,7 +198,7 @@ export default function AgentsPage() {
       {/* Create Agent Form */}
       {showCreate && (
         <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h2 className="text-base font-semibold text-gray-900 mb-4">新建代理账号</h2>
+          <h2 className="text-base font-semibold text-gray-900 mb-4">新建账号</h2>
           <form onSubmit={handleCreate} className="flex flex-col sm:flex-row gap-3">
             <input
               type="email"
@@ -179,6 +217,15 @@ export default function AgentsPage() {
               minLength={6}
               className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
             />
+            <select
+              value={newRole}
+              onChange={(e) => setNewRole(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
+            >
+              {roleOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
             <button
               type="submit"
               disabled={creating}
@@ -202,13 +249,14 @@ export default function AgentsPage() {
         {loading ? (
           <div className="p-8 text-center text-gray-400">加载中...</div>
         ) : agents.length === 0 ? (
-          <div className="p-8 text-center text-gray-400">暂无代理账号</div>
+          <div className="p-8 text-center text-gray-400">暂无账号</div>
         ) : (
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">邮箱</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">密码</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">角色</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">注册时间</th>
                 <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">短链数</th>
                 <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">总点击</th>
@@ -221,6 +269,23 @@ export default function AgentsPage() {
                 <tr key={agent.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
                   <td className="px-4 py-3 text-gray-900 font-medium">{agent.email || '-'}</td>
                   <td className="px-4 py-3 text-gray-500 font-mono text-xs">{agent.plain_password || '未记录'}</td>
+                  <td className="px-4 py-3">
+                    {agent.role === 'root' ? (
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${roleBadge.root}`}>
+                        {roleLabel.root}
+                      </span>
+                    ) : (
+                      <select
+                        value={agent.role}
+                        onChange={(e) => handleChangeRole(agent, e.target.value)}
+                        className={`text-xs font-medium px-2 py-0.5 rounded-full border-0 outline-none cursor-pointer ${roleBadge[agent.role] ?? roleBadge.agent}`}
+                      >
+                        {roleOptions.map((opt) => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </select>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-gray-500">
                     {new Date(agent.created_at).toLocaleDateString('zh-CN')}
                   </td>

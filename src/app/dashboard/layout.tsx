@@ -22,11 +22,11 @@ export default async function DashboardLayout({
     .eq('id', user.id)
     .single()
 
-  const isAdmin = profile?.role === 'admin'
+  const role = profile?.role ?? 'agent'
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
-      <Sidebar isAdmin={isAdmin} />
+      <Sidebar role={role} />
       <div className="flex-1 flex flex-col min-w-0">
         <Navbar user={user} />
         <main className="flex-1 p-6">
