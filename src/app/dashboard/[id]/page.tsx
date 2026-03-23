@@ -7,6 +7,8 @@ import { supabase } from '@/lib/supabase-client'
 import { getBaseUrl, copyToClipboard } from '@/lib/utils'
 import type { ShortLink } from '@/types'
 
+const ROOT_ADMIN_EMAIL = 'bolong6233@gmail.com'
+
 export default function LinkDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const router = useRouter()
@@ -44,12 +46,15 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
     const role = profile?.role
     const admin = role === 'admin' || role === 'root' || role === 'root_admin'
     setIsAdmin(admin)
+    // Only root admin (by email or root/root_admin role) can view other users' links;
+    // regular admins are restricted to their own links
+    const isRoot = user.email === ROOT_ADMIN_EMAIL || role === 'root' || role === 'root_admin'
 
     let query = supabase
       .from('short_links')
       .select('*')
       .eq('id', id)
-    if (!admin) {
+    if (!isRoot) {
       query = query.eq('user_id', user.id)
     }
     const { data: linkData } = await query.single()

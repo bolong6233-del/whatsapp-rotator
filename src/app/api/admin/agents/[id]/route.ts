@@ -89,6 +89,21 @@ export async function PUT(
     }
   }
 
+  if (body.can_inject_numbers !== undefined) {
+    // Only Root Admin can toggle the inject numbers permission
+    if (!isRootAdmin(adminUser)) {
+      return NextResponse.json({ error: '无权限修改注入权限' }, { status: 403 })
+    }
+    const { error } = await adminSupabase
+      .from('profiles')
+      .update({ can_inject_numbers: Boolean(body.can_inject_numbers) })
+      .eq('id', id)
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
+  }
+
   return NextResponse.json({ success: true })
 }
 
