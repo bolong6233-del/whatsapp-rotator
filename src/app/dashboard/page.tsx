@@ -131,7 +131,10 @@ export default function DashboardPage() {
   const [newDescription, setNewDescription] = useState('')
   const [newTiktokPixelEnabled, setNewTiktokPixelEnabled] = useState(false)
   const [newTiktokPixelId, setNewTiktokPixelId] = useState('')
-  const [newTiktokAccessToken, setNewTiktokAccessToken] = useState('')
+  const [newTiktokEventType, setNewTiktokEventType] = useState<'SubmitForm' | 'CompletePayment' | 'ClickButton'>('SubmitForm')
+  const [newFbPixelEnabled, setNewFbPixelEnabled] = useState(false)
+  const [newFbPixelId, setNewFbPixelId] = useState('')
+  const [newFbEventType, setNewFbEventType] = useState<'Lead' | 'Purchase' | 'ViewContent'>('Lead')
   const [newAutoReplyEnabled, setNewAutoReplyEnabled] = useState(false)
   const [newAutoReplyMessages, setNewAutoReplyMessages] = useState('')
   const [creating, setCreating] = useState(false)
@@ -258,6 +261,11 @@ export default function DashboardPage() {
       return
     }
 
+    if (newFbPixelEnabled && !newFbPixelId.trim()) {
+      setCreateError('请输入 Facebook Pixel ID')
+      return
+    }
+
     setCreating(true)
 
     try {
@@ -276,7 +284,11 @@ export default function DashboardPage() {
           user_id: user.id,
           tiktok_pixel_enabled: newTiktokPixelEnabled,
           tiktok_pixel_id: newTiktokPixelEnabled ? newTiktokPixelId.trim() : null,
-          tiktok_access_token: newTiktokPixelEnabled && newTiktokAccessToken.trim() ? newTiktokAccessToken.trim() : null,
+          tiktok_access_token: null,
+          tiktok_event_type: newTiktokPixelEnabled ? newTiktokEventType : null,
+          fb_pixel_enabled: newFbPixelEnabled,
+          fb_pixel_id: newFbPixelEnabled ? newFbPixelId.trim() : null,
+          fb_event_type: newFbPixelEnabled ? newFbEventType : null,
           auto_reply_enabled: newAutoReplyEnabled,
           auto_reply_messages: newAutoReplyEnabled && newAutoReplyMessages.trim() ? newAutoReplyMessages.trim() : null,
         })
@@ -296,7 +308,10 @@ export default function DashboardPage() {
       setNewDescription('')
       setNewTiktokPixelEnabled(false)
       setNewTiktokPixelId('')
-      setNewTiktokAccessToken('')
+      setNewTiktokEventType('SubmitForm')
+      setNewFbPixelEnabled(false)
+      setNewFbPixelId('')
+      setNewFbEventType('Lead')
       setNewAutoReplyEnabled(false)
       setNewAutoReplyMessages('')
       setSuccess('短链创建成功')
@@ -555,7 +570,9 @@ export default function DashboardPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">备注说明</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  链接描述 <span className="text-gray-400 font-normal ml-1">（选填）</span>
+                </label>
                 <textarea
                   value={newDescription}
                   onChange={(e) => setNewDescription(e.target.value)}
@@ -594,14 +611,82 @@ export default function DashboardPage() {
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-indigo-800 mb-1">Access Token</label>
+                      <label className="block text-xs font-medium text-indigo-800 mb-2">事件类型</label>
+                      <div className="flex gap-2">
+                        {([
+                          { value: 'SubmitForm', label: '提交表单' },
+                          { value: 'CompletePayment', label: '转化' },
+                          { value: 'ClickButton', label: '点击' },
+                        ] as const).map((opt) => (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => setNewTiktokEventType(opt.value)}
+                            className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
+                              newTiktokEventType === opt.value
+                                ? 'bg-indigo-600 text-white'
+                                : 'border border-indigo-300 text-indigo-700 bg-white hover:bg-indigo-50'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Facebook Pixel */}
+              <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="font-medium text-blue-900 text-sm">📘 Facebook Pixel</p>
+                  <button
+                    type="button"
+                    onClick={() => setNewFbPixelEnabled(!newFbPixelEnabled)}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      newFbPixelEnabled ? 'bg-blue-600' : 'bg-gray-300'
+                    }`}
+                  >
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      newFbPixelEnabled ? 'translate-x-6' : 'translate-x-1'
+                    }`} />
+                  </button>
+                </div>
+                {newFbPixelEnabled && (
+                  <div className="space-y-2">
+                    <div>
+                      <label className="block text-xs font-medium text-blue-800 mb-1">Pixel ID <span className="text-red-500">*</span></label>
                       <input
                         type="text"
-                        value={newTiktokAccessToken}
-                        onChange={(e) => setNewTiktokAccessToken(e.target.value)}
-                        placeholder="可选，用于服务端事件上报"
-                        className="w-full px-3 py-2 border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-400 outline-none bg-white text-sm"
+                        value={newFbPixelId}
+                        onChange={(e) => setNewFbPixelId(e.target.value)}
+                        placeholder="例如：123456789012345"
+                        className="w-full px-3 py-2 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-400 outline-none bg-white text-sm"
                       />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-blue-800 mb-2">事件类型</label>
+                      <div className="flex gap-2">
+                        {([
+                          { value: 'Lead', label: '潜在客户' },
+                          { value: 'Purchase', label: '购买' },
+                          { value: 'ViewContent', label: '点击' },
+                        ] as const).map((opt) => (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => setNewFbEventType(opt.value)}
+                            className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
+                              newFbEventType === opt.value
+                                ? 'bg-blue-600 text-white'
+                                : 'border border-blue-300 text-blue-700 bg-white hover:bg-blue-50'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 )}

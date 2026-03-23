@@ -70,13 +70,25 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json()
-  const { slug, title, description, numbers, tiktok_pixel_enabled, tiktok_pixel_id, tiktok_access_token } = body
+  const {
+    slug,
+    title,
+    description,
+    numbers,
+    tiktok_pixel_enabled,
+    tiktok_pixel_id,
+    tiktok_event_type,
+    fb_pixel_enabled,
+    fb_pixel_id,
+    fb_event_type,
+  } = body
 
   if (!slug) {
     return NextResponse.json({ error: '短链后缀不能为空' }, { status: 400 })
   }
 
   const pixelEnabled = Boolean(tiktok_pixel_enabled)
+  const fbEnabled = Boolean(fb_pixel_enabled)
 
   const { data: link, error: linkError } = await supabase
     .from('short_links')
@@ -87,7 +99,11 @@ export async function POST(request: NextRequest) {
       user_id: user.id,
       tiktok_pixel_enabled: pixelEnabled,
       tiktok_pixel_id: pixelEnabled ? (tiktok_pixel_id ?? null) : null,
-      tiktok_access_token: pixelEnabled && tiktok_access_token ? tiktok_access_token : null,
+      tiktok_access_token: null,
+      tiktok_event_type: pixelEnabled ? (tiktok_event_type ?? 'SubmitForm') : null,
+      fb_pixel_enabled: fbEnabled,
+      fb_pixel_id: fbEnabled ? (fb_pixel_id ?? null) : null,
+      fb_event_type: fbEnabled ? (fb_event_type ?? 'Lead') : null,
     })
     .select()
     .single()

@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
+// NOTE: Run the following migrations in Supabase before deploying:
+// ALTER TABLE short_links ADD COLUMN IF NOT EXISTS tiktok_event_type TEXT DEFAULT 'SubmitForm';
+// ALTER TABLE short_links ADD COLUMN IF NOT EXISTS fb_pixel_enabled BOOLEAN DEFAULT FALSE;
+// ALTER TABLE short_links ADD COLUMN IF NOT EXISTS fb_pixel_id TEXT;
+// ALTER TABLE short_links ADD COLUMN IF NOT EXISTS fb_event_type TEXT DEFAULT 'Lead';
+
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
 
@@ -153,7 +159,10 @@ export async function GET(
     is_hidden,
     tiktok_pixel_enabled,
     tiktok_pixel_id,
-    tiktok_access_token,
+    tiktok_event_type,
+    fb_pixel_enabled,
+    fb_pixel_id,
+    fb_event_type,
     auto_reply_enabled,
     auto_reply_messages,
     auto_reply_index,
@@ -194,36 +203,6 @@ export async function GET(
     console.error('[click_logs] Failed to insert click log:', logError.message)
   }
 
-  // Fire TikTok Events API (S2S) asynchronously if pixel is configured
-  if (tiktok_pixel_enabled && tiktok_pixel_id && tiktok_access_token) {
-    const pageUrl = request.url
-    const eventId = `${link_id}-${Date.now()}`
-    const tiktokPayload = {
-      pixel_code: tiktok_pixel_id as string,
-      event: 'Contact',
-      event_id: eventId,
-      timestamp: new Date().toISOString(),
-      context: {
-        page: { url: pageUrl },
-        ip: ip || undefined,
-        user_agent: userAgent || undefined,
-      },
-    }
-    
-    // [Fix] Add 2-second timeout using AbortSignal to prevent Vercel Edge function from hanging
-    fetch(`https://business-api.tiktok.com/open_api/v1.3/pixel/track/`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Token': tiktok_access_token as string,
-      },
-      body: JSON.stringify(tiktokPayload),
-      signal: AbortSignal.timeout(2000)
-    }).catch((err) => {
-      console.error('[TikTok Events API] Failed or timed out:', err)
-    })
-  }
-
   let autoReplyMessage: string | undefined
   if (auto_reply_enabled && platform === 'whatsapp' && auto_reply_messages) {
     const messages = (auto_reply_messages as string)
@@ -237,14 +216,18 @@ export async function GET(
 
   const redirectUrl = buildRedirectUrl(phone_number, platform || 'whatsapp', autoReplyMessage)
 
-  if (tiktok_pixel_enabled && tiktok_pixel_id) {
-    const safePixelId = JSON.stringify(tiktok_pixel_id as string)
+  const hasTiktokPixel = tiktok_pixel_enabled && tiktok_pixel_id
+  const hasFbPixel = fb_pixel_enabled && fb_pixel_id
+
+  if (hasTiktokPixel || hasFbPixel) {
     const safeRedirectUrl = JSON.stringify(redirectUrl)
-    const html = `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8" />
-<meta name="robots" content="noindex,nofollow" />
+    let pixelScripts = ''
+
+    if (hasTiktokPixel) {
+      const safePixelId = JSON.stringify(tiktok_pixel_id as string)
+      const eventType = (tiktok_event_type as string) ?? 'SubmitForm'
+      const safeEventType = JSON.stringify(eventType)
+      pixelScripts += `
 <script>
 !function(w,d,t){
   w.TiktokAnalyticsObject=t;
@@ -262,14 +245,34 @@ export async function GET(
   };
   ttq.load(${safePixelId});
   ttq.page();
-  ttq.track('SubmitForm');
+  ttq.track(${safeEventType});
 }(window,document,"ttq");
+</script>`
+    }
+
+    if (hasFbPixel) {
+      const safeFbPixelId = JSON.stringify(fb_pixel_id as string)
+      const fbEvent = (fb_event_type as string) ?? 'Lead'
+      const safeFbEventType = JSON.stringify(fbEvent)
+      pixelScripts += `
+<script>
+!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+fbq('init', ${safeFbPixelId});
+fbq('track', ${safeFbEventType});
+</script>`
+    }
+
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta name="robots" content="noindex,nofollow" />
+${pixelScripts}
+<script>
 setTimeout(function(){window.location.href=${safeRedirectUrl};},${TIKTOK_PIXEL_REDIRECT_DELAY_MS});
 </script>
 </head>
-<body>
-<p>正在为您跳转，请稍候...</p>
-</body>
+<body></body>
 </html>`
     return new Response(html, {
       status: 200,
