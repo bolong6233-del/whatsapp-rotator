@@ -39,10 +39,10 @@ export default function Sidebar({ role = 'agent', isAdmin }: { role?: string; is
             <Link
               key={item.href}
               href={item.href}
-              className={`block px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+              className={`block px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 active:scale-95 ${
                 isActive
-                  ? 'bg-green-50 text-green-700'
-                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  ? 'bg-green-50 text-green-700 border-l-4 border-green-600 pl-2'
+                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 border-l-4 border-transparent pl-2'
               }`}
             >
               {item.label}

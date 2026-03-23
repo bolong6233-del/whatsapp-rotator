@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase-client'
 import Sidebar from '@/components/layout/Sidebar'
 import Navbar from '@/components/layout/Navbar'
@@ -16,6 +16,7 @@ export default function DashboardLayout({
   children: React.ReactNode
 }) {
   const router = useRouter()
+  const pathname = usePathname()
   const [user, setUser] = useState<User | null>(null)
   const [role, setRole] = useState<string>('agent')
   const [expiresAt, setExpiresAt] = useState<string | null>(null)
@@ -56,7 +57,9 @@ export default function DashboardLayout({
         <AlertBanner role={role} expiresAt={expiresAt} email={user.email ?? null} />
         <Navbar user={user} />
         <main className="flex-1 p-6">
-          {children}
+          <div key={pathname} className="animate-slide-up-fade">
+            {children}
+          </div>
         </main>
       </div>
     </div>
