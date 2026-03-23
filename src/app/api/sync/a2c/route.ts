@@ -3,6 +3,19 @@ import { createAdminClient } from '@/lib/supabase-admin'
 
 export const dynamic = 'force-dynamic'
 
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+}
+
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: corsHeaders,
+  })
+}
+
 interface A2CNumber {
   phone: string
   seat: string
@@ -36,7 +49,7 @@ export async function POST(request: NextRequest) {
     const { work_order_id, numbers, total_count, total_day_sum, total_sum, online_count, offline_count } = body
 
     if (!work_order_id) {
-      return NextResponse.json({ success: false, error: 'work_order_id is required' }, { status: 400 })
+      return NextResponse.json({ success: false, error: 'work_order_id is required' }, { status: 400, headers: corsHeaders })
     }
 
     const supabase = createAdminClient()
@@ -49,7 +62,7 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (workOrderError || !workOrder) {
-      return NextResponse.json({ success: false, error: '工单不存在' }, { status: 404 })
+      return NextResponse.json({ success: false, error: '工单不存在' }, { status: 404, headers: corsHeaders })
     }
 
     // Map A2C numbers to SyncNumber-compatible format
@@ -87,7 +100,7 @@ export async function POST(request: NextRequest) {
       .eq('id', work_order_id)
 
     if (updateError) {
-      return NextResponse.json({ success: false, error: updateError.message }, { status: 500 })
+      return NextResponse.json({ success: false, error: updateError.message }, { status: 500, headers: corsHeaders })
     }
 
     // Push numbers to whatsapp_numbers
@@ -160,10 +173,10 @@ export async function POST(request: NextRequest) {
         online_count,
         offline_count,
       },
-    })
+    }, { headers: corsHeaders })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unexpected error in A2C sync handler'
     console.error('[a2c sync] error:', error)
-    return NextResponse.json({ success: false, error: message }, { status: 500 })
+    return NextResponse.json({ success: false, error: message }, { status: 500, headers: corsHeaders })
   }
 }
