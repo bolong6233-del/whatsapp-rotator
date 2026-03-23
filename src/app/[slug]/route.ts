@@ -29,6 +29,12 @@ const RESERVED_SLUGS = [
   'images',
   'icons',
   'public',
+  'robots.txt',
+  'sitemap.xml',
+  'manifest.json',
+  'sw.js',
+  'service-worker.js',
+  '.well-known',
 ]
 
 /**
@@ -88,11 +94,12 @@ function parseUserAgent(ua: string | null): {
   return { os, browser, device_type }
 }
 
-function noCacheRedirect(url: string, status = 302): NextResponse {
+function noCacheRedirect(url: string, status = 303): NextResponse {
   const res = NextResponse.redirect(url, { status })
   res.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
   res.headers.set('Pragma', 'no-cache')
   res.headers.set('Expires', '0')
+  res.headers.set('Vary', '*')
   return res
 }
 
@@ -135,6 +142,27 @@ export async function GET(
 
   if (RESERVED_SLUGS.includes(slug)) {
     return noCacheRedirect(WHATSAPP_FALLBACK)
+  }
+
+  // Detect prefetch/prerender requests - these should NOT trigger rotation
+  const purpose = request.headers.get('purpose') || request.headers.get('x-purpose') || ''
+  const secPurpose = request.headers.get('sec-purpose') || ''
+  const isPrefetch =
+    purpose.toLowerCase().includes('prefetch') ||
+    secPurpose.toLowerCase().includes('prefetch') ||
+    secPurpose.toLowerCase().includes('prerender') ||
+    request.headers.get('x-moz') === 'prefetch'
+
+  if (isPrefetch) {
+    // Return 204 with no-cache headers but don't trigger RPC rotation
+    return new Response(null, {
+      status: 204,
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+      },
+    })
   }
 
   const supabase = createClient(
