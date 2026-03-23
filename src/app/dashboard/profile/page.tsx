@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
+import useSWR from 'swr'
 import { supabase } from '@/lib/supabase-client'
 
 interface ProfileData {
@@ -39,9 +40,53 @@ function daysSince(dateStr: string): number {
 }
 
 export default function ProfilePage() {
-  const [profile, setProfile] = useState<ProfileData | null>(null)
-  const [stats, setStats] = useState<StatsData>({ linkCount: 0, numberCount: 0, totalClicks: 0 })
-  const [loadingProfile, setLoadingProfile] = useState(true)
+  const { data: profile, isLoading: isLoadingProfile } = useSWR<ProfileData | null>(
+    'myProfile',
+    async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return null
+      const { data: prof } = await supabase
+        .from('profiles')
+        .select('id, email, role, created_at, expires_at')
+        .eq('id', user.id)
+        .single()
+      if (prof) {
+        return {
+          ...prof,
+          email: prof.email ?? user.email ?? null,
+          created_at: prof.created_at ?? user.created_at,
+        } as ProfileData
+      }
+      return {
+        id: user.id,
+        email: user.email || null,
+        role: user.email === ROOT_ADMIN_EMAIL ? 'root_admin' : 'agent',
+        created_at: user.created_at,
+        expires_at: null,
+      }
+    }
+  )
+
+  const userId = profile?.id ?? null
+
+  const { data: stats = { linkCount: 0, numberCount: 0, totalClicks: 0 } } = useSWR<StatsData>(
+    userId ? ['myStats', userId] : null,
+    async ([, uid]: [string, string]) => {
+      const { data: links } = await supabase
+        .from('short_links')
+        .select('id, total_clicks')
+        .eq('user_id', uid)
+      const linkCount = links?.length ?? 0
+      const totalClicks = links?.reduce((sum, l) => sum + (l.total_clicks ?? 0), 0) ?? 0
+      const { count: numberCount } = await supabase
+        .from('whatsapp_numbers')
+        .select('id', { count: 'exact', head: true })
+        .in('short_link_id', (links ?? []).map((l) => l.id))
+      return { linkCount, numberCount: numberCount ?? 0, totalClicks }
+    }
+  )
+
+  const loadingProfile = !profile && isLoadingProfile
 
   // Password change state
   const [newPassword, setNewPassword] = useState('')
@@ -49,55 +94,6 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
-
-  useEffect(() => {
-    async function loadData() {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: prof } = await supabase
-        .from('profiles')
-        .select('id, email, role, created_at, expires_at')
-        .eq('id', user.id)
-        .single()
-
-      if (prof) {
-        // Prefer profile data but fall back to session user data for critical fields
-        setProfile({
-          ...prof,
-          email: prof.email ?? user.email ?? null,
-          created_at: prof.created_at ?? user.created_at,
-        } as ProfileData)
-      } else {
-        // Profile row not found (e.g. root admin before migration) — use auth session data
-        setProfile({
-          id: user.id,
-          email: user.email || null,
-          role: user.email === ROOT_ADMIN_EMAIL ? 'root_admin' : 'agent',
-          created_at: user.created_at,
-          expires_at: null,
-        })
-      }
-
-      // Fetch stats
-      const { data: links } = await supabase
-        .from('short_links')
-        .select('id, total_clicks')
-        .eq('user_id', user.id)
-
-      const linkCount = links?.length ?? 0
-      const totalClicks = links?.reduce((sum, l) => sum + (l.total_clicks ?? 0), 0) ?? 0
-
-      const { count: numberCount } = await supabase
-        .from('whatsapp_numbers')
-        .select('id', { count: 'exact', head: true })
-        .in('short_link_id', (links ?? []).map((l) => l.id))
-
-      setStats({ linkCount, numberCount: numberCount ?? 0, totalClicks })
-      setLoadingProfile(false)
-    }
-    loadData()
-  }, [])
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault()

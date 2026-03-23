@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import useSWR from 'swr'
 import { supabase } from '@/lib/supabase-client'
 
 const ROOT_ADMIN_EMAIL = 'bolong6233@gmail.com'
@@ -60,8 +61,6 @@ export default function AgentsPage() {
   const router = useRouter()
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [currentEmail, setCurrentEmail] = useState<string | null>(null)
-  const [agents, setAgents] = useState<AgentWithStats[]>([])
-  const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
@@ -95,25 +94,25 @@ export default function AgentsPage() {
     })
   }, [])
 
-  const fetchAgents = useCallback(async () => {
-    setLoading(true)
-    const res = await fetch('/api/admin/agents')
-    if (res.status === 403) {
-      router.push('/dashboard')
-      return
+  const { data: agents = [], isLoading, mutate } = useSWR<AgentWithStats[]>(
+    '/api/admin/agents',
+    async (url: string) => {
+      const res = await fetch(url)
+      if (res.status === 403) {
+        router.push('/dashboard')
+        return []
+      }
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || '加载失败')
+      return data
+    },
+    {
+      onError: (err: Error) => setError(err.message),
+      revalidateOnFocus: true,
     }
-    const data = await res.json()
-    if (res.ok) {
-      setAgents(data)
-    } else {
-      setError(data.error || '加载失败')
-    }
-    setLoading(false)
-  }, [router])
+  )
 
-  useEffect(() => {
-    fetchAgents()
-  }, [fetchAgents])
+  const loading = !agents.length && isLoading
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
@@ -134,7 +133,7 @@ export default function AgentsPage() {
       setNewPassword('')
       setNewRole('agent')
       setShowCreate(false)
-      fetchAgents()
+      mutate()
     } else {
       setError(data.error || '创建失败')
     }
@@ -154,7 +153,7 @@ export default function AgentsPage() {
 
     if (res.ok) {
       setSuccess(`账号已${label}`)
-      fetchAgents()
+      mutate()
     } else {
       const data = await res.json()
       setError(data.error || '操作失败')
@@ -170,7 +169,7 @@ export default function AgentsPage() {
 
     if (res.ok) {
       setSuccess('角色已更新')
-      fetchAgents()
+      mutate()
     } else {
       const data = await res.json()
       setError(data.error || '操作失败')
@@ -236,7 +235,7 @@ export default function AgentsPage() {
       const label = timeOptions.find((o) => o.value === extendPeriod)?.label ?? extendPeriod
       setSuccess(`已为 ${extendAgent.email} 增加 ${label}，到期时间：${formatExpiry(data.expires_at)}`)
       setExtendAgent(null)
-      fetchAgents()
+      mutate()
     } else {
       const data = await res.json()
       setError(data.error || '操作失败')
