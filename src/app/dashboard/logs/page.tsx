@@ -12,7 +12,8 @@
  *   ALTER TABLE click_logs ADD COLUMN IF NOT EXISTS device_type TEXT;
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import useSWR from 'swr'
 import { supabase } from '@/lib/supabase-client'
 import { formatDate } from '@/lib/utils'
 import type { ClickLog } from '@/types'
@@ -184,133 +185,127 @@ interface Stats {
 }
 
 export default function LogsPage() {
-  const [logs, setLogs] = useState<ClickLog[]>([])
-  const [totalCount, setTotalCount] = useState(0)
-  const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [filterSlug, setFilterSlug] = useState('')
-  const [stats, setStats] = useState<Stats | null>(null)
-  const [shortLinks, setShortLinks] = useState<ShortLinkOption[]>([])
 
-  useEffect(() => {
-    supabase
-      .from('short_links')
-      .select('id, slug, title')
-      .order('created_at', { ascending: false })
-      .then(({ data }) => {
-        if (data) setShortLinks(data as ShortLinkOption[])
-      })
-  }, [])
+  const { data: shortLinks = [] } = useSWR<ShortLinkOption[]>(
+    'shortLinks',
+    async () => {
+      const { data } = await supabase
+        .from('short_links')
+        .select('id, slug, title')
+        .order('created_at', { ascending: false })
+      return (data as ShortLinkOption[]) || []
+    },
+    { revalidateOnFocus: false }
+  )
 
-  const fetchStats = useCallback(async (slug: string) => {
-    const todayStart = new Date()
-    todayStart.setHours(0, 0, 0, 0)
-
-    const [todayRes, mobileRes, desktopRes, countryRes] = await Promise.all([
-      (() => {
-        if (slug) {
-          return supabase
-            .from('click_logs')
-            .select('id, short_links!inner(slug)', { count: 'exact', head: true })
-            .gte('clicked_at', todayStart.toISOString())
-            .eq('short_links.slug', slug)
-        }
-        return supabase
-          .from('click_logs')
-          .select('id', { count: 'exact', head: true })
-          .gte('clicked_at', todayStart.toISOString())
-      })(),
-      (() => {
-        if (slug) {
-          return supabase
-            .from('click_logs')
-            .select('id, short_links!inner(slug)', { count: 'exact', head: true })
-            .in('device_type', ['Mobile', 'Tablet'])
-            .eq('short_links.slug', slug)
-        }
-        return supabase
-          .from('click_logs')
-          .select('id', { count: 'exact', head: true })
-          .in('device_type', ['Mobile', 'Tablet'])
-      })(),
-      (() => {
-        if (slug) {
-          return supabase
-            .from('click_logs')
-            .select('id, short_links!inner(slug)', { count: 'exact', head: true })
-            .eq('device_type', 'Desktop')
-            .eq('short_links.slug', slug)
-        }
-        return supabase
-          .from('click_logs')
-          .select('id', { count: 'exact', head: true })
-          .eq('device_type', 'Desktop')
-      })(),
-      (() => {
-        // Fetch a bounded list of non-null countries and aggregate client-side
-        // (Supabase JS client doesn't support GROUP BY directly without RPC)
-        if (slug) {
-          return supabase
-            .from('click_logs')
-            .select('country, short_links!inner(slug)')
-            .not('country', 'is', null)
-            .eq('short_links.slug', slug)
-            .limit(2000)
-        }
-        return supabase
-          .from('click_logs')
-          .select('country')
-          .not('country', 'is', null)
-          .limit(2000)
-      })(),
-    ])
-
-    const todayCount = todayRes.count ?? 0
-    const mobileCount = mobileRes.count ?? 0
-    const desktopCount = desktopRes.count ?? 0
-
-    let topCountry: string | null = null
-    if (countryRes.data) {
-      const freq: Record<string, number> = {}
-      for (const row of countryRes.data as { country: string | null }[]) {
-        if (row.country) freq[row.country] = (freq[row.country] ?? 0) + 1
+  const { data: logsData, isValidating: logsValidating } = useSWR(
+    ['logs', page, pageSize, filterSlug],
+    async ([, p, ps, slug]: [string, number, number, string]) => {
+      const from = (p - 1) * ps
+      const to = from + ps - 1
+      let query = supabase
+        .from('click_logs')
+        .select('*, short_links!inner(slug, title)', { count: 'exact' })
+        .order('clicked_at', { ascending: false })
+        .range(from, to)
+      if (slug) {
+        query = query.eq('short_links.slug', slug)
       }
-      const sorted = Object.entries(freq).sort((a, b) => b[1] - a[1])
-      topCountry = sorted[0]?.[0] ?? null
-    }
+      const { data, count, error } = await query
+      if (error) throw error
+      return { logs: (data as ClickLog[]) || [], totalCount: count || 0 }
+    },
+    { keepPreviousData: true, revalidateOnFocus: true }
+  )
 
-    setStats({ todayCount, mobileCount, desktopCount, topCountry })
-  }, [])
+  const logs = logsData?.logs ?? []
+  const totalCount = logsData?.totalCount ?? 0
+  const loading = !logsData && logsValidating
 
-  const fetchLogs = useCallback(async () => {
-    setLoading(true)
-    const from = (page - 1) * pageSize
-    const to = from + pageSize - 1
+  const { data: stats } = useSWR<Stats>(
+    ['logsStats', filterSlug],
+    async ([, slug]: [string, string]) => {
+      const todayStart = new Date()
+      todayStart.setHours(0, 0, 0, 0)
 
-    let query = supabase
-      .from('click_logs')
-      .select('*, short_links!inner(slug, title)', { count: 'exact' })
-      .order('clicked_at', { ascending: false })
-      .range(from, to)
+      const [todayRes, mobileRes, desktopRes, countryRes] = await Promise.all([
+        (() => {
+          if (slug) {
+            return supabase
+              .from('click_logs')
+              .select('id, short_links!inner(slug)', { count: 'exact', head: true })
+              .gte('clicked_at', todayStart.toISOString())
+              .eq('short_links.slug', slug)
+          }
+          return supabase
+            .from('click_logs')
+            .select('id', { count: 'exact', head: true })
+            .gte('clicked_at', todayStart.toISOString())
+        })(),
+        (() => {
+          if (slug) {
+            return supabase
+              .from('click_logs')
+              .select('id, short_links!inner(slug)', { count: 'exact', head: true })
+              .in('device_type', ['Mobile', 'Tablet'])
+              .eq('short_links.slug', slug)
+          }
+          return supabase
+            .from('click_logs')
+            .select('id', { count: 'exact', head: true })
+            .in('device_type', ['Mobile', 'Tablet'])
+        })(),
+        (() => {
+          if (slug) {
+            return supabase
+              .from('click_logs')
+              .select('id, short_links!inner(slug)', { count: 'exact', head: true })
+              .eq('device_type', 'Desktop')
+              .eq('short_links.slug', slug)
+          }
+          return supabase
+            .from('click_logs')
+            .select('id', { count: 'exact', head: true })
+            .eq('device_type', 'Desktop')
+        })(),
+        (() => {
+          if (slug) {
+            return supabase
+              .from('click_logs')
+              .select('country, short_links!inner(slug)')
+              .not('country', 'is', null)
+              .eq('short_links.slug', slug)
+              .limit(2000)
+          }
+          return supabase
+            .from('click_logs')
+            .select('country')
+            .not('country', 'is', null)
+            .limit(2000)
+        })(),
+      ])
 
-    if (filterSlug) {
-      query = query.eq('short_links.slug', filterSlug)
-    }
+      const todayCount = todayRes.count ?? 0
+      const mobileCount = mobileRes.count ?? 0
+      const desktopCount = desktopRes.count ?? 0
 
-    const { data, count, error } = await query
+      let topCountry: string | null = null
+      if (countryRes.data) {
+        const freq: Record<string, number> = {}
+        for (const row of countryRes.data as { country: string | null }[]) {
+          if (row.country) freq[row.country] = (freq[row.country] ?? 0) + 1
+        }
+        const sorted = Object.entries(freq).sort((a, b) => b[1] - a[1])
+        topCountry = sorted[0]?.[0] ?? null
+      }
 
-    if (!error) {
-      setLogs((data as ClickLog[]) || [])
-      setTotalCount(count || 0)
-    }
-    setLoading(false)
-  }, [page, pageSize, filterSlug])
-
-  useEffect(() => {
-    fetchLogs()
-    fetchStats(filterSlug)
-  }, [fetchLogs, fetchStats, filterSlug])
+      return { todayCount, mobileCount, desktopCount, topCountry }
+    },
+    { keepPreviousData: true, revalidateOnFocus: true }
+  )
 
   const handleFilterChange = (slug: string) => {
     setFilterSlug(slug)

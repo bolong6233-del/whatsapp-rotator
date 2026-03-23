@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import useSWR from 'swr'
 import { supabase } from '@/lib/supabase-client'
 import type { WhatsAppNumber, ShortLink, Platform } from '@/types'
 import Pagination from '@/components/ui/Pagination'
@@ -214,11 +215,6 @@ function LinkSelect({
 }
 
 export default function NumbersPage() {
-  const [numbers, setNumbers] = useState<NumberWithLink[]>([])
-  const [totalCount, setTotalCount] = useState(0)
-  const [links, setLinks] = useState<ShortLink[]>([])
-  const [allPhones, setAllPhones] = useState<string[]>([])
-  const [loading, setLoading] = useState(true)
   const [filterPlatform, setFilterPlatform] = useState<Platform | 'all'>('all')
   const [filterLink, setFilterLink] = useState<string>('all')
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all')
@@ -228,8 +224,6 @@ export default function NumbersPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
-  const [isAdmin, setIsAdmin] = useState(false)
 
   // Modal state
   const [showModal, setShowModal] = useState(false)
@@ -240,90 +234,91 @@ export default function NumbersPage() {
   const [modalStatus, setModalStatus] = useState<'active' | 'inactive'>('active')
   const [adding, setAdding] = useState(false)
 
-  useEffect(() => {
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!user) return
-      setCurrentUserId(user.id)
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', user.id)
-        .single()
-      setIsAdmin(profile?.role === 'admin')
-    })
-  }, [])
+  const { data: userInfo } = useSWR('numbersCurrentUser', async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return null
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+    return { userId: user.id, isAdmin: profile?.role === 'admin' }
+  })
 
-  useEffect(() => {
-    if (!currentUserId) return
-    let query = supabase
-      .from('whatsapp_numbers')
-      .select('phone_number')
-      .order('phone_number', { ascending: true })
-    if (!isAdmin) {
-      query = query.eq('is_hidden', false)
-    }
-    query.then(({ data }) => {
-      if (data) {
-        const unique = Array.from(new Set(data.map((r: { phone_number: string }) => r.phone_number)))
-        setAllPhones(unique)
+  const currentUserId = userInfo?.userId ?? null
+  const isAdmin = userInfo?.isAdmin ?? false
+
+  const { data: allPhones = [] } = useSWR<string[]>(
+    currentUserId ? ['allPhones', currentUserId, isAdmin] : null,
+    async ([, , admin]: [string, string, boolean]) => {
+      let query = supabase
+        .from('whatsapp_numbers')
+        .select('phone_number')
+        .order('phone_number', { ascending: true })
+      if (!admin) {
+        query = query.eq('is_hidden', false)
       }
-    })
-  }, [currentUserId, isAdmin])
+      const { data } = await query
+      return data ? Array.from(new Set(data.map((r: { phone_number: string }) => r.phone_number))) : []
+    }
+  )
 
-  const fetchData = useCallback(async () => {
-    if (!currentUserId) return
-    setLoading(true)
-    try {
+  const { data: mainData, isValidating, mutate } = useSWR(
+    currentUserId
+      ? ['/api/numbers', filterPlatform, filterLink, filterStatus, searchPhone, page, pageSize, currentUserId, isAdmin]
+      : null,
+    async ([, fPlatform, fLink, fStatus, sPhone, p, ps, uid, admin]: [
+      string, Platform | 'all', string, 'all' | 'active' | 'inactive', string, number, number, string, boolean
+    ]) => {
       const { data: linksData, error: linksError } = await supabase
         .from('short_links')
         .select('*')
-        .eq('user_id', currentUserId)
+        .eq('user_id', uid)
         .order('created_at', { ascending: false })
-
       if (linksError) throw linksError
-      setLinks(linksData || [])
 
       let query = supabase
         .from('whatsapp_numbers')
         .select('*, short_links(id, slug, title)', { count: 'exact' })
         .order('created_at', { ascending: false })
 
-      if (!isAdmin) {
+      if (!admin) {
         query = query.eq('is_hidden', false)
       }
-
-      if (filterPlatform !== 'all') {
-        query = query.eq('platform', filterPlatform)
+      if (fPlatform !== 'all') {
+        query = query.eq('platform', fPlatform)
       }
-      if (filterLink !== 'all') {
-        query = query.eq('short_link_id', filterLink)
+      if (fLink !== 'all') {
+        query = query.eq('short_link_id', fLink)
       }
-      if (filterStatus === 'active') {
+      if (fStatus === 'active') {
         query = query.eq('is_active', true)
-      } else if (filterStatus === 'inactive') {
+      } else if (fStatus === 'inactive') {
         query = query.eq('is_active', false)
       }
-      if (searchPhone) {
-        query = query.eq('phone_number', searchPhone)
+      if (sPhone) {
+        query = query.eq('phone_number', sPhone)
       }
 
-      const from = (page - 1) * pageSize
-      query = query.range(from, from + pageSize - 1)
+      const from = (p - 1) * ps
+      query = query.range(from, from + ps - 1)
 
       const { data: numbersData, count, error } = await query
       if (error) throw error
-      setNumbers((numbersData as NumberWithLink[]) || [])
-      setTotalCount(count || 0)
-    } catch (e) {
-      console.error(e)
-    } finally {
-      setLoading(false)
-    }
-  }, [page, pageSize, filterPlatform, filterLink, filterStatus, searchPhone, currentUserId, isAdmin])
 
-  useEffect(() => {
-    fetchData()
-  }, [fetchData])
+      return {
+        numbers: (numbersData as NumberWithLink[]) || [],
+        totalCount: count || 0,
+        links: (linksData || []) as ShortLink[],
+      }
+    },
+    { keepPreviousData: true, revalidateOnFocus: true }
+  )
+
+  const numbers = mainData?.numbers ?? []
+  const totalCount = mainData?.totalCount ?? 0
+  const links = mainData?.links ?? []
+  const loading = !mainData && isValidating
 
   const toggleSelect = (id: string) => {
     setSelected((prev) => {
@@ -344,14 +339,14 @@ export default function NumbersPage() {
 
   const handleToggleActive = async (numberId: string, currentStatus: boolean) => {
     await supabase.from('whatsapp_numbers').update({ is_active: !currentStatus }).eq('id', numberId)
-    fetchData()
+    mutate()
   }
 
   const handleDelete = async (numberId: string) => {
     if (!confirm('确定要删除此号码吗？')) return
     const { error } = await supabase.from('whatsapp_numbers').delete().eq('id', numberId)
     if (error) setError('删除失败：' + error.message)
-    else fetchData()
+    else mutate()
   }
 
   const handleBulkToggle = async (activate: boolean) => {
@@ -361,7 +356,7 @@ export default function NumbersPage() {
       .update({ is_active: activate })
       .in('id', Array.from(selected))
     setSelected(new Set())
-    fetchData()
+    mutate()
   }
 
   const handleBulkDelete = async () => {
@@ -369,7 +364,7 @@ export default function NumbersPage() {
     if (!confirm(`确定要删除选中的 ${selected.size} 个号码吗？`)) return
     await supabase.from('whatsapp_numbers').delete().in('id', Array.from(selected))
     setSelected(new Set())
-    fetchData()
+    mutate()
   }
 
   const handleExport = () => {
@@ -427,7 +422,7 @@ export default function NumbersPage() {
       setModalNumbers('')
       setModalStatus('active')
       setShowModal(false)
-      fetchData()
+      mutate()
     }
   }
 
