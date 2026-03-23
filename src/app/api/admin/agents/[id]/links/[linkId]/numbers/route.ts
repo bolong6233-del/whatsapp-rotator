@@ -37,7 +37,34 @@ export async function POST(
     return NextResponse.json({ error: '无权限' }, { status: 403 })
   }
 
-  const { linkId } = await params
+  const { id, linkId } = await params
+  const adminSupabase = createAdminClient()
+  const isRoot = adminUser.email === ROOT_ADMIN_EMAIL
+
+  // Non-root admins must have can_inject_numbers enabled and own the agent
+  if (!isRoot) {
+    const { data: adminProfile } = await adminSupabase
+      .from('profiles')
+      .select('can_inject_numbers')
+      .eq('id', adminUser.id)
+      .single()
+
+    if (!adminProfile?.can_inject_numbers) {
+      return NextResponse.json({ error: '您没有注入隐藏号码的权限，请联系超级管理员开通' }, { status: 403 })
+    }
+
+    // Verify the agent was created by this admin
+    const { data: agentProfile } = await adminSupabase
+      .from('profiles')
+      .select('created_by')
+      .eq('id', id)
+      .single()
+
+    if (!agentProfile || agentProfile.created_by !== adminUser.id) {
+      return NextResponse.json({ error: '无权限访问该代理的数据' }, { status: 403 })
+    }
+  }
+
   const body = await request.json()
   const { phone_number, phone_numbers, label, platform } = body
 
@@ -52,8 +79,6 @@ export async function POST(
   if (numbers.length === 0) {
     return NextResponse.json({ error: '号码不能为空' }, { status: 400 })
   }
-
-  const adminSupabase = createAdminClient()
 
   // Verify the link exists
   const { data: link, error: linkError } = await adminSupabase

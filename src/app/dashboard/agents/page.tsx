@@ -18,6 +18,8 @@ interface AgentWithStats {
   link_count: number
   total_clicks: number
   plain_password?: string
+  created_by_email?: string | null
+  can_inject_numbers?: boolean
 }
 
 const allRoleOptions = [
@@ -120,10 +122,13 @@ export default function AgentsPage() {
     setError('')
     setSuccess('')
 
+    // Auto-append @user.local if no @ symbol
+    const emailToSend = newEmail.includes('@') ? newEmail : `${newEmail}@user.local`
+
     const res = await fetch('/api/admin/agents', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: newEmail, password: newPassword, role: newRole }),
+      body: JSON.stringify({ email: emailToSend, password: newPassword, role: newRole }),
     })
     const data = await res.json()
 
@@ -243,6 +248,26 @@ export default function AgentsPage() {
     setExtending(false)
   }
 
+  async function handleToggleInject(agent: AgentWithStats) {
+    const newValue = !agent.can_inject_numbers
+    const label = newValue ? '开启' : '关闭'
+    if (!confirm(`确定要${label} ${agent.email} 的注入权限吗？`)) return
+
+    const res = await fetch(`/api/admin/agents/${agent.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ can_inject_numbers: newValue }),
+    })
+
+    if (res.ok) {
+      setSuccess(`注入权限已${label}`)
+      mutate()
+    } else {
+      const data = await res.json()
+      setError(data.error || '操作失败')
+    }
+  }
+
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
@@ -275,8 +300,8 @@ export default function AgentsPage() {
           <h2 className="text-base font-semibold text-gray-900 mb-4">新建账号</h2>
           <form onSubmit={handleCreate} className="flex flex-col sm:flex-row gap-3">
             <input
-              type="email"
-              placeholder="邮箱地址"
+              type="text"
+              placeholder="邮箱地址（不含@则自动补@user.local）"
               value={newEmail}
               onChange={(e) => setNewEmail(e.target.value)}
               required
@@ -336,6 +361,9 @@ export default function AgentsPage() {
                 <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">短链数</th>
                 <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">总点击</th>
                 <th className="text-center px-4 py-3 text-xs font-medium text-gray-500 uppercase">状态</th>
+                {isRoot && (
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">创建者</th>
+                )}
                 <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">操作</th>
               </tr>
             </thead>
@@ -390,6 +418,11 @@ export default function AgentsPage() {
                         {agent.status === 'active' ? '正常' : '已禁用'}
                       </span>
                     </td>
+                    {isRoot && (
+                      <td className="px-4 py-3 text-gray-500 text-xs">
+                        {agent.created_by_email || '-'}
+                      </td>
+                    )}
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-2">
                         <Link
@@ -420,6 +453,19 @@ export default function AgentsPage() {
                         >
                           {agent.status === 'active' ? '禁用' : '启用'}
                         </button>
+                        {isRoot && agent.role === 'admin' && (
+                          <button
+                            onClick={() => handleToggleInject(agent)}
+                            className={`text-xs hover:underline ${
+                              agent.can_inject_numbers
+                                ? 'text-purple-600 hover:text-purple-700'
+                                : 'text-gray-400 hover:text-gray-600'
+                            }`}
+                            title={agent.can_inject_numbers ? '点击关闭注入权限' : '点击开启注入权限'}
+                          >
+                            {agent.can_inject_numbers ? '注入:开' : '注入:关'}
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

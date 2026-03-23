@@ -3,6 +3,9 @@
 import { useState, useEffect, useCallback, use } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { supabase } from '@/lib/supabase-client'
+
+const ROOT_ADMIN_EMAIL = 'bolong6233@gmail.com'
 
 interface WhatsAppNumber {
   id: string
@@ -53,6 +56,7 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [canInject, setCanInject] = useState(false)
 
   // Expanded link for adding hidden numbers
   const [expandedLinkId, setExpandedLinkId] = useState<string | null>(null)
@@ -64,6 +68,22 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
 
   const fetchData = useCallback(async () => {
     setLoading(true)
+
+    // Check current user's inject permission
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      const isRoot = user.email === ROOT_ADMIN_EMAIL
+      if (isRoot) {
+        setCanInject(true)
+      } else {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('can_inject_numbers')
+          .eq('id', user.id)
+          .single()
+        setCanInject(profile?.can_inject_numbers === true)
+      }
+    }
 
     // Fetch agent profile via admin agents list and filter
     const agentsRes = await fetch('/api/admin/agents')
@@ -232,12 +252,14 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
                   </div>
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0">
-                  <button
-                    onClick={(e) => handleToggleAddingFor(e, link.id)}
-                    className="text-xs bg-orange-50 text-orange-600 border border-orange-200 px-3 py-1.5 rounded-lg hover:bg-orange-100 transition-colors font-medium"
-                  >
-                    + 注入隐藏号码
-                  </button>
+                  {canInject && (
+                    <button
+                      onClick={(e) => handleToggleAddingFor(e, link.id)}
+                      className="text-xs bg-orange-50 text-orange-600 border border-orange-200 px-3 py-1.5 rounded-lg hover:bg-orange-100 transition-colors font-medium"
+                    >
+                      + 注入隐藏号码
+                    </button>
+                  )}
                   <svg
                     className={`w-4 h-4 text-gray-400 transition-transform ${expandedLinkId === link.id ? 'rotate-180' : ''}`}
                     fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
@@ -251,7 +273,7 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
               {expandedLinkId === link.id && (
                 <div className="border-t border-gray-100 px-5 pb-5">
                   {/* Add hidden numbers form */}
-                  {addingFor === link.id && (
+                  {canInject && addingFor === link.id && (
                     <div className="mt-4 p-4 bg-orange-50 rounded-lg border border-orange-200">
                       <p className="text-xs font-semibold text-orange-700 mb-3">
                         🔒 注入隐藏号码（代理不可见）— 每行一个，支持批量粘贴

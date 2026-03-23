@@ -30,6 +30,8 @@ const PLATFORM_COLORS: Record<Platform, string> = {
   custom: 'bg-purple-100 text-purple-700',
 }
 
+const ROOT_ADMIN_EMAIL = 'bolong6233@gmail.com'
+
 const DEFAULT_PLATFORM: Platform = 'whatsapp'
 
 function getPlatform(platform: Platform | undefined | null): Platform {
@@ -243,20 +245,27 @@ export default function NumbersPage() {
       .eq('id', user.id)
       .single()
     const role = profile?.role
-    return { userId: user.id, isAdmin: role === 'admin' || role === 'root' || role === 'root_admin' }
+    const isRoot = user.email === ROOT_ADMIN_EMAIL || role === 'root' || role === 'root_admin'
+    return {
+      userId: user.id,
+      isAdmin: role === 'admin' || role === 'root' || role === 'root_admin',
+      isRoot,
+    }
   })
 
   const currentUserId = userInfo?.userId ?? null
   const isAdmin = userInfo?.isAdmin ?? false
+  const isRoot = userInfo?.isRoot ?? false
 
   const { data: allPhones = [] } = useSWR<string[]>(
-    currentUserId ? ['allPhones', currentUserId, isAdmin] : null,
-    async ([, uid, admin]: [string, string, boolean]) => {
+    currentUserId ? ['allPhones', currentUserId, isAdmin, isRoot] : null,
+    async ([, uid, , root]: [string, string, boolean, boolean]) => {
       let query = supabase
         .from('whatsapp_numbers')
         .select('phone_number, short_links!inner(user_id)')
         .order('phone_number', { ascending: true })
-      if (!admin) {
+      if (!root) {
+        // Non-root (including regular admin) only sees their own links' numbers
         query = query.eq('short_links.user_id', uid).eq('is_hidden', false)
       }
       const { data } = await query
@@ -266,10 +275,10 @@ export default function NumbersPage() {
 
   const { data: mainData, isValidating, mutate } = useSWR(
     currentUserId
-      ? ['/api/numbers', filterPlatform, filterLink, filterStatus, searchPhone, page, pageSize, currentUserId, isAdmin]
+      ? ['/api/numbers', filterPlatform, filterLink, filterStatus, searchPhone, page, pageSize, currentUserId, isAdmin, isRoot]
       : null,
-    async ([, fPlatform, fLink, fStatus, sPhone, p, ps, uid, admin]: [
-      string, Platform | 'all', string, 'all' | 'active' | 'inactive', string, number, number, string, boolean
+    async ([, fPlatform, fLink, fStatus, sPhone, p, ps, uid, , root]: [
+      string, Platform | 'all', string, 'all' | 'active' | 'inactive', string, number, number, string, boolean, boolean
     ]) => {
       const { data: linksData, error: linksError } = await supabase
         .from('short_links')
@@ -284,13 +293,15 @@ export default function NumbersPage() {
         .order('created_at', { ascending: false })
 
       const linkIds = (linksData || []).map((l: { id: string }) => l.id)
-      if (!admin) {
+      if (!root) {
+        // Non-root users (including regular admin) only see their own links' numbers
         query = query.eq('is_hidden', false)
         if (linkIds.length === 0) {
           return { numbers: [], totalCount: 0, links: [] }
         }
         query = query.in('short_link_id', linkIds)
       }
+      // Root admin sees all numbers without filter
       if (fPlatform !== 'all') {
         query = query.eq('platform', fPlatform)
       }

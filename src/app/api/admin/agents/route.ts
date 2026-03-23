@@ -61,7 +61,7 @@ export async function GET() {
     filteredAgents = filteredAgents.filter(a => a.email !== ROOT_ADMIN_EMAIL)
   }
 
-  // Fetch stats for each agent in parallel
+  // Fetch stats and creator emails for each agent in parallel
   const agentsWithStats = await Promise.all(
     filteredAgents.map(async (agent) => {
       const { data: links } = await adminSupabase
@@ -72,7 +72,18 @@ export async function GET() {
       const link_count = links?.length || 0
       const total_clicks = links?.reduce((sum, l) => sum + (l.total_clicks || 0), 0) || 0
 
-      return { ...agent, link_count, total_clicks }
+      // Look up creator email (only meaningful for root admin view)
+      let created_by_email: string | null = null
+      if (agent.created_by) {
+        const { data: creator } = await adminSupabase
+          .from('profiles')
+          .select('email')
+          .eq('id', agent.created_by)
+          .single()
+        created_by_email = creator?.email ?? null
+      }
+
+      return { ...agent, link_count, total_clicks, created_by_email }
     })
   )
 
@@ -87,10 +98,16 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json()
-  const { email, password, role: newRole } = body
+  let { email } = body
+  const { password, role: newRole } = body
 
   if (!email || !password) {
     return NextResponse.json({ error: '邮箱和密码不能为空' }, { status: 400 })
+  }
+
+  // Auto-append @user.local if no @ symbol in the email
+  if (!email.includes('@')) {
+    email = `${email}@user.local`
   }
 
   // Only Root Admin can assign the 'admin' role

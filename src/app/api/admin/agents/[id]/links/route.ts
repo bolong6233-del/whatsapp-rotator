@@ -36,6 +36,20 @@ export async function GET(
 
   const { id } = await params
   const adminSupabase = createAdminClient()
+  const isRoot = adminUser.email === ROOT_ADMIN_EMAIL
+
+  // Non-root admins can only access agents they created
+  if (!isRoot) {
+    const { data: agentProfile } = await adminSupabase
+      .from('profiles')
+      .select('created_by')
+      .eq('id', id)
+      .single()
+
+    if (!agentProfile || agentProfile.created_by !== adminUser.id) {
+      return NextResponse.json({ error: '无权限访问该代理的数据' }, { status: 403 })
+    }
+  }
 
   const { data: links, error } = await adminSupabase
     .from('short_links')
