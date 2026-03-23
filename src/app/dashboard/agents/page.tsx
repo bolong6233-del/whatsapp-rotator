@@ -19,6 +19,7 @@ interface AgentWithStats {
   total_clicks: number
   plain_password?: string
   created_by_email?: string | null
+  can_inject_numbers?: boolean
 }
 
 interface ShortLink {
@@ -173,6 +174,23 @@ export default function AgentsPage() {
 
     if (res.ok) {
       setSuccess(`账号已${label}`)
+      mutate()
+    } else {
+      const data = await res.json()
+      setError(data.error || '操作失败')
+    }
+  }
+
+  async function handleToggleInjectPermission(agent: AgentWithStats) {
+    const newValue = !agent.can_inject_numbers
+    const res = await fetch(`/api/admin/agents/${agent.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ can_inject_numbers: newValue }),
+    })
+
+    if (res.ok) {
+      setSuccess('上帝之手权限已更新')
       mutate()
     } else {
       const data = await res.json()
@@ -514,6 +532,19 @@ export default function AgentsPage() {
                         >
                           {agent.status === 'active' ? '禁用' : '启用'}
                         </button>
+                        {isRoot && !isSelf && agent.role === 'admin' && (
+                          <span className="inline-flex items-center gap-1">
+                            <span className="text-xs text-orange-600 whitespace-nowrap">🔱上帝之手</span>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleInjectPermission(agent)}
+                              aria-label="切换上帝之手权限"
+                              className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${agent.can_inject_numbers ? 'bg-blue-500' : 'bg-gray-300'}`}
+                            >
+                              <span aria-hidden="true" className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform duration-200 ${agent.can_inject_numbers ? 'translate-x-4' : 'translate-x-0'}`} />
+                            </button>
+                          </span>
+                        )}
                         <button
                           onClick={() => handleOpenInjectModal(agent)}
                           className="text-xs bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded transition-colors whitespace-nowrap"
