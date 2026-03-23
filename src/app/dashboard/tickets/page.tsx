@@ -118,6 +118,7 @@ export default function TicketsPage() {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
   const [bookmarkletOrder, setBookmarkletOrder] = useState<WorkOrder | null>(null)
   const [appOrigin, setAppOrigin] = useState('')
+  const [syncingA2COrderId, setSyncingA2COrderId] = useState<string | null>(null)
 
   // Modal state
   const [showModal, setShowModal] = useState(false)
@@ -389,9 +390,36 @@ export default function TicketsPage() {
     }
   }
 
-  const handleA2CSync = (e: React.MouseEvent, order: WorkOrder) => {
+  const handleA2CSync = async (e: React.MouseEvent, order: WorkOrder) => {
     e.stopPropagation()
-    setBookmarkletOrder(order)
+
+    // If no ticket_link, fall back to bookmarklet guide directly
+    if (!order.ticket_link) {
+      setBookmarkletOrder(order)
+      return
+    }
+
+    setSyncingA2COrderId(order.id)
+    try {
+      const res = await fetch('/api/sync/a2c-fetch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ work_order_id: order.id, ticket_link: order.ticket_link }),
+      })
+      const result = await res.json()
+      if (result.success) {
+        await mutate()
+        return
+      }
+      // Server-side fetch failed — fall back to bookmarklet guide
+      setBookmarkletOrder(order)
+    } catch (err) {
+      // Network error or unexpected failure — log and fall back to bookmarklet guide
+      console.error('[handleA2CSync] Unexpected error, falling back to bookmarklet guide:', err)
+      setBookmarkletOrder(order)
+    } finally {
+      setSyncingA2COrderId(null)
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -619,9 +647,10 @@ export default function TicketsPage() {
                             <button
                               type="button"
                               onClick={(e) => handleA2CSync(e, order)}
-                              className="text-purple-500 hover:text-purple-700 text-xs whitespace-nowrap"
+                              disabled={syncingA2COrderId === order.id}
+                              className="text-purple-500 hover:text-purple-700 text-xs whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                              📡 同步
+                              {syncingA2COrderId === order.id ? '同步中…' : '📡 同步'}
                             </button>
                           )}
                           <button
@@ -958,7 +987,17 @@ export default function TicketsPage() {
                 </button>
               </div>
             </div>
-            <div className="flex justify-end px-6 py-4 border-t border-gray-100">
+            <div className="flex justify-between items-center px-6 py-4 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={async () => {
+                  await mutate()
+                  setBookmarkletOrder(null)
+                }}
+                className="px-5 py-2 text-sm bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium transition-colors"
+              >
+                🔄 刷新数据
+              </button>
               <button
                 type="button"
                 onClick={() => setBookmarkletOrder(null)}
