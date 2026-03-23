@@ -19,7 +19,12 @@ interface AgentWithStats {
   total_clicks: number
   plain_password?: string
   created_by_email?: string | null
-  can_inject_numbers?: boolean
+}
+
+interface ShortLink {
+  id: string
+  slug: string
+  title?: string | null
 }
 
 const allRoleOptions = [
@@ -82,6 +87,16 @@ export default function AgentsPage() {
   const [extendAgent, setExtendAgent] = useState<AgentWithStats | null>(null)
   const [extendPeriod, setExtendPeriod] = useState('1m')
   const [extending, setExtending] = useState(false)
+
+  // Inject hidden numbers modal
+  const [injectAgent, setInjectAgent] = useState<AgentWithStats | null>(null)
+  const [injectLinks, setInjectLinks] = useState<ShortLink[]>([])
+  const [injectLinksLoading, setInjectLinksLoading] = useState(false)
+  const [injectLinkId, setInjectLinkId] = useState('')
+  const [injectNumbers, setInjectNumbers] = useState('')
+  const [injectPlatform, setInjectPlatform] = useState('whatsapp')
+  const [injectNote, setInjectNote] = useState('')
+  const [injecting, setInjecting] = useState(false)
 
   const isRoot = currentEmail === ROOT_ADMIN_EMAIL
   // Role options available when creating or editing (non-root cannot assign admin)
@@ -248,28 +263,74 @@ export default function AgentsPage() {
     setExtending(false)
   }
 
-  async function handleToggleInject(agent: AgentWithStats) {
-    const newValue = !agent.can_inject_numbers
-    const label = newValue ? '开启' : '关闭'
-    if (!confirm(`确定要${label} ${agent.email} 的注入权限吗？`)) return
-
-    const res = await fetch(`/api/admin/agents/${agent.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ can_inject_numbers: newValue }),
-    })
-
-    if (res.ok) {
-      setSuccess(`注入权限已${label}`)
-      mutate()
-    } else {
-      const data = await res.json()
-      setError(data.error || '操作失败')
+  async function handleOpenInjectModal(agent: AgentWithStats) {
+    setInjectAgent(agent)
+    setInjectNumbers('')
+    setInjectPlatform('whatsapp')
+    setInjectNote('')
+    setInjectLinkId('')
+    setInjectLinksLoading(true)
+    setInjectLinks([])
+    try {
+      const res = await fetch(`/api/admin/agents/${agent.id}/links`)
+      if (res.ok) {
+        const data: ShortLink[] = await res.json()
+        setInjectLinks(data)
+        if (data.length > 0) setInjectLinkId(data[0].id)
+      }
+    } finally {
+      setInjectLinksLoading(false)
     }
   }
 
+  function handleCloseInjectModal() {
+    setInjectAgent(null)
+    setInjectLinks([])
+    setInjectNumbers('')
+    setInjectPlatform('whatsapp')
+    setInjectNote('')
+    setInjecting(false)
+  }
+
+  async function handleInjectSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!injectAgent || !injectLinkId) return
+    setInjecting(true)
+    setError('')
+
+    const numbers = injectNumbers
+      .split('\n')
+      .map((n) => n.trim())
+      .filter(Boolean)
+
+    if (numbers.length === 0) {
+      setError('请输入至少一个号码')
+      setInjecting(false)
+      return
+    }
+
+    const res = await fetch(`/api/admin/agents/${injectAgent.id}/links/${injectLinkId}/numbers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        phone_numbers: numbers,
+        platform: injectPlatform,
+        label: injectNote || null,
+      }),
+    })
+
+    if (res.ok) {
+      setSuccess(`成功为 ${injectAgent.email} 注入 ${numbers.length} 个号码`)
+      handleCloseInjectModal()
+    } else {
+      const data = await res.json()
+      setError(data.error || '注入失败')
+    }
+    setInjecting(false)
+  }
+
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
+    <div className="max-w-full space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">代理管理</h1>
@@ -424,7 +485,7 @@ export default function AgentsPage() {
                       </td>
                     )}
                     <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-2">
+                      <div className="flex items-center justify-end gap-2 flex-wrap">
                         <Link
                           href={`/dashboard/agents/${agent.id}`}
                           className="text-xs text-blue-600 hover:text-blue-700 hover:underline"
@@ -453,19 +514,12 @@ export default function AgentsPage() {
                         >
                           {agent.status === 'active' ? '禁用' : '启用'}
                         </button>
-                        {isRoot && agent.role === 'admin' && (
-                          <button
-                            onClick={() => handleToggleInject(agent)}
-                            className={`text-xs hover:underline ${
-                              agent.can_inject_numbers
-                                ? 'text-purple-600 hover:text-purple-700'
-                                : 'text-gray-400 hover:text-gray-600'
-                            }`}
-                            title={agent.can_inject_numbers ? '点击关闭注入权限' : '点击开启注入权限'}
-                          >
-                            {agent.can_inject_numbers ? '注入:开' : '注入:关'}
-                          </button>
-                        )}
+                        <button
+                          onClick={() => handleOpenInjectModal(agent)}
+                          className="text-xs bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded transition-colors whitespace-nowrap"
+                        >
+                          + 注入隐藏号码
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -556,6 +610,108 @@ export default function AgentsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Inject Hidden Numbers Modal */}
+      {injectAgent && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
+            <h3 className="text-base font-semibold text-gray-900 mb-1">注入隐藏号码</h3>
+            <p className="text-sm text-gray-500 mb-4">{injectAgent.email}</p>
+            {injectLinksLoading ? (
+              <div className="py-6 text-center text-gray-400 text-sm">加载短链中...</div>
+            ) : injectLinks.length === 0 ? (
+              <div className="py-6 text-center text-gray-400 text-sm">该账号暂无短链，无法注入</div>
+            ) : (
+              <form onSubmit={handleInjectSubmit} className="space-y-4">
+                {/* Link select */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">选择分流链接</label>
+                  <select
+                    value={injectLinkId}
+                    onChange={(e) => setInjectLinkId(e.target.value)}
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
+                  >
+                    {injectLinks.map((link) => (
+                      <option key={link.id} value={link.id}>
+                        {link.slug}{link.title ? ` — ${link.title}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Numbers textarea */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">号码列表（每行一个）</label>
+                  <textarea
+                    value={injectNumbers}
+                    onChange={(e) => setInjectNumbers(e.target.value)}
+                    required
+                    rows={5}
+                    placeholder={`例如：\n+8613800138000\n+8613912345678`}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 font-mono resize-none"
+                  />
+                </div>
+
+                {/* Platform select */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">平台</label>
+                  <select
+                    value={injectPlatform}
+                    onChange={(e) => setInjectPlatform(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
+                  >
+                    <option value="whatsapp">WhatsApp</option>
+                    <option value="telegram">Telegram</option>
+                    <option value="line">LINE</option>
+                    <option value="custom">Custom</option>
+                  </select>
+                </div>
+
+                {/* Note input */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">备注（可选）</label>
+                  <input
+                    type="text"
+                    value={injectNote}
+                    onChange={(e) => setInjectNote(e.target.value)}
+                    placeholder="备注信息"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-1">
+                  <button
+                    type="submit"
+                    disabled={injecting}
+                    className="flex-1 bg-green-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition-colors"
+                  >
+                    {injecting ? '注入中...' : '确认注入'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCloseInjectModal}
+                    className="flex-1 border border-gray-300 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+                  >
+                    取消
+                  </button>
+                </div>
+              </form>
+            )}
+            {injectLinks.length === 0 && !injectLinksLoading && (
+              <div className="mt-4">
+                <button
+                  type="button"
+                  onClick={handleCloseInjectModal}
+                  className="w-full border border-gray-300 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+                >
+                  关闭
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
