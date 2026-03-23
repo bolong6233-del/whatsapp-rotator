@@ -88,6 +88,14 @@ function parseUserAgent(ua: string | null): {
   return { os, browser, device_type }
 }
 
+function noCacheRedirect(url: string, status = 302): NextResponse {
+  const res = NextResponse.redirect(url, { status })
+  res.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+  res.headers.set('Pragma', 'no-cache')
+  res.headers.set('Expires', '0')
+  return res
+}
+
 function buildRedirectUrl(phoneNumber: string, platform: string, autoReplyMessage?: string): string {
   const clean = phoneNumber.trim()
   switch (platform) {
@@ -126,7 +134,7 @@ export async function GET(
   const isDebug = searchParams.get('debug') === '1'
 
   if (RESERVED_SLUGS.includes(slug)) {
-    return NextResponse.redirect(WHATSAPP_FALLBACK, { status: 302 })
+    return noCacheRedirect(WHATSAPP_FALLBACK)
   }
 
   const supabase = createClient(
@@ -148,7 +156,7 @@ export async function GET(
     if (isDebug) {
       return NextResponse.json({ error: 'Redirect failed', rpcError, rpcData, slug }, { status: 500 })
     }
-    return NextResponse.redirect(WHATSAPP_FALLBACK, { status: 302 })
+    return noCacheRedirect(WHATSAPP_FALLBACK)
   }
 
   const {
@@ -276,9 +284,14 @@ setTimeout(function(){window.location.href=${safeRedirectUrl};},${TIKTOK_PIXEL_R
 </html>`
     return new Response(html, {
       status: 200,
-      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+      },
     })
   }
 
-  return NextResponse.redirect(redirectUrl, { status: 302 })
+  return noCacheRedirect(redirectUrl)
 }
