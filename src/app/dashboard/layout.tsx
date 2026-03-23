@@ -1,39 +1,53 @@
-import { cache } from 'react'
-import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase'
+'use client'
+
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabase-client'
 import Sidebar from '@/components/layout/Sidebar'
 import Navbar from '@/components/layout/Navbar'
 import AlertBanner from '@/components/layout/AlertBanner'
+import type { User } from '@supabase/supabase-js'
 
-const getProfile = cache(async (userId: string) => {
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from('profiles')
-    .select('role, status, expires_at')
-    .eq('id', userId)
-    .single()
-  return data
-})
+const ROOT_ADMIN_EMAIL = 'bolong6233@gmail.com'
 
-export default async function DashboardLayout({
+export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const router = useRouter()
+  const [user, setUser] = useState<User | null>(null)
+  const [role, setRole] = useState<string>('agent')
+  const [expiresAt, setExpiresAt] = useState<string | null>(null)
+  const [ready, setReady] = useState(false)
 
-  if (!user) {
-    redirect('/login')
-  }
+  useEffect(() => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!session?.user) {
+        router.replace('/login')
+        return
+      }
+      const u = session.user
+      setUser(u)
 
-  // Fetch user profile to determine role and expiry (cached within the same render cycle)
-  const profile = await getProfile(user.id)
+      // Fetch profile for role/expiry (single request, client-side, cached by browser)
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role, expires_at')
+        .eq('id', u.id)
+        .single()
 
-  // Root admin email always gets highest privileges regardless of DB role value
-  const ROOT_ADMIN_EMAIL = 'bolong6233@gmail.com'
-  const role = user.email === ROOT_ADMIN_EMAIL ? 'root_admin' : (profile?.role ?? 'agent')
-  const expiresAt = profile?.expires_at ?? null
+      const resolvedRole = u.email === ROOT_ADMIN_EMAIL
+        ? 'root_admin'
+        : (profile?.role ?? 'agent')
+      setRole(resolvedRole)
+      setExpiresAt(profile?.expires_at ?? null)
+      setReady(true)
+    })
+  }, [router])
+
+  // While checking auth, show nothing (avoids flash)
+  if (!ready || !user) return null
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
