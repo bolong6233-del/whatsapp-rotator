@@ -63,6 +63,7 @@ export default function AgentsPage() {
   const router = useRouter()
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [currentEmail, setCurrentEmail] = useState<string | null>(null)
+  const [currentUserCanInject, setCurrentUserCanInject] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
@@ -88,10 +89,18 @@ export default function AgentsPage() {
   const roleOptions = isRoot ? allRoleOptions : allRoleOptions.filter((o) => o.value !== 'admin')
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (user) {
         setCurrentUserId(user.id)
         setCurrentEmail(user.email ?? null)
+
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('can_inject_numbers')
+          .eq('id', user.id)
+          .single()
+
+        setCurrentUserCanInject(profile?.can_inject_numbers ?? false)
       }
     })
   }, [])
@@ -115,10 +124,6 @@ export default function AgentsPage() {
   )
 
   const loading = isLoading
-
-  // Determine if the current logged-in user has can_inject_numbers permission.
-  // Root admin always has permission. For non-root admins, find their own record in the list.
-  const currentUserCanInject = isRoot || (agents.find((a) => a.id === currentUserId)?.can_inject_numbers ?? false)
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
@@ -426,7 +431,7 @@ export default function AgentsPage() {
                     )}
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-2 flex-wrap">
-                        {currentUserCanInject && (
+                        {(isRoot || currentUserCanInject) && (
                           <Link
                             href={`/dashboard/agents/${agent.id}`}
                             className="text-xs text-blue-600 hover:text-blue-700 hover:underline"
