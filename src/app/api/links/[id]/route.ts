@@ -19,7 +19,8 @@ export async function GET(
     .select('role')
     .eq('id', user.id)
     .single()
-  const isAdmin = profile?.role === 'admin'
+  const role = profile?.role
+  const isAdmin = role === 'admin' || role === 'root' || role === 'root_admin'
 
   const { id } = await params
   const { data, error } = await supabase

@@ -189,28 +189,56 @@ export default function LogsPage() {
   const [pageSize, setPageSize] = useState(20)
   const [filterSlug, setFilterSlug] = useState('')
 
+  const { data: userInfo } = useSWR('logsCurrentUser', async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return null
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+    const role = profile?.role
+    return {
+      userId: user.id,
+      isAdmin: role === 'admin' || role === 'root' || role === 'root_admin',
+    }
+  })
+
+  const currentUserId = userInfo?.userId ?? null
+  const isAdmin = userInfo?.isAdmin ?? false
+
   const { data: shortLinks = [] } = useSWR<ShortLinkOption[]>(
-    'shortLinks',
-    async () => {
-      const { data } = await supabase
+    currentUserId !== null ? ['shortLinks', currentUserId, isAdmin] : null,
+    async ([, uid, admin]: [string, string, boolean]) => {
+      let query = supabase
         .from('short_links')
         .select('id, slug, title')
         .order('created_at', { ascending: false })
+      if (!admin) {
+        query = query.eq('user_id', uid)
+      }
+      const { data } = await query
       return (data as ShortLinkOption[]) || []
     },
     { revalidateOnFocus: false }
   )
 
   const { data: logsData, isValidating: logsValidating } = useSWR(
-    ['logs', page, pageSize, filterSlug],
-    async ([, p, ps, slug]: [string, number, number, string]) => {
+    currentUserId !== null ? ['logs', page, pageSize, filterSlug, currentUserId, isAdmin] : null,
+    async ([, p, ps, slug, uid, admin]: [string, number, number, string, string, boolean]) => {
       const from = (p - 1) * ps
       const to = from + ps - 1
+      const selectStr = admin
+        ? '*, short_links!inner(slug, title)'
+        : '*, short_links!inner(slug, title, user_id)'
       let query = supabase
         .from('click_logs')
-        .select('*, short_links!inner(slug, title)', { count: 'exact' })
+        .select(selectStr, { count: 'exact' })
         .order('clicked_at', { ascending: false })
         .range(from, to)
+      if (!admin) {
+        query = query.eq('short_links.user_id', uid)
+      }
       if (slug) {
         query = query.eq('short_links.slug', slug)
       }
@@ -226,66 +254,62 @@ export default function LogsPage() {
   const loading = !logsData && logsValidating
 
   const { data: stats } = useSWR<Stats>(
-    ['logsStats', filterSlug],
-    async ([, slug]: [string, string]) => {
+    currentUserId !== null ? ['logsStats', filterSlug, currentUserId, isAdmin] : null,
+    async ([, slug, uid, admin]: [string, string, string, boolean]) => {
       const todayStart = new Date()
       todayStart.setHours(0, 0, 0, 0)
 
+      // Build shared select string based on user role + slug filter
+      const slParts: string[] = []
+      if (!admin) slParts.push('user_id')
+      if (slug) slParts.push('slug')
+      const needsJoin = slParts.length > 0
+      const countSelect = needsJoin ? `id, short_links!inner(${slParts.join(', ')})` : 'id'
+      const countrySelect = needsJoin ? `country, short_links!inner(${slParts.join(', ')})` : 'country'
+
+      const buildTodayQ = () => {
+        let q = supabase
+          .from('click_logs')
+          .select(countSelect, { count: 'exact', head: true })
+          .gte('clicked_at', todayStart.toISOString())
+        if (!admin) q = q.eq('short_links.user_id', uid)
+        if (slug) q = q.eq('short_links.slug', slug)
+        return q
+      }
+      const buildMobileQ = () => {
+        let q = supabase
+          .from('click_logs')
+          .select(countSelect, { count: 'exact', head: true })
+          .in('device_type', ['Mobile', 'Tablet'])
+        if (!admin) q = q.eq('short_links.user_id', uid)
+        if (slug) q = q.eq('short_links.slug', slug)
+        return q
+      }
+      const buildDesktopQ = () => {
+        let q = supabase
+          .from('click_logs')
+          .select(countSelect, { count: 'exact', head: true })
+          .eq('device_type', 'Desktop')
+        if (!admin) q = q.eq('short_links.user_id', uid)
+        if (slug) q = q.eq('short_links.slug', slug)
+        return q
+      }
+      const buildCountryQ = () => {
+        let q = supabase
+          .from('click_logs')
+          .select(countrySelect)
+          .not('country', 'is', null)
+          .limit(2000)
+        if (!admin) q = q.eq('short_links.user_id', uid)
+        if (slug) q = q.eq('short_links.slug', slug)
+        return q
+      }
+
       const [todayRes, mobileRes, desktopRes, countryRes] = await Promise.all([
-        (() => {
-          if (slug) {
-            return supabase
-              .from('click_logs')
-              .select('id, short_links!inner(slug)', { count: 'exact', head: true })
-              .gte('clicked_at', todayStart.toISOString())
-              .eq('short_links.slug', slug)
-          }
-          return supabase
-            .from('click_logs')
-            .select('id', { count: 'exact', head: true })
-            .gte('clicked_at', todayStart.toISOString())
-        })(),
-        (() => {
-          if (slug) {
-            return supabase
-              .from('click_logs')
-              .select('id, short_links!inner(slug)', { count: 'exact', head: true })
-              .in('device_type', ['Mobile', 'Tablet'])
-              .eq('short_links.slug', slug)
-          }
-          return supabase
-            .from('click_logs')
-            .select('id', { count: 'exact', head: true })
-            .in('device_type', ['Mobile', 'Tablet'])
-        })(),
-        (() => {
-          if (slug) {
-            return supabase
-              .from('click_logs')
-              .select('id, short_links!inner(slug)', { count: 'exact', head: true })
-              .eq('device_type', 'Desktop')
-              .eq('short_links.slug', slug)
-          }
-          return supabase
-            .from('click_logs')
-            .select('id', { count: 'exact', head: true })
-            .eq('device_type', 'Desktop')
-        })(),
-        (() => {
-          if (slug) {
-            return supabase
-              .from('click_logs')
-              .select('country, short_links!inner(slug)')
-              .not('country', 'is', null)
-              .eq('short_links.slug', slug)
-              .limit(2000)
-          }
-          return supabase
-            .from('click_logs')
-            .select('country')
-            .not('country', 'is', null)
-            .limit(2000)
-        })(),
+        buildTodayQ(),
+        buildMobileQ(),
+        buildDesktopQ(),
+        buildCountryQ(),
       ])
 
       const todayCount = todayRes.count ?? 0
@@ -295,7 +319,7 @@ export default function LogsPage() {
       let topCountry: string | null = null
       if (countryRes.data) {
         const freq: Record<string, number> = {}
-        for (const row of countryRes.data as { country: string | null }[]) {
+        for (const row of (countryRes.data as unknown as { country: string | null }[])) {
           if (row.country) freq[row.country] = (freq[row.country] ?? 0) + 1
         }
         const sorted = Object.entries(freq).sort((a, b) => b[1] - a[1])
