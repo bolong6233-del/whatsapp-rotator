@@ -112,7 +112,7 @@ export default function AgentsPage() {
     }
   )
 
-  const loading = !agents.length && isLoading
+  const loading = isLoading
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()

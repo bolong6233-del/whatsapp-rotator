@@ -300,8 +300,8 @@ export default function NumbersPage() {
         query = query.eq('phone_number', sPhone)
       }
 
-      const from = (p - 1) * (ps as number)
-      query = query.range(from, from + (ps as number) - 1)
+      const from = (p - 1) * ps
+      query = query.range(from, from + ps - 1)
 
       const { data: numbersData, count, error } = await query
       if (error) throw error
