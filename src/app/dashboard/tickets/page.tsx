@@ -79,7 +79,7 @@ function getInitialForm() {
   }
 }
 
-const TABLE_COL_COUNT = 15 // total columns: 1 expand arrow + 14 data columns
+const TABLE_COL_COUNT = 14 // total columns: 1 expand arrow + 13 data columns
 
 function OnlineStatusBadge({ online }: { online: number }) {
   if (online === 1) {
@@ -543,7 +543,6 @@ export default function TicketsPage() {
                 <th className="px-4 py-3 font-medium">同步状态</th>
                 <th className="px-4 py-3 font-medium">当日引流</th>
                 <th className="px-4 py-3 font-medium">在线号码</th>
-                <th className="px-4 py-3 font-medium">最后同步</th>
                 <th className="px-4 py-3 font-medium">操作</th>
               </tr>
             </thead>
@@ -581,11 +580,11 @@ export default function TicketsPage() {
                       <td className="px-4 py-3">{order.total_quantity}</td>
                       <td className="px-4 py-3">{order.download_ratio}</td>
                       <td className="px-4 py-3">
-                        {order.last_synced_at
-                          ? <span className="text-green-600 font-medium">同步成功</span>
-                          : order.ticket_type === '云控'
-                            ? <span className="text-red-500 font-medium">失败</span>
-                            : <span className="text-gray-400">-</span>}
+                        {order.last_synced_at && order.sync_online_count !== undefined
+                          ? <span className="text-green-600 font-medium">同步完成</span>
+                          : order.last_synced_at && order.sync_online_count === undefined
+                            ? <span className="text-red-500 font-medium">同步异常</span>
+                            : <span className="text-blue-500 font-medium">同步中</span>}
                       </td>
                       <td className="px-4 py-3">
                         {order.sync_total_day_sum !== undefined
@@ -595,11 +594,6 @@ export default function TicketsPage() {
                       <td className="px-4 py-3">
                         {order.sync_online_count !== undefined
                           ? `${order.sync_online_count}`
-                          : '-'}
-                      </td>
-                      <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">
-                        {order.last_synced_at
-                          ? new Date(order.last_synced_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
                           : '-'}
                       </td>
                       <td className="px-4 py-3">
