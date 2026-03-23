@@ -54,9 +54,20 @@ export async function PUT(
   }
 
   const body = await request.json()
-  const { title, description, is_active, tiktok_pixel_enabled, tiktok_pixel_id, tiktok_access_token } = body
+  const {
+    title,
+    description,
+    is_active,
+    tiktok_pixel_enabled,
+    tiktok_pixel_id,
+    tiktok_event_type,
+    fb_pixel_enabled,
+    fb_pixel_id,
+    fb_event_type,
+  } = body
 
   const pixelEnabled = tiktok_pixel_enabled !== undefined ? Boolean(tiktok_pixel_enabled) : undefined
+  const fbEnabled = fb_pixel_enabled !== undefined ? Boolean(fb_pixel_enabled) : undefined
 
   const updatePayload: Record<string, unknown> = {}
   if (title !== undefined) updatePayload.title = title
@@ -65,7 +76,13 @@ export async function PUT(
   if (pixelEnabled !== undefined) {
     updatePayload.tiktok_pixel_enabled = pixelEnabled
     updatePayload.tiktok_pixel_id = pixelEnabled ? (tiktok_pixel_id ?? null) : null
-    updatePayload.tiktok_access_token = pixelEnabled && tiktok_access_token ? tiktok_access_token : null
+    updatePayload.tiktok_access_token = null
+    updatePayload.tiktok_event_type = pixelEnabled ? (tiktok_event_type ?? 'SubmitForm') : null
+  }
+  if (fbEnabled !== undefined) {
+    updatePayload.fb_pixel_enabled = fbEnabled
+    updatePayload.fb_pixel_id = fbEnabled ? (fb_pixel_id ?? null) : null
+    updatePayload.fb_event_type = fbEnabled ? (fb_event_type ?? 'Lead') : null
   }
 
   const { id } = await params

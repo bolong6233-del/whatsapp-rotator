@@ -16,11 +16,13 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [copied, setCopied] = useState(false)
-  const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [tiktokPixelEnabled, setTiktokPixelEnabled] = useState(false)
   const [tiktokPixelId, setTiktokPixelId] = useState('')
-  const [tiktokAccessToken, setTiktokAccessToken] = useState('')
+  const [tiktokEventType, setTiktokEventType] = useState<'SubmitForm' | 'CompletePayment' | 'ClickButton'>('SubmitForm')
+  const [fbPixelEnabled, setFbPixelEnabled] = useState(false)
+  const [fbPixelId, setFbPixelId] = useState('')
+  const [fbEventType, setFbEventType] = useState<'Lead' | 'Purchase' | 'ViewContent'>('Lead')
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(false)
   const [autoReplyMessages, setAutoReplyMessages] = useState('')
 
@@ -37,11 +39,13 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
     }
 
     setLink(linkData)
-    setTitle(linkData.title || '')
     setDescription(linkData.description || '')
     setTiktokPixelEnabled(linkData.tiktok_pixel_enabled || false)
     setTiktokPixelId(linkData.tiktok_pixel_id || '')
-    setTiktokAccessToken(linkData.tiktok_access_token || '')
+    setTiktokEventType((linkData.tiktok_event_type as 'SubmitForm' | 'CompletePayment' | 'ClickButton') || 'SubmitForm')
+    setFbPixelEnabled(linkData.fb_pixel_enabled || false)
+    setFbPixelId(linkData.fb_pixel_id || '')
+    setFbEventType((linkData.fb_event_type as 'Lead' | 'Purchase' | 'ViewContent') || 'Lead')
     setAutoReplyEnabled(linkData.auto_reply_enabled || false)
     setAutoReplyMessages(linkData.auto_reply_messages || '')
 
@@ -63,14 +67,23 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
       return
     }
 
+    if (fbPixelEnabled && !fbPixelId.trim()) {
+      setError('请输入 Facebook Pixel ID')
+      setSaving(false)
+      return
+    }
+
     const { error } = await supabase
       .from('short_links')
       .update({
-        title: title || null,
         description: description || null,
         tiktok_pixel_enabled: tiktokPixelEnabled,
         tiktok_pixel_id: tiktokPixelEnabled ? tiktokPixelId.trim() : null,
-        tiktok_access_token: tiktokPixelEnabled && tiktokAccessToken.trim() ? tiktokAccessToken.trim() : null,
+        tiktok_access_token: null,
+        tiktok_event_type: tiktokPixelEnabled ? tiktokEventType : null,
+        fb_pixel_enabled: fbPixelEnabled,
+        fb_pixel_id: fbPixelEnabled ? fbPixelId.trim() : null,
+        fb_event_type: fbPixelEnabled ? fbEventType : null,
         auto_reply_enabled: autoReplyEnabled,
         auto_reply_messages: autoReplyEnabled && autoReplyMessages.trim() ? autoReplyMessages.trim() : null,
       })
@@ -121,7 +134,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
             ← 返回
           </Link>
           <h1 className="text-2xl font-bold text-gray-900">
-            {link.title || link.slug}
+            {link.slug}
           </h1>
           <span className={`px-2 py-0.5 text-xs rounded-full ${link.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
             {link.is_active ? '活跃' : '已停用'}
@@ -175,16 +188,9 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
         <h2 className="font-semibold text-gray-900 mb-4">基本设置</h2>
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">标题</label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">备注</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              链接描述 <span className="text-gray-400 font-normal ml-1">（选填）</span>
+            </label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
@@ -199,7 +205,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
               <div>
                 <p className="font-medium text-indigo-900 text-sm">🎯 TikTok Pixel</p>
                 <p className="text-xs text-indigo-600 mt-0.5">
-                  开启后访客点击短链时自动触发 SubmitForm 事件
+                  开启后访客点击短链时自动触发 TikTok 像素事件
                 </p>
               </div>
               <button
@@ -229,14 +235,89 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-indigo-800 mb-1">Access Token</label>
+                  <label className="block text-xs font-medium text-indigo-800 mb-2">事件类型</label>
+                  <div className="flex gap-2">
+                    {([
+                      { value: 'SubmitForm', label: '提交表单' },
+                      { value: 'CompletePayment', label: '转化' },
+                      { value: 'ClickButton', label: '点击' },
+                    ] as const).map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setTiktokEventType(opt.value)}
+                        className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
+                          tiktokEventType === opt.value
+                            ? 'bg-indigo-600 text-white'
+                            : 'border border-indigo-300 text-indigo-700 bg-white hover:bg-indigo-50'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Facebook Pixel */}
+          <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <p className="font-medium text-blue-900 text-sm">📘 Facebook Pixel</p>
+                <p className="text-xs text-blue-600 mt-0.5">
+                  开启后访客点击短链时自动触发 Facebook 像素事件
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFbPixelEnabled(!fbPixelEnabled)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  fbPixelEnabled ? 'bg-blue-600' : 'bg-gray-300'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    fbPixelEnabled ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+            {fbPixelEnabled && (
+              <div className="space-y-2">
+                <div>
+                  <label className="block text-xs font-medium text-blue-800 mb-1">Pixel ID</label>
                   <input
                     type="text"
-                    value={tiktokAccessToken}
-                    onChange={(e) => setTiktokAccessToken(e.target.value)}
-                    placeholder="可选，用于服务端事件上报"
-                    className="w-full px-3 py-2 border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-400 focus:border-transparent outline-none bg-white text-sm"
+                    value={fbPixelId}
+                    onChange={(e) => setFbPixelId(e.target.value)}
+                    placeholder="例如：123456789012345"
+                    className="w-full px-3 py-2 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-transparent outline-none bg-white text-sm"
                   />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-blue-800 mb-2">事件类型</label>
+                  <div className="flex gap-2">
+                    {([
+                      { value: 'Lead', label: '潜在客户' },
+                      { value: 'Purchase', label: '购买' },
+                      { value: 'ViewContent', label: '点击' },
+                    ] as const).map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setFbEventType(opt.value)}
+                        className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
+                          fbEventType === opt.value
+                            ? 'bg-blue-600 text-white'
+                            : 'border border-blue-300 text-blue-700 bg-white hover:bg-blue-50'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
