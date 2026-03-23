@@ -10,13 +10,25 @@ import Pagination from '@/components/ui/Pagination'
 
 const TICKET_TYPES: TicketType[] = [
   '云控',
-  '海王SCRM',
-  '太极云控',
-  '火箭云控',
-  'SaleSmartly-Channel',
-  'Salesmartly-Customer',
-  '译发发SCRM',
+  'A2C',
 ]
+
+function generateBookmarkletScript(orderId: string, origin: string): string {
+  return `void((function(){
+  const rows=document.querySelectorAll('.el-table__body-wrapper table tbody tr');
+  const numbers=[];
+  rows.forEach(row=>{
+    const cells=row.querySelectorAll('td .cell');
+    if(cells.length>=6){
+      const d=cells[4]?.textContent?.trim().split('/').map(s=>parseInt(s.trim()))||[0,0];
+      const t=cells[5]?.textContent?.trim().split('/').map(s=>parseInt(s.trim()))||[0,0];
+      numbers.push({phone:cells[0]?.textContent?.trim(),seat:cells[1]?.textContent?.trim(),status:cells[2]?.textContent?.trim(),stat_status:cells[3]?.textContent?.trim(),day_done:d[0]||0,day_goal:d[1]||0,total_done:t[0]||0,total_goal:t[1]||0});
+    }
+  });
+  const r={work_order_id:'${orderId}',total_count:numbers.length,numbers:numbers,total_day_sum:numbers.reduce((s,n)=>s+n.day_done,0),total_sum:numbers.reduce((s,n)=>s+n.total_done,0),online_count:numbers.filter(n=>n.status==='有效').length,offline_count:numbers.filter(n=>n.status!=='有效').length};
+  fetch('${origin}/api/sync/a2c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(r)}).then(res=>res.json()).then(d=>{if(d.success)alert('✅ 同步成功！号码: '+r.total_count+', 当日新粉: '+r.total_day_sum);else alert('❌ 同步失败: '+(d.error||'未知错误'));}).catch(e=>alert('❌ 网络错误: '+e.message));
+})())`
+}
 
 const NUMBER_TYPES: { value: Platform; label: string }[] = [
   { value: 'whatsapp', label: 'WhatsApp' },
@@ -104,7 +116,8 @@ export default function TicketsPage() {
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [slugOptions, setSlugOptions] = useState<string[]>([])
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
-  const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [bookmarkletOrder, setBookmarkletOrder] = useState<WorkOrder | null>(null)
+  const [appOrigin, setAppOrigin] = useState('')
 
   // Modal state
   const [showModal, setShowModal] = useState(false)
@@ -266,6 +279,10 @@ export default function TicketsPage() {
     fetchSlugs()
   }, [fetchSlugs])
 
+  useEffect(() => {
+    setAppOrigin(window.location.origin)
+  }, [])
+
   // Redirect to login when SWR throws an unauthenticated error
   useEffect(() => {
     if (swrError?.message === 'unauthenticated') {
@@ -372,15 +389,9 @@ export default function TicketsPage() {
     }
   }
 
-  const handleCopy = async (e: React.MouseEvent, order: WorkOrder) => {
+  const handleA2CSync = (e: React.MouseEvent, order: WorkOrder) => {
     e.stopPropagation()
-    try {
-      await navigator.clipboard.writeText(order.ticket_link)
-      setCopiedId(order.id)
-      setTimeout(() => setCopiedId(null), 2000)
-    } catch {
-      // fallback
-    }
+    setBookmarkletOrder(order)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -539,7 +550,7 @@ export default function TicketsPage() {
             <tbody>
               {workOrders.map((order) => {
                 const isExpanded = expandedRows.has(order.id)
-                const canExpand = order.ticket_type === '云控' && (order.sync_numbers?.length ?? 0) > 0
+                const canExpand = (order.sync_numbers?.length ?? 0) > 0
                 return (
                   <>
                     <tr
@@ -583,7 +594,7 @@ export default function TicketsPage() {
                       </td>
                       <td className="px-4 py-3">
                         {order.sync_online_count !== undefined
-                          ? `${order.sync_online_count}/${order.sync_total_numbers ?? 0}`
+                          ? `${order.sync_online_count}`
                           : '-'}
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">
@@ -610,13 +621,15 @@ export default function TicketsPage() {
                           >
                             ✏ 修改
                           </button>
-                          <button
-                            type="button"
-                            onClick={(e) => handleCopy(e, order)}
-                            className="text-blue-500 hover:text-blue-700 text-xs whitespace-nowrap"
-                          >
-                            {copiedId === order.id ? '已复制' : '📋 拷贝'}
-                          </button>
+                          {order.ticket_type === 'A2C' && (
+                            <button
+                              type="button"
+                              onClick={(e) => handleA2CSync(e, order)}
+                              className="text-purple-500 hover:text-purple-700 text-xs whitespace-nowrap"
+                            >
+                              📡 同步
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={(e) => handleDelete(e, order.id)}
@@ -889,6 +902,75 @@ export default function TicketsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* A2C Bookmarklet Modal */}
+      {bookmarkletOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <h2 className="text-base font-bold text-gray-900">📡 A2C 同步指南</h2>
+              <button
+                onClick={() => setBookmarkletOrder(null)}
+                className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-gray-600">
+                工单：<span className="font-medium text-gray-900">{bookmarkletOrder.ticket_name}</span>
+              </p>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800 space-y-2">
+                <p className="font-medium">使用步骤：</p>
+                <ol className="list-decimal list-inside space-y-1">
+                  <li>将下方蓝色按钮拖拽到浏览器书签栏</li>
+                  <li>打开 A2C 分享页面</li>
+                  <li>点击书签栏中的 <strong>同步到分流系统</strong> 书签</li>
+                  <li>脚本将自动抓取页面数据并同步到本系统</li>
+                </ol>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-gray-600">拖拽到书签栏：</span>
+                <a
+                  href={`javascript:${encodeURIComponent(generateBookmarkletScript(bookmarkletOrder.id, appOrigin))}`}
+                  className="px-4 py-2 bg-blue-500 text-white text-sm rounded-lg font-medium hover:bg-blue-600 transition-colors cursor-grab"
+                  onClick={(e) => e.preventDefault()}
+                  draggable
+                >
+                  📡 同步到分流系统
+                </a>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600 mb-2">或者，在 A2C 页面控制台粘贴执行：</p>
+                <textarea
+                  readOnly
+                  value={generateBookmarkletScript(bookmarkletOrder.id, appOrigin)}
+                  className="w-full h-32 px-3 py-2 text-xs font-mono bg-gray-50 border border-gray-200 rounded-lg resize-none focus:outline-none"
+                  onClick={(e) => (e.target as HTMLTextAreaElement).select()}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const script = generateBookmarkletScript(bookmarkletOrder.id, appOrigin)
+                    navigator.clipboard.writeText(script).catch(() => {})
+                  }}
+                  className="mt-2 px-3 py-1.5 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors"
+                >
+                  📋 复制脚本
+                </button>
+              </div>
+            </div>
+            <div className="flex justify-end px-6 py-4 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => setBookmarkletOrder(null)}
+                className="px-6 py-2 text-sm text-gray-600 border border-gray-300 bg-white hover:bg-gray-50 rounded-lg font-medium transition-colors"
+              >
+                关闭
+              </button>
+            </div>
           </div>
         </div>
       )}

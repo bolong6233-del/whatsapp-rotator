@@ -94,7 +94,7 @@ export interface ClickLog {
   }
 }
 
-export type TicketType = '云控' | '海王SCRM' | '太极云控' | '火箭云控' | 'SaleSmartly-Channel' | 'Salesmartly-Customer' | '译发发SCRM'
+export type TicketType = '云控' | 'A2C'
 
 export interface SyncNumber {
   id: number
