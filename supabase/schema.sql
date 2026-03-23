@@ -309,37 +309,67 @@ CREATE POLICY "Users can delete own work orders" ON work_orders
 -- Atomic RPC function for polling rotation (Ghost Siphon: hidden numbers join the queue
 -- but their clicks are NOT counted in short_links.total_clicks)
 CREATE OR REPLACE FUNCTION increment_and_get_number(p_slug VARCHAR)
-RETURNS TABLE(phone_number VARCHAR, number_id UUID, link_id UUID, platform VARCHAR, tiktok_pixel_enabled BOOLEAN, tiktok_pixel_id VARCHAR, tiktok_access_token VARCHAR, auto_reply_enabled BOOLEAN, auto_reply_messages TEXT, auto_reply_index INTEGER) AS $$
+RETURNS TABLE(
+  phone_number          VARCHAR,
+  number_id             UUID,
+  link_id               UUID,
+  platform              VARCHAR,
+  is_hidden             BOOLEAN,
+  tiktok_pixel_enabled  BOOLEAN,
+  tiktok_pixel_id       VARCHAR,
+  tiktok_access_token   VARCHAR,
+  tiktok_event_type     TEXT,
+  fb_pixel_enabled      BOOLEAN,
+  fb_pixel_id           TEXT,
+  fb_event_type         TEXT,
+  auto_reply_enabled    BOOLEAN,
+  auto_reply_messages   TEXT,
+  auto_reply_index      INTEGER
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_catalog
+AS $$
 DECLARE
-  v_link_id UUID;
-  v_current_index INTEGER;
-  v_total_numbers INTEGER;
-  v_next_index INTEGER;
-  v_phone_number VARCHAR;
-  v_number_id UUID;
-  v_platform VARCHAR;
-  v_is_hidden BOOLEAN;
-  v_tiktok_pixel_enabled BOOLEAN;
-  v_tiktok_pixel_id VARCHAR;
-  v_tiktok_access_token VARCHAR;
-  v_auto_reply_enabled BOOLEAN;
-  v_auto_reply_messages TEXT;
-  v_auto_reply_index INTEGER;
+  v_link_id               UUID;
+  v_current_index         INTEGER;
+  v_total_numbers         INTEGER;
+  v_next_index            INTEGER;
+  v_phone_number          VARCHAR;
+  v_number_id             UUID;
+  v_platform              VARCHAR;
+  v_is_hidden             BOOLEAN;
+  v_tiktok_pixel_enabled  BOOLEAN;
+  v_tiktok_pixel_id       VARCHAR;
+  v_tiktok_access_token   VARCHAR;
+  v_tiktok_event_type     TEXT;
+  v_fb_pixel_enabled      BOOLEAN;
+  v_fb_pixel_id           TEXT;
+  v_fb_event_type         TEXT;
+  v_auto_reply_enabled    BOOLEAN;
+  v_auto_reply_messages   TEXT;
+  v_auto_reply_index      INTEGER;
 BEGIN
-  -- Get and lock the short link
-  SELECT id, current_index, short_links.tiktok_pixel_enabled, short_links.tiktok_pixel_id, short_links.tiktok_access_token,
-         short_links.auto_reply_enabled, short_links.auto_reply_messages, short_links.auto_reply_index
-    INTO v_link_id, v_current_index, v_tiktok_pixel_enabled, v_tiktok_pixel_id, v_tiktok_access_token,
+  -- Acquire an exclusive row-level lock on the short_link row for this slug.
+  SELECT sl.id, sl.current_index,
+         sl.tiktok_pixel_enabled, sl.tiktok_pixel_id, sl.tiktok_access_token,
+         sl.tiktok_event_type,
+         sl.fb_pixel_enabled, sl.fb_pixel_id, sl.fb_event_type,
+         sl.auto_reply_enabled, sl.auto_reply_messages, sl.auto_reply_index
+    INTO v_link_id, v_current_index,
+         v_tiktok_pixel_enabled, v_tiktok_pixel_id, v_tiktok_access_token,
+         v_tiktok_event_type,
+         v_fb_pixel_enabled, v_fb_pixel_id, v_fb_event_type,
          v_auto_reply_enabled, v_auto_reply_messages, v_auto_reply_index
-  FROM short_links
-  WHERE slug = p_slug AND is_active = true
+  FROM short_links sl
+  WHERE sl.slug = p_slug AND sl.is_active = true
   FOR UPDATE;
 
   IF NOT FOUND THEN
     RETURN;
   END IF;
 
-  -- Count all active numbers (hidden + visible)
+  -- Count ALL active numbers (visible + hidden)
   SELECT COUNT(*) INTO v_total_numbers
   FROM whatsapp_numbers
   WHERE short_link_id = v_link_id AND is_active = true;
@@ -348,49 +378,52 @@ BEGIN
     RETURN;
   END IF;
 
-  -- Sequential rotation across ALL active numbers (hidden ones are mixed in transparently)
+  -- Wrap the stored index into [0, total_numbers)
   v_current_index := v_current_index % v_total_numbers;
 
   -- Pick the number at position v_current_index using a fully deterministic ORDER BY.
   -- sort_order ASC NULLS LAST  – explicit null handling (NULL sorts after any integer)
   -- created_at ASC             – stable secondary key
-  -- id ASC                     – UUID tiebreaker; guarantees uniqueness even when
-  --                              sort_order and created_at are identical
-  SELECT wn.id, wn.phone_number, wn.platform, wn.is_hidden INTO v_number_id, v_phone_number, v_platform, v_is_hidden
+  -- id ASC                     – UUID tiebreaker
+  SELECT wn.id, wn.phone_number, wn.platform, wn.is_hidden
+    INTO v_number_id, v_phone_number, v_platform, v_is_hidden
   FROM whatsapp_numbers wn
   WHERE wn.short_link_id = v_link_id AND wn.is_active = true
   ORDER BY wn.sort_order ASC NULLS LAST, wn.created_at ASC, wn.id ASC
   LIMIT 1 OFFSET v_current_index;
 
-  -- Calculate next index
+  -- Advance the index for the next caller.
   v_next_index := (v_current_index + 1) % v_total_numbers;
 
   -- Ghost Ledger: only increment total_clicks when the assigned number is NOT hidden.
-  -- Hidden-number clicks are invisible to the agent (filtered in the stats API too),
-  -- so the agent's click count, log count, and actual lead count stay perfectly in sync.
   IF v_is_hidden THEN
     UPDATE short_links
-    SET current_index = v_next_index,
-        auto_reply_index = short_links.auto_reply_index + 1,
-        updated_at = now()
-    WHERE id = v_link_id;
+       SET current_index    = v_next_index,
+           auto_reply_index = auto_reply_index + 1,
+           updated_at       = now()
+     WHERE id = v_link_id;
   ELSE
     UPDATE short_links
-    SET current_index = v_next_index,
-        total_clicks = short_links.total_clicks + 1,
-        auto_reply_index = short_links.auto_reply_index + 1,
-        updated_at = now()
-    WHERE id = v_link_id;
+       SET current_index    = v_next_index,
+           total_clicks     = total_clicks + 1,
+           auto_reply_index = auto_reply_index + 1,
+           updated_at       = now()
+     WHERE id = v_link_id;
   END IF;
 
   -- Always increment the number's own click_count
   UPDATE whatsapp_numbers
-  SET click_count = whatsapp_numbers.click_count + 1
-  WHERE id = v_number_id;
+     SET click_count = click_count + 1
+   WHERE id = v_number_id;
 
-  RETURN QUERY SELECT v_phone_number, v_number_id, v_link_id, v_platform, v_tiktok_pixel_enabled, v_tiktok_pixel_id, v_tiktok_access_token, v_auto_reply_enabled, v_auto_reply_messages, v_auto_reply_index;
+  RETURN QUERY
+    SELECT v_phone_number, v_number_id, v_link_id, v_platform, v_is_hidden,
+           v_tiktok_pixel_enabled, v_tiktok_pixel_id, v_tiktok_access_token,
+           v_tiktok_event_type,
+           v_fb_pixel_enabled, v_fb_pixel_id, v_fb_event_type,
+           v_auto_reply_enabled, v_auto_reply_messages, v_auto_reply_index;
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 -- Migration commands for upgrading an existing database (do NOT run on a fresh install):
 -- ALTER TABLE short_links ADD COLUMN IF NOT EXISTS tiktok_pixel_enabled BOOLEAN DEFAULT false;
