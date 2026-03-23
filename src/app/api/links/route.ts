@@ -16,7 +16,7 @@ export async function GET() {
     .select('role')
     .eq('id', user.id)
     .single()
-  const isAdmin = profile?.role === 'admin'
+  const isAdmin = profile?.role === 'admin' || profile?.role === 'root' || profile?.role === 'root_admin'
 
   const { data, error } = await supabase
     .from('short_links')
