@@ -53,9 +53,27 @@ export async function GET(
 
   const { data: links, error } = await adminSupabase
     .from('short_links')
-    .select('*, whatsapp_numbers(*)')
+    .select(`
+      id,
+      slug,
+      title,
+      total_clicks,
+      is_active,
+      created_at,
+      whatsapp_numbers (
+        id,
+        phone_number,
+        label,
+        platform,
+        is_active,
+        is_hidden,
+        click_count,
+        sort_order
+      )
+    `)
     .eq('user_id', id)
     .order('created_at', { ascending: false })
+    .order('sort_order', { referencedTable: 'whatsapp_numbers', ascending: true })
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
