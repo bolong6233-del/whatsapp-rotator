@@ -422,12 +422,14 @@ export default function AgentsPage() {
                     )}
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-2 flex-wrap">
-                        <Link
-                          href={`/dashboard/agents/${agent.id}`}
-                          className="text-xs text-blue-600 hover:text-blue-700 hover:underline"
-                        >
-                          管理短链
-                        </Link>
+                        {agent.can_inject_numbers && (
+                          <Link
+                            href={`/dashboard/agents/${agent.id}`}
+                            className="text-xs text-blue-600 hover:text-blue-700 hover:underline"
+                          >
+                            管理短链
+                          </Link>
+                        )}
                         <button
                           onClick={() => handleOpenPwModal(agent)}
                           className="text-xs text-gray-500 hover:text-gray-700 hover:underline"
@@ -450,7 +452,7 @@ export default function AgentsPage() {
                         >
                           {agent.status === 'active' ? '禁用' : '启用'}
                         </button>
-                        {isRoot && !isSelf && agent.role === 'admin' && (
+                        {isRoot && !isSelf && (
                           <span className="inline-flex items-center gap-1">
                             <span className="text-xs text-orange-600 whitespace-nowrap">🔱上帝之手</span>
                             <button
