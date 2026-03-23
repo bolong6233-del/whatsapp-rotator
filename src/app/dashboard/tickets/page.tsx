@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import useSWR from 'swr'
 import { supabase } from '@/lib/supabase-client'
 import { formatDate } from '@/lib/utils'
 import type { WorkOrder, TicketType, Platform, SyncNumber } from '@/types'
@@ -76,13 +77,29 @@ function OnlineStatusBadge({ online }: { online: number }) {
   return <span className="inline-flex items-center gap-1 text-red-500 font-medium"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" />{label}</span>
 }
 
+async function workOrdersFetcher(
+  _key: string,
+  page: number,
+  pageSize: number
+): Promise<{ data: WorkOrder[]; count: number }> {
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError) throw authError
+  if (!user) throw new Error('unauthenticated')
+  const from = (page - 1) * pageSize
+  const { data, count, error } = await supabase
+    .from('work_orders')
+    .select('*', { count: 'exact' })
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+    .range(from, from + pageSize - 1)
+  if (error) throw error
+  return { data: (data as WorkOrder[]) || [], count: count || 0 }
+}
+
 export default function TicketsPage() {
   const router = useRouter()
-  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([])
-  const [totalCount, setTotalCount] = useState(0)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
-  const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [slugOptions, setSlugOptions] = useState<string[]>([])
@@ -93,6 +110,15 @@ export default function TicketsPage() {
   const [showModal, setShowModal] = useState(false)
   const [editingOrder, setEditingOrder] = useState<WorkOrder | null>(null)
   const [form, setForm] = useState(getInitialForm())
+
+  const { data: swrData, isLoading: loading, error: swrError, mutate } = useSWR(
+    ['work_orders', page, pageSize],
+    ([key, p, ps]) => workOrdersFetcher(key, p as number, ps as number),
+    { keepPreviousData: true, revalidateOnFocus: true }
+  )
+
+  const workOrders = swrData?.data ?? []
+  const totalCount = swrData?.count ?? 0
 
   // Keep a ref to the latest workOrders to avoid stale closures in the interval
   const workOrdersRef = useRef<WorkOrder[]>([])
@@ -106,33 +132,6 @@ export default function TicketsPage() {
       .order('created_at', { ascending: false })
     setSlugOptions((data || []).map((r: { slug: string }) => r.slug))
   }, [])
-
-  const fetchWorkOrders = useCallback(async () => {
-    try {
-      const { data: { user }, error: authError } = await supabase.auth.getUser()
-      if (authError) throw authError
-      if (!user) {
-        router.push('/login')
-        return
-      }
-      const from = (page - 1) * pageSize
-      const { data, count, error } = await supabase
-        .from('work_orders')
-        .select('*', { count: 'exact' })
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .range(from, from + pageSize - 1)
-      if (error) throw error
-      if (data) {
-        setWorkOrders(data as WorkOrder[])
-        setTotalCount(count || 0)
-      }
-    } catch (e) {
-      console.error(e)
-    } finally {
-      setLoading(false)
-    }
-  }, [router, page, pageSize])
 
   // Sync a single work order by calling /api/sync/yunkon
   const syncWorkOrder = useCallback(async (order: WorkOrder): Promise<Partial<WorkOrder>> => {
@@ -238,16 +237,28 @@ export default function TicketsPage() {
     )
 
     if (Object.keys(updatesMap).length > 0) {
-      setWorkOrders((prev) =>
-        prev.map((o) => (updatesMap[o.id] ? { ...o, ...updatesMap[o.id] } : o))
+      await mutate(
+        (prev) => prev
+          ? {
+              ...prev,
+              data: prev.data.map((o) => (updatesMap[o.id] ? { ...o, ...updatesMap[o.id] } : o)),
+            }
+          : prev,
+        { revalidate: false }
       )
     }
-  }, [syncWorkOrder])
+  }, [syncWorkOrder, mutate])
 
   useEffect(() => {
-    fetchWorkOrders()
     fetchSlugs()
-  }, [fetchWorkOrders, fetchSlugs])
+  }, [fetchSlugs])
+
+  // Redirect to login when SWR throws an unauthenticated error
+  useEffect(() => {
+    if (swrError?.message === 'unauthenticated') {
+      router.push('/login')
+    }
+  }, [swrError, router])
 
   // Auto-sync every minute for active 云控 orders
   useEffect(() => {
@@ -298,7 +309,7 @@ export default function TicketsPage() {
     if (!window.confirm('确认删除该工单？')) return
     const res = await fetch(`/api/work-orders/${id}`, { method: 'DELETE' })
     if (res.ok) {
-      fetchWorkOrders()
+      await mutate()
     }
   }
 
@@ -311,8 +322,11 @@ export default function TicketsPage() {
       body: JSON.stringify({ status: newStatus }),
     })
     if (res.ok) {
-      setWorkOrders((prev) =>
-        prev.map((o) => (o.id === order.id ? { ...o, status: newStatus } : o))
+      await mutate(
+        (prev) => prev
+          ? { ...prev, data: prev.data.map((o) => (o.id === order.id ? { ...o, status: newStatus } : o)) }
+          : prev,
+        { revalidate: false }
       )
 
       // Get exact phone numbers synced by this work order
@@ -387,7 +401,12 @@ export default function TicketsPage() {
         return
       }
       const updated: WorkOrder = await res.json()
-      setWorkOrders((prev) => prev.map((o) => (o.id === updated.id ? { ...o, ...updated } : o)))
+      await mutate(
+        (prev) => prev
+          ? { ...prev, data: prev.data.map((o) => (o.id === updated.id ? { ...o, ...updated } : o)) }
+          : prev,
+        { revalidate: false }
+      )
       setShowModal(false)
       setEditingOrder(null)
       return
@@ -407,15 +426,18 @@ export default function TicketsPage() {
     }
     const newOrder: WorkOrder = await res.json()
 
-    fetchWorkOrders()
+    await mutate()
     setShowModal(false)
 
     // Immediately sync if it's a 云控 order
     if (newOrder.ticket_type === '云控' && newOrder.ticket_link) {
       const updates = await syncWorkOrder(newOrder)
       if (Object.keys(updates).length > 0) {
-        setWorkOrders((prev) =>
-          prev.map((o) => (o.id === newOrder.id ? { ...o, ...updates } : o))
+        await mutate(
+          (prev) => prev
+            ? { ...prev, data: prev.data.map((o) => (o.id === newOrder.id ? { ...o, ...updates } : o)) }
+            : prev,
+          { revalidate: false }
         )
       }
     }
@@ -437,7 +459,7 @@ export default function TicketsPage() {
     })
   }
 
-  if (loading) {
+  if (loading && workOrders.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-gray-500">加载中...</div>
