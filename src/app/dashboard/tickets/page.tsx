@@ -704,7 +704,7 @@ export default function TicketsPage() {
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-6">
+            <form onSubmit={handleSubmit} className="p-6" autoComplete="off">
               <div className="grid grid-cols-2 gap-x-8 gap-y-5">
                 {/* Row 1: 工单类型 | 工单名称 */}
                 <div className="flex items-center gap-3">
@@ -864,6 +864,7 @@ export default function TicketsPage() {
                     value={form.account}
                     onChange={(e) => updateForm('account', e.target.value)}
                     placeholder="请输入工单账户"
+                    autoComplete="off"
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
                   />
                 </div>
@@ -877,6 +878,7 @@ export default function TicketsPage() {
                     value={form.password}
                     onChange={(e) => updateForm('password', e.target.value)}
                     placeholder="请输入工单密码（可选）"
+                    autoComplete="new-password"
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
                   />
                 </div>
