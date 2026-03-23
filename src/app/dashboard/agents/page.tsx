@@ -116,6 +116,10 @@ export default function AgentsPage() {
 
   const loading = isLoading
 
+  // Determine if the current logged-in user has can_inject_numbers permission.
+  // Root admin always has permission. For non-root admins, find their own record in the list.
+  const currentUserCanInject = isRoot || (agents.find((a) => a.id === currentUserId)?.can_inject_numbers ?? false)
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
     setCreating(true)
@@ -422,7 +426,7 @@ export default function AgentsPage() {
                     )}
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-2 flex-wrap">
-                        {agent.can_inject_numbers && (
+                        {currentUserCanInject && (
                           <Link
                             href={`/dashboard/agents/${agent.id}`}
                             className="text-xs text-blue-600 hover:text-blue-700 hover:underline"
