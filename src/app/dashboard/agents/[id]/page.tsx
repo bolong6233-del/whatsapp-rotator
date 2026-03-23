@@ -98,14 +98,20 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
       if (found) setAgent(found)
     }
 
-    // Fetch agent's links
+    // Fetch agent's links (includes hidden numbers via admin API)
     const linksRes = await fetch(`/api/admin/agents/${id}/links`)
     if (linksRes.ok) {
       const data = await linksRes.json()
-      setLinks(data)
+      setLinks(Array.isArray(data) ? data : [])
     } else {
-      const data = await linksRes.json()
-      setError(data.error || '加载短链失败')
+      let errMsg = '加载短链失败'
+      try {
+        const data = await linksRes.json()
+        errMsg = data.error || errMsg
+      } catch {
+        errMsg = `加载短链失败（HTTP ${linksRes.status}）`
+      }
+      setError(errMsg)
     }
 
     setLoading(false)
@@ -331,7 +337,12 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
 
                   {/* Numbers list */}
                   {link.whatsapp_numbers.length === 0 ? (
-                    <p className="mt-4 text-sm text-gray-400">暂无号码</p>
+                    <p className="mt-4 text-sm text-gray-400">
+                      暂无号码
+                      {canInject && (
+                        <span className="ml-2 text-orange-500">（可通过「注入隐藏号码」按钮添加）</span>
+                      )}
+                    </p>
                   ) : (
                     <div className="mt-4 space-y-2">
                       <p className="text-xs font-medium text-gray-500 uppercase mb-2">号码列表</p>
