@@ -19,9 +19,7 @@ export async function middleware(request: NextRequest) {
         },
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-          response = NextResponse.next({
-            request,
-          })
+          response = NextResponse.next({ request })
           cookiesToSet.forEach(({ name, value, options }) =>
             response.cookies.set(name, value, options)
           )
@@ -30,7 +28,9 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
+  // Use getSession for speed (reads from cookie, no network round-trip)
+  const { data: { session } } = await supabase.auth.getSession()
+  const user = session?.user ?? null
 
   if (request.nextUrl.pathname.startsWith('/dashboard') && !user) {
     return NextResponse.redirect(new URL('/login', request.url))
@@ -40,7 +40,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
-  // Check if the authenticated user's account is disabled
+  // Only check disabled status for dashboard routes (single query, only when needed)
   if (user && request.nextUrl.pathname.startsWith('/dashboard')) {
     const { data: profile } = await supabase
       .from('profiles')
