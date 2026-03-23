@@ -242,7 +242,8 @@ export default function NumbersPage() {
       .select('role')
       .eq('id', user.id)
       .single()
-    return { userId: user.id, isAdmin: profile?.role === 'admin' }
+    const role = profile?.role
+    return { userId: user.id, isAdmin: role === 'admin' || role === 'root' || role === 'root_admin' }
   })
 
   const currentUserId = userInfo?.userId ?? null
@@ -250,13 +251,13 @@ export default function NumbersPage() {
 
   const { data: allPhones = [] } = useSWR<string[]>(
     currentUserId ? ['allPhones', currentUserId, isAdmin] : null,
-    async ([, , admin]: [string, string, boolean]) => {
+    async ([, uid, admin]: [string, string, boolean]) => {
       let query = supabase
         .from('whatsapp_numbers')
-        .select('phone_number')
+        .select('phone_number, short_links!inner(user_id)')
         .order('phone_number', { ascending: true })
       if (!admin) {
-        query = query.eq('is_hidden', false)
+        query = query.eq('short_links.user_id', uid).eq('is_hidden', false)
       }
       const { data } = await query
       return data ? Array.from(new Set(data.map((r: { phone_number: string }) => r.phone_number))) : []
@@ -282,8 +283,13 @@ export default function NumbersPage() {
         .select('*, short_links(id, slug, title)', { count: 'exact' })
         .order('created_at', { ascending: false })
 
+      const linkIds = (linksData || []).map((l: { id: string }) => l.id)
       if (!admin) {
         query = query.eq('is_hidden', false)
+        if (linkIds.length === 0) {
+          return { numbers: [], totalCount: 0, links: [] }
+        }
+        query = query.in('short_link_id', linkIds)
       }
       if (fPlatform !== 'all') {
         query = query.eq('platform', fPlatform)

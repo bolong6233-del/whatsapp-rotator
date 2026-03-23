@@ -26,12 +26,33 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(false)
   const [autoReplyMessages, setAutoReplyMessages] = useState('')
 
+  const [userId, setUserId] = useState<string | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
+
   const fetchData = useCallback(async () => {
-    const { data: linkData } = await supabase
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      router.push('/dashboard')
+      return
+    }
+    setUserId(user.id)
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+    const role = profile?.role
+    const admin = role === 'admin' || role === 'root' || role === 'root_admin'
+    setIsAdmin(admin)
+
+    let query = supabase
       .from('short_links')
       .select('*')
       .eq('id', id)
-      .single()
+    if (!admin) {
+      query = query.eq('user_id', user.id)
+    }
+    const { data: linkData } = await query.single()
 
     if (!linkData) {
       router.push('/dashboard')
@@ -73,7 +94,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
       return
     }
 
-    const { error } = await supabase
+    let updateQuery = supabase
       .from('short_links')
       .update({
         description: description || null,
@@ -88,6 +109,10 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
         auto_reply_messages: autoReplyEnabled && autoReplyMessages.trim() ? autoReplyMessages.trim() : null,
       })
       .eq('id', id)
+    if (!isAdmin && userId) {
+      updateQuery = updateQuery.eq('user_id', userId)
+    }
+    const { error } = await updateQuery
 
     if (error) {
       setError('保存失败：' + error.message)
@@ -101,7 +126,11 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
   const handleDeleteLink = async () => {
     if (!confirm('确定要删除此短链吗？此操作不可撤销。')) return
 
-    await supabase.from('short_links').delete().eq('id', id)
+    let deleteQuery = supabase.from('short_links').delete().eq('id', id)
+    if (!isAdmin && userId) {
+      deleteQuery = deleteQuery.eq('user_id', userId)
+    }
+    await deleteQuery
     router.push('/dashboard')
   }
 

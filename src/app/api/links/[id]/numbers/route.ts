@@ -3,6 +3,22 @@ import { createClient } from '@/lib/supabase'
 
 export const dynamic = 'force-dynamic'
 
+/** Shared helper: checks the short_link exists and belongs to the current user (admin bypass). */
+async function verifyLinkOwnership(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  id: string,
+  userId: string,
+  isAdmin: boolean
+): Promise<boolean> {
+  if (isAdmin) return true
+  const { data: link } = await supabase
+    .from('short_links')
+    .select('user_id')
+    .eq('id', id)
+    .single()
+  return !!link && link.user_id === userId
+}
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -19,9 +35,15 @@ export async function GET(
     .select('role')
     .eq('id', user.id)
     .single()
-  const isAdmin = profile?.role === 'admin'
+  const role = profile?.role
+  const isAdmin = role === 'admin' || role === 'root' || role === 'root_admin'
 
   const { id } = await params
+
+  if (!(await verifyLinkOwnership(supabase, id, user.id, isAdmin))) {
+    return NextResponse.json({ error: '未授权' }, { status: 403 })
+  }
+
   let query = supabase
     .from('whatsapp_numbers')
     .select('*')
@@ -52,10 +74,23 @@ export async function POST(
     return NextResponse.json({ error: '未授权' }, { status: 401 })
   }
 
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single()
+  const role = profile?.role
+  const isAdmin = role === 'admin' || role === 'root' || role === 'root_admin'
+
+  const { id } = await params
+
+  if (!(await verifyLinkOwnership(supabase, id, user.id, isAdmin))) {
+    return NextResponse.json({ error: '未授权' }, { status: 403 })
+  }
+
   const body = await request.json()
   const { phone_number, label } = body
 
-  const { id } = await params
   const { data: existing } = await supabase
     .from('whatsapp_numbers')
     .select('id')
@@ -90,6 +125,14 @@ export async function DELETE(
     return NextResponse.json({ error: '未授权' }, { status: 401 })
   }
 
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single()
+  const role = profile?.role
+  const isAdmin = role === 'admin' || role === 'root' || role === 'root_admin'
+
   const { searchParams } = new URL(request.url)
   const numberId = searchParams.get('numberId')
 
@@ -98,6 +141,11 @@ export async function DELETE(
   }
 
   const { id } = await params
+
+  if (!(await verifyLinkOwnership(supabase, id, user.id, isAdmin))) {
+    return NextResponse.json({ error: '未授权' }, { status: 403 })
+  }
+
   const { error } = await supabase
     .from('whatsapp_numbers')
     .delete()
@@ -122,10 +170,23 @@ export async function PUT(
     return NextResponse.json({ error: '未授权' }, { status: 401 })
   }
 
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single()
+  const role = profile?.role
+  const isAdmin = role === 'admin' || role === 'root' || role === 'root_admin'
+
+  const { id } = await params
+
+  if (!(await verifyLinkOwnership(supabase, id, user.id, isAdmin))) {
+    return NextResponse.json({ error: '未授权' }, { status: 403 })
+  }
+
   const body = await request.json()
   const { numbers } = body
 
-  const { id } = await params
   const updates = numbers.map((n: { id: string; sort_order: number }) =>
     supabase
       .from('whatsapp_numbers')
@@ -138,3 +199,4 @@ export async function PUT(
 
   return NextResponse.json({ success: true })
 }
+
