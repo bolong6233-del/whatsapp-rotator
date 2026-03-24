@@ -1,0 +1,31 @@
+-- Migration 014: Hotfix – only short_links.slug stays unique
+--
+-- Business rule (final):
+--   "只在短链管理添加 slug 唯一；工单和号码可以随意添加。"
+--   ("Only short_links.slug is unique; work orders and numbers may be added freely.")
+--
+-- Changes:
+--   1. Drop the business-dedup unique index on work_orders
+--      (work_orders_business_dedup_idx). Work orders with the same
+--      ticket/link/time must be allowed – operators legitimately re-issue
+--      identical orders for repeated campaigns.
+--
+-- NOT changed:
+--   - short_links slug uniqueness is preserved (already enforced by the
+--     existing DB constraint / unique index on short_links.slug).
+--   - whatsapp_numbers unique-per-short-link constraint was already
+--     dropped in migration 013; nothing to do here.
+--   - idempotency_keys table is kept (still used by the short-links API
+--     for the front-end click guard; work-order and number routes no
+--     longer call it, but existing rows are harmless).
+--
+-- ROLLBACK (if needed):
+--   Re-create the index with:
+--     CREATE UNIQUE INDEX work_orders_business_dedup_idx
+--       ON work_orders (user_id, ticket_link, distribution_link_slug, start_time)
+--       NULLS NOT DISTINCT;
+--   Note: you must deduplicate existing rows first, otherwise the index
+--   creation will fail.
+
+-- Drop the over-broad unique index that blocked legitimate duplicate work orders.
+DROP INDEX IF EXISTS work_orders_business_dedup_idx;

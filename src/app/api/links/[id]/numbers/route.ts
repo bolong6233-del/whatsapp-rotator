@@ -1,10 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase'
-import {
-  checkIdempotency,
-  markIdempotencySucceeded,
-  markIdempotencyFailed,
-} from '@/lib/idempotency'
 
 export const dynamic = 'force-dynamic'
 
@@ -96,15 +91,6 @@ export async function POST(
   const body = await request.json()
   const { phone_number, label } = body
 
-  // ── Layer 2: idempotency check ────────────────────────────────────────────
-  const idem = await checkIdempotency(
-    request,
-    user.id,
-    `POST /api/links/${id}/numbers`,
-    body,
-  )
-  if (idem.reply) return idem.reply
-
   const { data: existing } = await supabase
     .from('whatsapp_numbers')
     .select('id')
@@ -122,13 +108,9 @@ export async function POST(
     .single()
 
   if (error) {
-    if (idem.recordId) await markIdempotencyFailed(idem.recordId)
     return NextResponse.json({ error: error.message }, { status: 400 })
   }
 
-  if (idem.recordId) {
-    await markIdempotencySucceeded(idem.recordId, 201, data, 'whatsapp_number', data.id)
-  }
   return NextResponse.json(data, { status: 201 })
 }
 
