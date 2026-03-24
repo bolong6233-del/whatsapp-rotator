@@ -1,7 +1,1 @@
-{
-  "functions": {
-    "src/app/api/sync/a2c-server/route.ts": {
-      "maxDuration": 60
-    }
-  }
-}
+{}

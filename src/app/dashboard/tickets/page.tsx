@@ -233,10 +233,10 @@ export default function TicketsPage() {
     }
   }, [])
 
-  // Sync a single A2C work order using the server-side Puppeteer API
+  // Sync a single A2C work order using the A2C official API
   const syncA2CWorkOrder = useCallback(async (order: WorkOrder): Promise<Partial<WorkOrder>> => {
     try {
-      const res = await fetch('/api/sync/a2c-server', {
+      const res = await fetch('/api/sync/a2c', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ work_order_id: order.id }),
