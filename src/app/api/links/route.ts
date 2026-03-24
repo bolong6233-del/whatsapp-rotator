@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase'
+import {
+  checkIdempotency,
+  markIdempotencySucceeded,
+  markIdempotencyFailed,
+  handleUniqueViolation,
+} from '@/lib/idempotency'
 
 export const dynamic = 'force-dynamic'
 
@@ -87,6 +93,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: '短链后缀不能为空' }, { status: 400 })
   }
 
+  // ── Layer 2: idempotency check ────────────────────────────────────────────
+  // If the client supplies an Idempotency-Key header, we deduplicate the write.
+  // Requests without the header fall through to the DB unique-constraint (Layer 3).
+  const idem = await checkIdempotency(request, user.id, 'POST /api/links', body)
+  if (idem.reply) return idem.reply
+
   const pixelEnabled = Boolean(tiktok_pixel_enabled)
   const fbEnabled = Boolean(fb_pixel_enabled)
 
@@ -109,6 +121,13 @@ export async function POST(request: NextRequest) {
     .single()
 
   if (linkError) {
+    if (idem.recordId) await markIdempotencyFailed(idem.recordId)
+    // ── Layer 3: convert DB unique-constraint violation to friendly 409 ────
+    const uniqueReply = handleUniqueViolation(linkError, {
+      slug: '短链后缀已被占用，请换一个',
+      default: '短链后缀已被占用，请换一个',
+    })
+    if (uniqueReply) return uniqueReply
     return NextResponse.json({ error: linkError.message }, { status: 400 })
   }
 
@@ -123,5 +142,8 @@ export async function POST(request: NextRequest) {
     await supabase.from('whatsapp_numbers').insert(numberInserts)
   }
 
+  if (idem.recordId) {
+    await markIdempotencySucceeded(idem.recordId, 201, link, 'short_link', link.id)
+  }
   return NextResponse.json(link, { status: 201 })
 }
