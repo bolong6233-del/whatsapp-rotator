@@ -428,6 +428,7 @@ export default function NumbersPage() {
     const sessionKey = addIdempotencyKeyRef.current
     const errors: string[] = []
     let added = 0
+    let skipped = 0
 
     for (const phone of lines) {
       // Derive a stable per-number key from session key + phone number.
@@ -446,9 +447,11 @@ export default function NumbersPage() {
             is_active: modalStatus === 'active',
           }),
         })
-        if (res.ok || res.status === 409) {
-          // 409 means "already exists" – that's acceptable in bulk add.
+        if (res.ok) {
           added++
+        } else if (res.status === 409) {
+          // 409 means "already exists" – acceptable in bulk add, count separately.
+          skipped++
         } else {
           const err = await res.json().catch(() => ({}))
           errors.push(`${phone}: ${err.error || '添加失败'}`)
@@ -462,7 +465,9 @@ export default function NumbersPage() {
     if (errors.length > 0) {
       setError(`部分号码添加失败：${errors.slice(0, 3).join('；')}${errors.length > 3 ? '…' : ''}`)
     } else {
-      setSuccess(`成功添加 ${added} 个号码`)
+      const parts = [`成功添加 ${added} 个号码`]
+      if (skipped > 0) parts.push(`跳过 ${skipped} 个已存在号码`)
+      setSuccess(parts.join('，'))
       setTimeout(() => setSuccess(''), 3000)
       setModalLinkId('')
       setModalPlatform('whatsapp')

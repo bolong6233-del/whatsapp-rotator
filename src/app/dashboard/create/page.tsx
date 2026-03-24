@@ -19,8 +19,9 @@ export default function CreateLinkPage() {
   const [autoReplyMessages, setAutoReplyMessages] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  // Synchronous submit guard: prevents duplicate submissions even before the
-  // React re-render cycle has had a chance to flip `loading` to true.
+  // Synchronous submit guard: set synchronously via a ref so that even rapid
+  // double-clicks that fire before the `loading` state re-render propagates
+  // are blocked immediately. `loading` (useState) is used for UI feedback only.
   const isSubmittingRef = useRef(false)
   // Per-session idempotency key: generated once per form mount so that retries
   // (e.g. after a network timeout) carry the same key and receive the cached result.

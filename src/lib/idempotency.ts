@@ -37,10 +37,27 @@ export interface IdempotencyCheckResult {
 
 /**
  * Compute a stable SHA-256 hash of a request body object.
- * Used to detect "same key, different payload" misuse.
+ * Keys are sorted recursively so the hash is independent of property insertion
+ * order, enabling mismatch detection for "same key, different payload" reuse.
  */
 function hashBody(body: unknown): string {
-  const str = JSON.stringify(body, Object.keys(body as object).sort())
+  // Guard against null / primitives (unlikely but safe to handle)
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return crypto.createHash('sha256').update(String(body ?? '')).digest('hex')
+  }
+  // Recursively sort object keys for a stable canonical representation.
+  function sortedReplacer(_key: string, value: unknown): unknown {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      return Object.keys(value as object)
+        .sort()
+        .reduce<Record<string, unknown>>((acc, k) => {
+          acc[k] = (value as Record<string, unknown>)[k]
+          return acc
+        }, {})
+    }
+    return value
+  }
+  const str = JSON.stringify(body, sortedReplacer)
   return crypto.createHash('sha256').update(str).digest('hex')
 }
 
