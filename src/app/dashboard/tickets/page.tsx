@@ -99,7 +99,6 @@ export default function TicketsPage() {
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [slugOptions, setSlugOptions] = useState<string[]>([])
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
-  const [syncingA2COrderId, setSyncingA2COrderId] = useState<string | null>(null)
 
   // Modal state
   const [showModal, setShowModal] = useState(false)
@@ -399,24 +398,6 @@ export default function TicketsPage() {
     }
   }
 
-  const handleA2CSync = async (e: React.MouseEvent, order: WorkOrder) => {
-    e.stopPropagation()
-    setSyncingA2COrderId(order.id)
-    try {
-      const updates = await syncA2CWorkOrder(order)
-      if (Object.keys(updates).length > 0) {
-        await mutate(
-          (prev) => prev
-            ? { ...prev, data: prev.data.map((o) => (o.id === order.id ? { ...o, ...updates } : o)) }
-            : prev,
-          { revalidate: false }
-        )
-      }
-    } finally {
-      setSyncingA2COrderId(null)
-    }
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setSubmitError(null)
@@ -476,17 +457,26 @@ export default function TicketsPage() {
     await mutate()
     setShowModal(false)
 
-    // Immediately sync if it's a 云控 order
-    if (newOrder.ticket_type === '云控' && newOrder.ticket_link) {
-      const updates = await syncWorkOrder(newOrder)
-      if (Object.keys(updates).length > 0) {
-        await mutate(
-          (prev) => prev
-            ? { ...prev, data: prev.data.map((o) => (o.id === newOrder.id ? { ...o, ...updates } : o)) }
-            : prev,
-          { revalidate: false }
-        )
+    // Immediately sync after creating any order
+    if (newOrder.ticket_link) {
+      // Fire and forget - let the sync happen in the background
+      const syncFn = async () => {
+        let updates: Partial<WorkOrder> = {}
+        if (newOrder.ticket_type === '云控') {
+          updates = await syncWorkOrder(newOrder)
+        } else if (newOrder.ticket_type === 'A2C') {
+          updates = await syncA2CWorkOrder(newOrder)
+        }
+        if (Object.keys(updates).length > 0) {
+          await mutate(
+            (prev) => prev
+              ? { ...prev, data: prev.data.map((o) => (o.id === newOrder.id ? { ...o, ...updates } : o)) }
+              : prev,
+            { revalidate: false }
+          )
+        }
       }
+      syncFn().catch((err) => console.error('[auto-sync] Failed to sync order', newOrder.id, err))
     }
   }
 
@@ -603,11 +593,13 @@ export default function TicketsPage() {
                       <td className="px-4 py-3">{order.total_quantity}</td>
                       <td className="px-4 py-3">{order.download_ratio}</td>
                       <td className="px-4 py-3">
-                        {!order.last_synced_at
-                          ? <span className="text-gray-400 font-medium">待同步</span>
-                          : order.sync_online_count !== undefined
-                            ? <span className="text-green-600 font-medium">已同步</span>
-                            : <span className="text-red-500 font-medium">异常</span>}
+                        {order.last_synced_at && order.sync_online_count !== undefined
+                          ? <span className="text-green-600 font-medium">已同步</span>
+                          : !order.last_synced_at && order.status === 'active'
+                            ? <span className="text-blue-500 font-medium">同步中</span>
+                            : order.last_synced_at && order.sync_online_count === undefined
+                              ? <span className="text-red-500 font-medium">异常</span>
+                              : <span className="text-gray-400">待同步</span>}
                       </td>
                       <td className="px-4 py-3">
                         {order.sync_total_day_sum !== undefined
@@ -638,16 +630,6 @@ export default function TicketsPage() {
                           >
                             ✏ 修改
                           </button>
-                          {order.ticket_type === 'A2C' && (
-                            <button
-                              type="button"
-                              onClick={(e) => handleA2CSync(e, order)}
-                              disabled={syncingA2COrderId === order.id}
-                              className="text-purple-500 hover:text-purple-700 text-xs whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                              {syncingA2COrderId === order.id ? '同步中…' : '📡 同步'}
-                            </button>
-                          )}
                           <button
                             type="button"
                             onClick={(e) => handleDelete(e, order.id)}
