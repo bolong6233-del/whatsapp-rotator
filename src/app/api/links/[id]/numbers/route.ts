@@ -4,7 +4,6 @@ import {
   checkIdempotency,
   markIdempotencySucceeded,
   markIdempotencyFailed,
-  handleUniqueViolation,
 } from '@/lib/idempotency'
 
 export const dynamic = 'force-dynamic'
@@ -124,12 +123,6 @@ export async function POST(
 
   if (error) {
     if (idem.recordId) await markIdempotencyFailed(idem.recordId)
-    // ── Layer 3: convert DB unique-constraint violation to friendly 409 ────
-    const uniqueReply = handleUniqueViolation(error, {
-      whatsapp_numbers_short_link_phone_unique: '该号码已存在，请勿重复添加',
-      default: '该号码已存在，请勿重复添加',
-    })
-    if (uniqueReply) return uniqueReply
     return NextResponse.json({ error: error.message }, { status: 400 })
   }
 

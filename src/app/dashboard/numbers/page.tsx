@@ -450,7 +450,7 @@ export default function NumbersPage() {
         if (res.ok) {
           added++
         } else if (res.status === 409) {
-          // 409 means "already exists" – acceptable in bulk add, count separately.
+          // 409 means idempotency key conflict (same key reused with different body).
           skipped++
         } else {
           const err = await res.json().catch(() => ({}))
@@ -466,7 +466,7 @@ export default function NumbersPage() {
       setError(`部分号码添加失败：${errors.slice(0, 3).join('；')}${errors.length > 3 ? '…' : ''}`)
     } else {
       const parts = [`成功添加 ${added} 个号码`]
-      if (skipped > 0) parts.push(`跳过 ${skipped} 个已存在号码`)
+      if (skipped > 0) parts.push(`${skipped} 个号码因重复提交被跳过`)
       setSuccess(parts.join('，'))
       setTimeout(() => setSuccess(''), 3000)
       setModalLinkId('')

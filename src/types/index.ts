@@ -96,6 +96,14 @@ export interface ClickLog {
 
 export type TicketType = '云控' | 'A2C'
 
+export interface WorkOrderShortLink {
+  id: string
+  work_order_id: string
+  short_link_id: string
+  created_at: string
+  short_links?: Pick<ShortLink, 'id' | 'slug' | 'title'>
+}
+
 export interface SyncNumber {
   id: number
   nickname: string
