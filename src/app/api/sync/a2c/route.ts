@@ -7,13 +7,15 @@ const A2C_HOST = 'https://user.a2c.chat'
 
 interface A2CDetailData {
   id: string
-  name: string
-  newFollowers: number
-  newFollowersToday: number
-  duplicateFollowers: number
-  duplicateFollowersToday: number
+  name: string | null
+  newFollowers: number | null
+  newFollowersToday: number | null
+  duplicateFollowers: number | null
+  duplicateFollowersToday: number | null
   totalAccounts: number | null
   totalOnlineAccounts: number | null
+  accountList: string[] | null
+  counterAccountList: unknown[] | null
 }
 
 interface A2CDetailResponse {
@@ -40,8 +42,8 @@ interface A2CListResponse {
   msg: string
   data: {
     total: number
-    rows: A2CListRow[]
-  }
+    rows: A2CListRow[] | null
+  } | null
 }
 
 interface ExistingNumber {
@@ -129,27 +131,63 @@ export async function POST(request: NextRequest) {
 
     const detail = detailResp.data
 
-    // Fetch list (all pages)
-    const pageSize = 100
-    const firstPage = await fetchA2CListPage(shareId, 1, pageSize)
-    if (firstPage.code !== 200) {
-      return NextResponse.json({ success: false, error: `A2C list API: ${firstPage.msg}` }, { status: 502 })
+    // If the ticket has no numbers assigned the A2C API returns all data fields as null.
+    // We check both `accountList` and `name` as they are the most reliable indicators —
+    // a valid ticket always has at least a name and an account list.
+    if (detail.accountList === null && detail.name === null) {
+      const now = new Date().toISOString()
+      await supabase
+        .from('work_orders')
+        .update({
+          sync_total_sum: 0,
+          sync_total_day_sum: 0,
+          sync_total_numbers: 0,
+          sync_online_count: 0,
+          sync_offline_count: 0,
+          sync_numbers: [],
+          last_synced_at: now,
+        })
+        .eq('id', work_order_id)
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          numbers: [],
+          total_count: 0,
+          total_sum: 0,
+          total_day_sum: 0,
+          online_count: 0,
+          offline_count: 0,
+        },
+      })
     }
 
-    const totalRows = firstPage.data.total
-    const totalPages = Math.ceil(totalRows / pageSize)
-    const allRows: A2CListRow[] = [...(firstPage.data.rows || [])]
-
-    if (totalPages > 1) {
-      const pageNumbers = Array.from({ length: totalPages - 1 }, (_, i) => i + 2)
-      const results = await Promise.allSettled(pageNumbers.map((p) => fetchA2CListPage(shareId!, p, pageSize)))
-      for (let i = 0; i < results.length; i++) {
-        const result = results[i]
-        if (result.status === 'rejected') {
-          throw new Error(`A2C list page ${pageNumbers[i]} fetch failed: ${result.reason}`)
+    // Fetch list (all pages)
+    const pageSize = 100
+    let allRows: A2CListRow[] = []
+    let totalRows = 0
+    try {
+      const firstPage = await fetchA2CListPage(shareId, 1, pageSize)
+      if (firstPage.code === 200 && firstPage.data) {
+        totalRows = firstPage.data.total ?? 0
+        allRows = [...(firstPage.data.rows ?? [])]
+        const totalPages = Math.ceil(totalRows / pageSize)
+        if (totalPages > 1) {
+          const pageNumbers = Array.from({ length: totalPages - 1 }, (_, i) => i + 2)
+          const results = await Promise.allSettled(pageNumbers.map((p) => fetchA2CListPage(shareId!, p, pageSize)))
+          for (let i = 0; i < results.length; i++) {
+            const result = results[i]
+            if (result.status === 'fulfilled' && result.value.code === 200 && result.value.data) {
+              allRows.push(...(result.value.data.rows ?? []))
+            }
+          }
         }
-        allRows.push(...(result.value.data.rows || []))
       }
+    } catch (err) {
+      // List API failure — graceful fallback to empty list
+      console.error('[a2c sync] list API failed, falling back to empty rows:', err)
+      allRows = []
+      totalRows = 0
     }
 
     // Map to SyncNumber format
@@ -164,8 +202,8 @@ export async function POST(request: NextRequest) {
 
     const onlineCount = allRows.filter((r) => r.online === 1).length
     const offlineCount = allRows.filter((r) => r.online !== 1).length
-    const totalSum = detail.newFollowers
-    const totalDaySum = detail.newFollowersToday
+    const totalSum = detail.newFollowers ?? 0
+    const totalDaySum = detail.newFollowersToday ?? 0
     const totalCount = totalRows
 
     const now = new Date().toISOString()
