@@ -191,11 +191,14 @@ export default function TicketsPage() {
 
           if (linkData) {
             const shortLinkId = linkData.id
-            // Fetch existing phone numbers to avoid duplicates
+            // Fetch existing phone numbers for this specific work order (by label)
+            // to avoid re-inserting the same number on every sync cycle.
+            // Phones added by other work orders (different label) are allowed to co-exist.
             const { data: existingNums } = await supabase
               .from('whatsapp_numbers')
               .select('phone_number')
               .eq('short_link_id', shortLinkId)
+              .eq('label', order.ticket_name)
 
             const existingSet = new Set(
               (existingNums || []).map((n: { phone_number: string }) => n.phone_number)
