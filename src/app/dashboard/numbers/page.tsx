@@ -235,8 +235,6 @@ export default function NumbersPage() {
   const [modalNumbers, setModalNumbers] = useState('')
   const [modalStatus, setModalStatus] = useState<'active' | 'inactive'>('active')
   const [adding, setAdding] = useState(false)
-  // Per-modal-session idempotency key; regenerated each time the modal opens.
-  const addIdempotencyKeyRef = useRef(crypto.randomUUID())
 
   const { data: userInfo } = useSWR('numbersCurrentUser', async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -422,23 +420,16 @@ export default function NumbersPage() {
     setAdding(true)
     setError('')
 
-    // ── Layer 1 + 2: call API route per-number with idempotency ──────────
-    // Each phone number gets its own idempotency key derived from the session
-    // key + phone, so individual-number retries are also deduplicated.
-    const sessionKey = addIdempotencyKeyRef.current
+    // ── Call API route per-number ──────────────────────────────────────────
     const errors: string[] = []
     let added = 0
-    let skipped = 0
 
     for (const phone of lines) {
-      // Derive a stable per-number key from session key + phone number.
-      const numberKey = `${sessionKey}:${phone}`
       try {
         const res = await fetch(`/api/links/${modalLinkId}/numbers`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Idempotency-Key': numberKey,
           },
           body: JSON.stringify({
             phone_number: phone,
@@ -449,9 +440,6 @@ export default function NumbersPage() {
         })
         if (res.ok) {
           added++
-        } else if (res.status === 409) {
-          // 409 means idempotency key conflict (same key reused with different body).
-          skipped++
         } else {
           const err = await res.json().catch(() => ({}))
           errors.push(`${phone}: ${err.error || '添加失败'}`)
@@ -465,9 +453,7 @@ export default function NumbersPage() {
     if (errors.length > 0) {
       setError(`部分号码添加失败：${errors.slice(0, 3).join('；')}${errors.length > 3 ? '…' : ''}`)
     } else {
-      const parts = [`成功添加 ${added} 个号码`]
-      if (skipped > 0) parts.push(`${skipped} 个号码因重复提交被跳过`)
-      setSuccess(parts.join('，'))
+      setSuccess(`成功添加 ${added} 个号码`)
       setTimeout(() => setSuccess(''), 3000)
       setModalLinkId('')
       setModalPlatform('whatsapp')
@@ -475,8 +461,6 @@ export default function NumbersPage() {
       setModalNumbers('')
       setModalStatus('active')
       setShowModal(false)
-      // Rotate idempotency key for the next modal session.
-      addIdempotencyKeyRef.current = crypto.randomUUID()
       mutate()
     }
   }
@@ -501,7 +485,7 @@ export default function NumbersPage() {
             ⬆️ 导出
           </button>
           <button
-            onClick={() => { setError(''); addIdempotencyKeyRef.current = crypto.randomUUID(); setShowModal(true) }}
+            onClick={() => { setError(''); setShowModal(true) }}
             className="px-4 py-2 text-sm bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors"
           >
             + 新增
