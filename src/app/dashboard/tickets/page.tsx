@@ -97,8 +97,11 @@ export default function TicketsPage() {
   const [pageSize, setPageSize] = useState(10)
   const [syncing, setSyncing] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [slugOptions, setSlugOptions] = useState<string[]>([])
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
+  // Per-modal-session idempotency key; regenerated each time modal opens for create.
+  const submitIdempotencyKeyRef = useRef(crypto.randomUUID())
 
   // Modal state
   const [showModal, setShowModal] = useState(false)
@@ -320,6 +323,8 @@ export default function TicketsPage() {
     setEditingOrder(null)
     setForm(getInitialForm())
     setSubmitError(null)
+    // Rotate idempotency key for each new create session.
+    submitIdempotencyKeyRef.current = crypto.randomUUID()
     setShowModal(true)
   }
 
@@ -400,6 +405,9 @@ export default function TicketsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    // ── Layer 1: prevent duplicate submissions while request is in-flight ──
+    if (isSubmitting) return
+    setIsSubmitting(true)
     setSubmitError(null)
 
     const payload = {
@@ -416,67 +424,76 @@ export default function TicketsPage() {
       password: form.password || null,
     }
 
-    if (editingOrder) {
-      // Edit mode
-      const res = await fetch(`/api/work-orders/${editingOrder.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        setSubmitError(err.error || '更新工单失败，请稍后重试')
+    try {
+      if (editingOrder) {
+        // Edit mode – idempotency not required for updates
+        const res = await fetch(`/api/work-orders/${editingOrder.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}))
+          setSubmitError(err.error || '更新工单失败，请稍后重试')
+          return
+        }
+        const updated: WorkOrder = await res.json()
+        await mutate(
+          (prev) => prev
+            ? { ...prev, data: prev.data.map((o) => (o.id === updated.id ? { ...o, ...updated } : o)) }
+            : prev,
+          { revalidate: false }
+        )
+        setShowModal(false)
+        setEditingOrder(null)
         return
       }
-      const updated: WorkOrder = await res.json()
-      await mutate(
-        (prev) => prev
-          ? { ...prev, data: prev.data.map((o) => (o.id === updated.id ? { ...o, ...updated } : o)) }
-          : prev,
-        { revalidate: false }
-      )
-      setShowModal(false)
-      setEditingOrder(null)
-      return
-    }
 
-    // Create mode
-    const res = await fetch('/api/work-orders', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
+      // Create mode – attach idempotency key so retries return cached result
+      const res = await fetch('/api/work-orders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': submitIdempotencyKeyRef.current,
+        },
+        body: JSON.stringify(payload),
+      })
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      setSubmitError(err.error || '创建工单失败，请稍后重试')
-      return
-    }
-    const newOrder: WorkOrder = await res.json()
-
-    await mutate()
-    setShowModal(false)
-
-    // Immediately sync after creating any order
-    if (newOrder.ticket_link) {
-      // Fire and forget - let the sync happen in the background
-      const syncFn = async () => {
-        let updates: Partial<WorkOrder> = {}
-        if (newOrder.ticket_type === '云控') {
-          updates = await syncWorkOrder(newOrder)
-        } else if (newOrder.ticket_type === 'A2C') {
-          updates = await syncA2CWorkOrder(newOrder)
-        }
-        if (Object.keys(updates).length > 0) {
-          await mutate(
-            (prev) => prev
-              ? { ...prev, data: prev.data.map((o) => (o.id === newOrder.id ? { ...o, ...updates } : o)) }
-              : prev,
-            { revalidate: false }
-          )
-        }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        setSubmitError(err.error || '创建工单失败，请稍后重试')
+        return
       }
-      syncFn().catch((err) => console.error('[auto-sync] Failed to sync order', newOrder.id, err))
+      const newOrder: WorkOrder = await res.json()
+
+      // Rotate key after success so next create gets a fresh key.
+      submitIdempotencyKeyRef.current = crypto.randomUUID()
+      await mutate()
+      setShowModal(false)
+
+      // Immediately sync after creating any order
+      if (newOrder.ticket_link) {
+        // Fire and forget - let the sync happen in the background
+        const syncFn = async () => {
+          let updates: Partial<WorkOrder> = {}
+          if (newOrder.ticket_type === '云控') {
+            updates = await syncWorkOrder(newOrder)
+          } else if (newOrder.ticket_type === 'A2C') {
+            updates = await syncA2CWorkOrder(newOrder)
+          }
+          if (Object.keys(updates).length > 0) {
+            await mutate(
+              (prev) => prev
+                ? { ...prev, data: prev.data.map((o) => (o.id === newOrder.id ? { ...o, ...updates } : o)) }
+                : prev,
+              { revalidate: false }
+            )
+          }
+        }
+        syncFn().catch((err) => console.error('[auto-sync] Failed to sync order', newOrder.id, err))
+      }
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -898,9 +915,10 @@ export default function TicketsPage() {
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-colors"
+                  disabled={isSubmitting}
+                  className="px-6 py-2 text-sm bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white rounded-lg font-medium transition-colors"
                 >
-                  {editingOrder ? '保存' : '确定'}
+                  {isSubmitting ? '提交中...' : (editingOrder ? '保存' : '确定')}
                 </button>
               </div>
             </form>

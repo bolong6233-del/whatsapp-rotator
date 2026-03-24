@@ -1,9 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { supabase } from '@/lib/supabase-client'
 
 const PRIORITY_OPTIONS = [
   { value: 'low', label: '低优先级' },
@@ -19,12 +18,20 @@ export default function CreateTicketPage() {
   const [priority, setPriority] = useState('medium')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  // Synchronous submit guard prevents duplicate requests from rapid clicks.
+  const isSubmittingRef = useRef(false)
+  // Per-session idempotency key for network-retry deduplication.
+  const idempotencyKeyRef = useRef(crypto.randomUUID())
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    // ── Layer 1: synchronous submit lock ──────────────────────────────────
+    if (isSubmittingRef.current) return
+    isSubmittingRef.current = true
     setError('')
 
     if (!title.trim()) {
+      isSubmittingRef.current = false
       setError('请输入工单标题')
       return
     }
@@ -32,33 +39,39 @@ export default function CreateTicketPage() {
     setLoading(true)
 
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        router.push('/login')
-        return
-      }
-
-      const { data: ticket, error: ticketError } = await supabase
-        .from('tickets')
-        .insert({
+      // ── Layer 2: call API route with Idempotency-Key header ───────────────
+      const res = await fetch('/api/tickets', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKeyRef.current,
+        },
+        body: JSON.stringify({
           title: title.trim(),
           description: description.trim() || null,
           priority,
-          user_id: user.id,
-        })
-        .select()
-        .single()
+        }),
+      })
 
-      if (ticketError) {
-        setError('创建失败：' + ticketError.message)
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        if (res.status === 401) {
+          router.push('/login')
+          return
+        }
+        setError(err.error || '创建失败，请重试')
         setLoading(false)
         return
       }
 
+      const ticket = await res.json()
+      idempotencyKeyRef.current = crypto.randomUUID()
       router.push(`/dashboard/tickets/${ticket.id}`)
     } catch {
       setError('操作失败，请重试')
       setLoading(false)
+    } finally {
+      isSubmittingRef.current = false
     }
   }
 

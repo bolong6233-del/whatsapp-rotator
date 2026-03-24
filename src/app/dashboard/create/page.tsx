@@ -1,9 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { supabase } from '@/lib/supabase-client'
 import { generateSlug } from '@/lib/utils'
 
 export default function CreateLinkPage() {
@@ -20,22 +19,34 @@ export default function CreateLinkPage() {
   const [autoReplyMessages, setAutoReplyMessages] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  // Synchronous submit guard: prevents duplicate submissions even before the
+  // React re-render cycle has had a chance to flip `loading` to true.
+  const isSubmittingRef = useRef(false)
+  // Per-session idempotency key: generated once per form mount so that retries
+  // (e.g. after a network timeout) carry the same key and receive the cached result.
+  const idempotencyKeyRef = useRef(crypto.randomUUID())
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    // ── Layer 1: synchronous submit lock ──────────────────────────────────
+    if (isSubmittingRef.current) return
+    isSubmittingRef.current = true
     setError('')
 
     if (!slug.trim()) {
+      isSubmittingRef.current = false
       setError('请输入短链后缀')
       return
     }
 
     if (tiktokPixelEnabled && !tiktokPixelId.trim()) {
+      isSubmittingRef.current = false
       setError('请输入 TikTok Pixel ID')
       return
     }
 
     if (fbPixelEnabled && !fbPixelId.trim()) {
+      isSubmittingRef.current = false
       setError('请输入 Facebook Pixel ID')
       return
     }
@@ -43,45 +54,47 @@ export default function CreateLinkPage() {
     setLoading(true)
 
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        router.push('/login')
-        return
-      }
-
-      const { data: link, error: linkError } = await supabase
-        .from('short_links')
-        .insert({
+      // ── Layer 2: call API route with Idempotency-Key header ───────────────
+      const res = await fetch('/api/links', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKeyRef.current,
+        },
+        body: JSON.stringify({
           slug: slug.trim(),
           description: description.trim() || null,
-          user_id: user.id,
           tiktok_pixel_enabled: tiktokPixelEnabled,
           tiktok_pixel_id: tiktokPixelEnabled ? tiktokPixelId.trim() : null,
-          tiktok_access_token: null,
           tiktok_event_type: tiktokPixelEnabled ? tiktokEventType : null,
           fb_pixel_enabled: fbPixelEnabled,
           fb_pixel_id: fbPixelEnabled ? fbPixelId.trim() : null,
           fb_event_type: fbPixelEnabled ? fbEventType : null,
           auto_reply_enabled: autoReplyEnabled,
           auto_reply_messages: autoReplyEnabled && autoReplyMessages.trim() ? autoReplyMessages.trim() : null,
-        })
-        .select()
-        .single()
+        }),
+      })
 
-      if (linkError) {
-        if (linkError.message.includes('duplicate') || linkError.code === '23505') {
-          setError('该短链后缀已被使用，请换一个')
-        } else {
-          setError('创建失败：' + linkError.message)
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        if (res.status === 401) {
+          router.push('/login')
+          return
         }
+        setError(err.error || '创建失败，请重试')
         setLoading(false)
         return
       }
 
+      const link = await res.json()
+      // Reset idempotency key after success so a new form session gets a fresh key
+      idempotencyKeyRef.current = crypto.randomUUID()
       router.push(`/dashboard/${link.id}`)
     } catch {
       setError('操作失败，请重试')
       setLoading(false)
+    } finally {
+      isSubmittingRef.current = false
     }
   }
 

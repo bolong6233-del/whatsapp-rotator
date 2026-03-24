@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase'
+import {
+  checkIdempotency,
+  markIdempotencySucceeded,
+  markIdempotencyFailed,
+} from '@/lib/idempotency'
 
 export const dynamic = 'force-dynamic'
 
@@ -39,6 +44,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: '标题不能为空' }, { status: 400 })
   }
 
+  // ── Layer 2: idempotency check ────────────────────────────────────────────
+  const idem = await checkIdempotency(request, user.id, 'POST /api/tickets', body)
+  if (idem.reply) return idem.reply
+
   const { data, error } = await supabase
     .from('tickets')
     .insert({
@@ -51,8 +60,12 @@ export async function POST(request: NextRequest) {
     .single()
 
   if (error) {
+    if (idem.recordId) await markIdempotencyFailed(idem.recordId)
     return NextResponse.json({ error: error.message }, { status: 400 })
   }
 
+  if (idem.recordId) {
+    await markIdempotencySucceeded(idem.recordId, 201, data, 'ticket', data.id)
+  }
   return NextResponse.json(data, { status: 201 })
 }

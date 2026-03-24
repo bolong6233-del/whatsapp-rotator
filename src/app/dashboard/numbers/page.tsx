@@ -235,6 +235,8 @@ export default function NumbersPage() {
   const [modalNumbers, setModalNumbers] = useState('')
   const [modalStatus, setModalStatus] = useState<'active' | 'inactive'>('active')
   const [adding, setAdding] = useState(false)
+  // Per-modal-session idempotency key; regenerated each time the modal opens.
+  const addIdempotencyKeyRef = useRef(crypto.randomUUID())
 
   const { data: userInfo } = useSWR('numbersCurrentUser', async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -418,20 +420,49 @@ export default function NumbersPage() {
       return
     }
     setAdding(true)
-    const inserts = lines.map((phone) => ({
-      phone_number: phone,
-      label: modalLabel.trim() || null,
-      platform: modalPlatform,
-      short_link_id: modalLinkId,
-      sort_order: 0,
-      is_active: modalStatus === 'active',
-    }))
-    const { error } = await supabase.from('whatsapp_numbers').insert(inserts)
+    setError('')
+
+    // ── Layer 1 + 2: call API route per-number with idempotency ──────────
+    // Each phone number gets its own idempotency key derived from the session
+    // key + phone, so individual-number retries are also deduplicated.
+    const sessionKey = addIdempotencyKeyRef.current
+    const errors: string[] = []
+    let added = 0
+
+    for (const phone of lines) {
+      // Derive a stable per-number key from session key + phone number.
+      const numberKey = `${sessionKey}:${phone}`
+      try {
+        const res = await fetch(`/api/links/${modalLinkId}/numbers`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': numberKey,
+          },
+          body: JSON.stringify({
+            phone_number: phone,
+            label: modalLabel.trim() || null,
+            platform: modalPlatform,
+            is_active: modalStatus === 'active',
+          }),
+        })
+        if (res.ok || res.status === 409) {
+          // 409 means "already exists" – that's acceptable in bulk add.
+          added++
+        } else {
+          const err = await res.json().catch(() => ({}))
+          errors.push(`${phone}: ${err.error || '添加失败'}`)
+        }
+      } catch {
+        errors.push(`${phone}: 网络错误`)
+      }
+    }
+
     setAdding(false)
-    if (error) {
-      setError('添加失败：' + error.message)
+    if (errors.length > 0) {
+      setError(`部分号码添加失败：${errors.slice(0, 3).join('；')}${errors.length > 3 ? '…' : ''}`)
     } else {
-      setSuccess(`成功添加 ${lines.length} 个号码`)
+      setSuccess(`成功添加 ${added} 个号码`)
       setTimeout(() => setSuccess(''), 3000)
       setModalLinkId('')
       setModalPlatform('whatsapp')
@@ -439,6 +470,8 @@ export default function NumbersPage() {
       setModalNumbers('')
       setModalStatus('active')
       setShowModal(false)
+      // Rotate idempotency key for the next modal session.
+      addIdempotencyKeyRef.current = crypto.randomUUID()
       mutate()
     }
   }
@@ -463,7 +496,7 @@ export default function NumbersPage() {
             ⬆️ 导出
           </button>
           <button
-            onClick={() => { setError(''); setShowModal(true) }}
+            onClick={() => { setError(''); addIdempotencyKeyRef.current = crypto.randomUUID(); setShowModal(true) }}
             className="px-4 py-2 text-sm bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors"
           >
             + 新增
