@@ -115,6 +115,15 @@ export async function POST(request: NextRequest) {
     try {
       const parsed = new URL(workOrder.ticket_link)
       shareId = parsed.searchParams.get('id')
+
+      // Fallback: follow redirects for short links (e.g. https://yyk.ink/741fTvk)
+      if (!shareId) {
+        const resp = await fetch(workOrder.ticket_link, { redirect: 'follow' })
+        if (resp.url) {
+          const finalParsed = new URL(resp.url)
+          shareId = finalParsed.searchParams.get('id')
+        }
+      }
     } catch {
       return NextResponse.json({ success: false, error: 'Invalid ticket_link URL' }, { status: 400 })
     }
