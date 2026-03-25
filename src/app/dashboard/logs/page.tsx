@@ -10,6 +10,7 @@
  *   ALTER TABLE click_logs ADD COLUMN IF NOT EXISTS os TEXT;
  *   ALTER TABLE click_logs ADD COLUMN IF NOT EXISTS browser TEXT;
  *   ALTER TABLE click_logs ADD COLUMN IF NOT EXISTS device_type TEXT;
+ *   ALTER TABLE click_logs ADD COLUMN IF NOT EXISTS isp TEXT;
  */
 
 import { useState, useEffect, useRef } from 'react'
@@ -39,6 +40,38 @@ function countryFlag(code: string): string {
   return [...code.toUpperCase()]
     .map((c) => String.fromCodePoint(c.charCodeAt(0) - 65 + 0x1f1e6))
     .join('')
+}
+
+/** Country code → Chinese name map (common countries). */
+const COUNTRY_ZH: Record<string, string> = {
+  SG: '新加坡', HK: '中国香港', TW: '中国台湾', MO: '中国澳门',
+  CN: '中国', US: '美国', GB: '英国', JP: '日本', KR: '韩国',
+  DE: '德国', FR: '法国', IT: '意大利', ES: '西班牙', AU: '澳大利亚',
+  CA: '加拿大', RU: '俄罗斯', BR: '巴西', IN: '印度', MX: '墨西哥',
+  NL: '荷兰', CH: '瑞士', SE: '瑞典', NO: '挪威', DK: '丹麦',
+  FI: '芬兰', PL: '波兰', TR: '土耳其', SA: '沙特阿拉伯', AE: '阿联酋',
+  TH: '泰国', MY: '马来西亚', ID: '印度尼西亚', PH: '菲律宾', VN: '越南',
+  PK: '巴基斯坦', NG: '尼日利亚', ZA: '南非', EG: '埃及', AR: '阿根廷',
+  CL: '智利', CO: '哥伦比亚', PT: '葡萄牙', GR: '希腊', CZ: '捷克',
+  HU: '匈牙利', RO: '罗马尼亚', UA: '乌克兰', IL: '以色列', NZ: '新西兰',
+  AT: '奥地利', BE: '比利时', IE: '爱尔兰', BD: '孟加拉国', MM: '缅甸',
+  KH: '柬埔寨', LA: '老挝', NP: '尼泊尔', LK: '斯里兰卡', MN: '蒙古',
+  KZ: '哈萨克斯坦', UZ: '乌兹别克斯坦', KW: '科威特', QA: '卡塔尔',
+  BH: '巴林', OM: '阿曼', JO: '约旦', LB: '黎巴嫩', IR: '伊朗',
+  IQ: '伊拉克', MA: '摩洛哥', TN: '突尼斯', DZ: '阿尔及利亚', ET: '埃塞俄比亚',
+  KE: '肯尼亚', GH: '加纳', TZ: '坦桑尼亚', SN: '塞内加尔',
+  PE: '秘鲁', VE: '委内瑞拉', EC: '厄瓜多尔', UY: '乌拉圭', BO: '玻利维亚',
+  BG: '保加利亚', HR: '克罗地亚', SK: '斯洛伐克', SI: '斯洛文尼亚',
+  LT: '立陶宛', LV: '拉脱维亚', EE: '爱沙尼亚', RS: '塞尔维亚',
+}
+
+/** Return display string for a country code: "🇸🇬 SG 新加坡" */
+function countryDisplay(code: string | null): string {
+  if (!code) return '—'
+  const upper = code.toUpperCase()
+  const flag = countryFlag(upper)
+  const zh = COUNTRY_ZH[upper]
+  return zh ? `${flag} ${upper} ${zh}` : `${flag} ${upper}`
 }
 
 /** Small coloured badge. */
@@ -236,8 +269,8 @@ function CountrySelect({
         onClick={() => setOpen((p) => !p)}
         className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm hover:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-colors"
       >
-        <span className={value ? 'text-gray-900' : 'text-gray-400'}>
-          {value ? `${countryFlag(value)} ${value}` : '请选择已出现的国家'}
+        <span className={value ? 'text-gray-800 font-medium' : 'text-gray-500'}>
+          {value ? countryDisplay(value) : '全部国家'}
         </span>
         <ChevronIcon open={open} />
       </button>
@@ -259,10 +292,9 @@ function CountrySelect({
                 <button
                   type="button"
                   onClick={() => { onChange(c); setOpen(false) }}
-                  className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition-colors flex items-center gap-2 ${value === c ? 'text-blue-600 font-medium bg-blue-50' : 'text-gray-700'}`}
+                  className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition-colors ${value === c ? 'text-blue-600 font-medium bg-blue-50' : 'text-gray-700'}`}
                 >
-                  <span>{countryFlag(c)}</span>
-                  <span>{c}</span>
+                  {countryDisplay(c)}
                 </button>
               </li>
             ))}
@@ -443,6 +475,8 @@ export default function LogsPage() {
       ? Math.round((stats.mobileCount / (stats.mobileCount + stats.desktopCount)) * 100)
       : null
 
+  const desktopRatio = mobileRatio !== null ? 100 - mobileRatio : null
+
   const availableCountries = stats?.availableCountries ?? []
 
   return (
@@ -450,14 +484,14 @@ export default function LogsPage() {
       {/* Page header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">访问记录</h1>
-        <span className="text-sm text-gray-400">共 {totalCount} 条记录</span>
+        <span className="text-sm text-gray-500">共 {totalCount} 条记录</span>
       </div>
 
       {/* Stats cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {/* Today clicks */}
         <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 ring-1 ring-black/[0.03]">
-          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
             今日点击{filterSlug && <span className="ml-1 text-blue-500 normal-case tracking-normal">· {filterSlug}</span>}
           </p>
           <p className="text-3xl font-bold text-gray-900 leading-none">{stats?.todayCount ?? '—'}</p>
@@ -465,7 +499,7 @@ export default function LogsPage() {
 
         {/* Country selector card */}
         <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 ring-1 ring-black/[0.03]">
-          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">
             访问国家（可选）
           </p>
           <CountrySelect
@@ -473,34 +507,42 @@ export default function LogsPage() {
             value={filterCountry}
             onChange={handleCountryChange}
           />
-          <p className="text-xs text-gray-400 mt-2">
-            当前：{filterCountry ? `${countryFlag(filterCountry)} ${filterCountry}` : '全部'}
+          <p className="text-xs text-gray-500 mt-2">
+            当前：{filterCountry ? countryDisplay(filterCountry) : '全部国家'}
           </p>
         </div>
 
-        {/* Mobile ratio — compact with progress bar */}
+        {/* Device share card — mobile vs desktop with dual-colour progress bar */}
         <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 ring-1 ring-black/[0.03]">
-          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">手机占比</p>
-          <div className="flex items-baseline gap-2 flex-wrap">
-            <p className="text-3xl font-bold text-gray-900 leading-none">
-              {mobileRatio !== null ? `${mobileRatio}%` : '—'}
-            </p>
-            {stats && (
-              <span className="text-xs text-gray-400">
-                手机 {stats.mobileCount} · 桌面 {stats.desktopCount}
-              </span>
-            )}
-          </div>
-          {mobileRatio !== null && (
-            <div className="mt-3 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-              <div
-                className="h-full rounded-full"
-                style={{
-                  width: `${mobileRatio}%`,
-                  background: 'linear-gradient(to right, #60a5fa, #3b82f6)',
-                }}
-              />
-            </div>
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">设备占比</p>
+          {mobileRatio !== null && desktopRatio !== null ? (
+            <>
+              <div className="flex items-start justify-between gap-4 mb-3">
+                {/* Mobile */}
+                <div>
+                  <p className="text-2xl font-bold text-blue-600 leading-none">{mobileRatio}%</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    📱 手机
+                    {stats && <span className="ml-1 font-medium text-gray-700">{stats.mobileCount}</span>}
+                  </p>
+                </div>
+                {/* Desktop */}
+                <div className="text-right">
+                  <p className="text-2xl font-bold text-green-600 leading-none">{desktopRatio}%</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    🖥️ 桌面
+                    {stats && <span className="ml-1 font-medium text-gray-700">{stats.desktopCount}</span>}
+                  </p>
+                </div>
+              </div>
+              {/* Full-width dual-colour progress bar */}
+              <div className="h-2 rounded-full overflow-hidden flex w-full">
+                <div className="bg-blue-500" style={{ width: `${mobileRatio}%` }} />
+                <div className="bg-green-500" style={{ width: `${desktopRatio}%` }} />
+              </div>
+            </>
+          ) : (
+            <p className="text-3xl font-bold text-gray-400 leading-none">—</p>
           )}
         </div>
       </div>
@@ -549,13 +591,15 @@ export default function LogsPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-gray-400 bg-gray-50/70 border-b border-gray-100">
+                <tr className="text-left text-gray-500 bg-gray-50/70 border-b border-gray-100">
                   <th className="py-3 px-4 font-medium text-xs uppercase tracking-wide">访问时间</th>
                   <th className="py-3 px-4 font-medium text-xs uppercase tracking-wide">短链</th>
-                  <th className="py-3 px-4 font-medium text-xs uppercase tracking-wide">国家/城市</th>
+                  <th className="py-3 px-4 font-medium text-xs uppercase tracking-wide">国家</th>
+                  <th className="py-3 px-4 font-medium text-xs uppercase tracking-wide">城市</th>
                   <th className="py-3 px-4 font-medium text-xs uppercase tracking-wide">IP 地址</th>
                   <th className="py-3 px-4 font-medium text-xs uppercase tracking-wide">设备</th>
                   <th className="py-3 px-4 font-medium text-xs uppercase tracking-wide">操作系统</th>
+                  <th className="py-3 px-4 font-medium text-xs uppercase tracking-wide">网络服务商</th>
                   <th className="py-3 px-4 font-medium text-xs uppercase tracking-wide">浏览器</th>
                   <th className="py-3 px-4 font-medium text-xs uppercase tracking-wide">来源</th>
                 </tr>
@@ -563,7 +607,7 @@ export default function LogsPage() {
               <tbody className="divide-y divide-gray-50">
                 {logs.map((log) => (
                   <tr key={log.id} className="hover:bg-blue-50/30 transition-colors">
-                    <td className="py-3 px-4 text-gray-500 whitespace-nowrap text-xs">
+                    <td className="py-3 px-4 text-gray-600 whitespace-nowrap text-xs">
                       {formatDate(log.clicked_at)}
                     </td>
                     <td className="py-3 px-4">
@@ -575,19 +619,16 @@ export default function LogsPage() {
                         <span className="text-gray-400">-</span>
                       )}
                       {log.short_links?.title && (
-                        <span className="ml-2 text-gray-400 text-xs">{log.short_links.title}</span>
+                        <span className="ml-2 text-gray-500 text-xs">{log.short_links.title}</span>
                       )}
                     </td>
-                    <td className="py-3 px-4 whitespace-nowrap text-xs text-gray-600">
-                      {log.country ? (
-                        <span>
-                          {countryFlag(log.country)}{' '}
-                          <span className="font-medium">{log.country}</span>
-                          {log.city ? ` · ${log.city}` : ''}
-                        </span>
-                      ) : '-'}
+                    <td className="py-3 px-4 whitespace-nowrap text-xs text-gray-700">
+                      {log.country ? countryDisplay(log.country) : <span className="text-gray-400">—</span>}
                     </td>
-                    <td className="py-3 px-4 text-gray-500 font-mono text-xs whitespace-nowrap">
+                    <td className="py-3 px-4 whitespace-nowrap text-xs text-gray-600">
+                      {log.city || <span className="text-gray-400">—</span>}
+                    </td>
+                    <td className="py-3 px-4 text-gray-600 font-mono text-xs whitespace-nowrap">
                       {log.ip_address || '-'}
                     </td>
                     <td className="py-3 px-4">
@@ -595,6 +636,9 @@ export default function LogsPage() {
                     </td>
                     <td className="py-3 px-4">
                       <OsBadge os={log.os ?? null} />
+                    </td>
+                    <td className="py-3 px-4 text-xs text-gray-600 whitespace-nowrap">
+                      {log.isp || <span className="text-gray-400">—</span>}
                     </td>
                     <td className="py-3 px-4">
                       <BrowserBadge browser={log.browser ?? null} />
