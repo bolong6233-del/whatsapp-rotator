@@ -236,6 +236,21 @@ export default function NumbersPage() {
   const [modalStatus, setModalStatus] = useState<'active' | 'inactive'>('active')
   const [adding, setAdding] = useState(false)
 
+  // Bulk delete modal state
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false)
+  const [bulkDeleteLinkId, setBulkDeleteLinkId] = useState('')
+  const [bulkDeleteNumbers, setBulkDeleteNumbers] = useState('')
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+
+  // Edit modal state
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editId, setEditId] = useState('')
+  const [editPhone, setEditPhone] = useState('')
+  const [editLabel, setEditLabel] = useState('')
+  const [editPlatform, setEditPlatform] = useState<Platform>('whatsapp')
+  const [editStatus, setEditStatus] = useState<'active' | 'inactive'>('active')
+  const [editSaving, setEditSaving] = useState(false)
+
   const { data: userInfo } = useSWR('numbersCurrentUser', async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return null
@@ -412,6 +427,10 @@ export default function NumbersPage() {
       setError('请选择关联链接')
       return
     }
+    if (!modalLabel.trim()) {
+      setError('请填写工单')
+      return
+    }
     const lines = modalNumbers.split('\n').map((l) => l.trim()).filter(Boolean)
     if (lines.length === 0) {
       setError('请输入至少一个号码')
@@ -463,6 +482,95 @@ export default function NumbersPage() {
       setShowModal(false)
       mutate()
     }
+  }
+
+  const handleBulkDeleteFromModal = async () => {
+    if (!bulkDeleteLinkId) {
+      setError('请选择链接')
+      return
+    }
+    const phones = bulkDeleteNumbers.split('\n').map((l) => l.trim()).filter(Boolean)
+    if (phones.length === 0) {
+      setError('请输入至少一个号码')
+      return
+    }
+    setBulkDeleting(true)
+    setError('')
+
+    const { data, error: fetchError } = await supabase
+      .from('whatsapp_numbers')
+      .select('id')
+      .eq('short_link_id', bulkDeleteLinkId)
+      .in('phone_number', phones)
+
+    if (fetchError) {
+      setError('查询失败：' + fetchError.message)
+      setBulkDeleting(false)
+      return
+    }
+
+    const ids = (data || []).map((r: { id: string }) => r.id)
+    if (ids.length === 0) {
+      setError('未找到匹配的号码')
+      setBulkDeleting(false)
+      return
+    }
+
+    const { error: deleteError } = await supabase
+      .from('whatsapp_numbers')
+      .delete()
+      .in('id', ids)
+
+    if (deleteError) {
+      setError('删除失败：' + deleteError.message)
+    } else {
+      setSuccess(`成功删除 ${ids.length} 个号码`)
+      setTimeout(() => setSuccess(''), 3000)
+      setShowBulkDeleteModal(false)
+      setBulkDeleteLinkId('')
+      setBulkDeleteNumbers('')
+      mutate()
+    }
+    setBulkDeleting(false)
+  }
+
+  const handleOpenEdit = (num: NumberWithLink) => {
+    setEditId(num.id)
+    setEditPhone(num.phone_number)
+    setEditLabel(num.label || '')
+    setEditPlatform(getPlatform(num.platform))
+    setEditStatus(num.is_active ? 'active' : 'inactive')
+    setError('')
+    setShowEditModal(true)
+  }
+
+  const handleEditNumber = async () => {
+    if (!editLabel.trim()) {
+      setError('请填写工单')
+      return
+    }
+    setEditSaving(true)
+    setError('')
+
+    const { error: updateError } = await supabase
+      .from('whatsapp_numbers')
+      .update({
+        phone_number: editPhone,
+        label: editLabel.trim(),
+        platform: editPlatform,
+        is_active: editStatus === 'active',
+      })
+      .eq('id', editId)
+
+    if (updateError) {
+      setError('修改失败：' + updateError.message)
+    } else {
+      setSuccess('修改成功')
+      setTimeout(() => setSuccess(''), 3000)
+      setShowEditModal(false)
+      mutate()
+    }
+    setEditSaving(false)
   }
 
   if (loading) {
@@ -545,30 +653,34 @@ export default function NumbersPage() {
 
       {/* Bulk Actions + Stats */}
       <div className="flex items-center justify-between">
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {selected.size > 0 && (
-            <>
-              <span className="text-sm text-gray-600">已选 {selected.size} 个</span>
-              <button
-                onClick={() => handleBulkToggle(true)}
-                className="px-3 py-1.5 text-xs bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors"
-              >
-                批量启用
-              </button>
-              <button
-                onClick={() => handleBulkToggle(false)}
-                className="px-3 py-1.5 text-xs bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition-colors"
-              >
-                批量停用
-              </button>
-              <button
-                onClick={handleBulkDelete}
-                className="px-3 py-1.5 text-xs bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition-colors"
-              >
-                批量删除
-              </button>
-            </>
+            <span className="text-sm text-gray-600">已选 {selected.size} 个</span>
           )}
+          <button
+            onClick={() => handleBulkToggle(true)}
+            className="px-3 py-1.5 text-xs bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors"
+          >
+            启用
+          </button>
+          <button
+            onClick={() => handleBulkToggle(false)}
+            className="px-3 py-1.5 text-xs bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition-colors"
+          >
+            停用
+          </button>
+          <button
+            onClick={handleBulkDelete}
+            className="px-3 py-1.5 text-xs bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition-colors"
+          >
+            删除
+          </button>
+          <button
+            onClick={() => { setError(''); setShowBulkDeleteModal(true) }}
+            className="px-3 py-1.5 text-xs bg-orange-100 text-orange-600 rounded-lg hover:bg-orange-200 transition-colors"
+          >
+            批量删除
+          </button>
         </div>
         <div className="text-sm text-gray-500">
           本页访问次数合计：<span className="font-semibold text-gray-800">{numbers.reduce((sum, n) => sum + n.click_count, 0)}</span>
@@ -590,6 +702,7 @@ export default function NumbersPage() {
                   />
                 </th>
                 <th className="py-3 px-4 font-medium">链接</th>
+                <th className="py-3 px-4 font-medium">工单</th>
                 <th className="py-3 px-4 font-medium">号码</th>
                 <th className="py-3 px-4 font-medium">号码类型</th>
                 <th className="py-3 px-4 font-medium">访问次数</th>
@@ -600,7 +713,7 @@ export default function NumbersPage() {
             <tbody className="divide-y divide-gray-50">
               {numbers.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-gray-400">
+                  <td colSpan={8} className="py-12 text-center text-gray-400">
                     暂无号码数据
                   </td>
                 </tr>
@@ -623,9 +736,11 @@ export default function NumbersPage() {
                         <span className="text-gray-400 ml-1 text-xs">({num.short_links.title})</span>
                       )}
                     </td>
+                    <td className="py-3 px-4 text-gray-700 text-sm">
+                      {num.label}
+                    </td>
                     <td className="py-3 px-4 text-gray-800">
                       <span className="font-medium">{num.phone_number}</span>
-                      {num.label && <span className="text-gray-400 ml-1 text-xs">({num.label})</span>}
                     </td>
                     <td className="py-3 px-4">
                       <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${PLATFORM_COLORS[getPlatform(num.platform)]}`}>
@@ -646,12 +761,20 @@ export default function NumbersPage() {
                       </button>
                     </td>
                     <td className="py-3 px-4">
-                      <button
-                        onClick={() => handleDelete(num.id)}
-                        className="text-xs text-red-400 hover:text-red-600 transition-colors"
-                      >
-                        删除
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => handleOpenEdit(num)}
+                          className="text-xs text-blue-500 hover:text-blue-700 transition-colors"
+                        >
+                          修改
+                        </button>
+                        <button
+                          onClick={() => handleDelete(num.id)}
+                          className="text-xs text-red-400 hover:text-red-600 transition-colors"
+                        >
+                          删除
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -713,12 +836,14 @@ export default function NumbersPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">工单号 / 备注</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  工单 <span className="text-red-500">*</span>
+                </label>
                 <input
                   type="text"
                   value={modalLabel}
                   onChange={(e) => setModalLabel(e.target.value)}
-                  placeholder="备注（可选）"
+                  placeholder="请输入工单号"
                   className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none"
                 />
               </div>
@@ -786,6 +911,171 @@ export default function NumbersPage() {
                   className="flex-1 py-2.5 bg-green-500 hover:bg-green-600 disabled:bg-green-300 text-white rounded-lg text-sm font-medium transition-colors"
                 >
                   {adding ? '添加中...' : '确定'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Delete Modal */}
+      {showBulkDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <h2 className="text-lg font-bold text-gray-900">批量删除号码</h2>
+              <button
+                onClick={() => { setShowBulkDeleteModal(false); setBulkDeleteLinkId(''); setBulkDeleteNumbers('') }}
+                className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  选择链接 <span className="text-red-500">*</span>
+                </label>
+                <LinkSelect
+                  options={links}
+                  value={bulkDeleteLinkId}
+                  onChange={setBulkDeleteLinkId}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  号码 <span className="text-red-500">*</span>
+                  <span className="text-gray-400 font-normal ml-1">（一行一个）</span>
+                </label>
+                <textarea
+                  value={bulkDeleteNumbers}
+                  onChange={(e) => setBulkDeleteNumbers(e.target.value)}
+                  rows={6}
+                  placeholder={'8613800138000\n8613900139000\n...'}
+                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none resize-none font-mono"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => { setShowBulkDeleteModal(false); setBulkDeleteLinkId(''); setBulkDeleteNumbers('') }}
+                  className="flex-1 py-2.5 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium transition-colors"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleBulkDeleteFromModal}
+                  disabled={bulkDeleting}
+                  className="flex-1 py-2.5 bg-red-500 hover:bg-red-600 disabled:bg-red-300 text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  {bulkDeleting ? '删除中...' : '确定'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      {showEditModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <h2 className="text-lg font-bold text-gray-900">修改号码</h2>
+              <button
+                onClick={() => setShowEditModal(false)}
+                className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  号码类型
+                </label>
+                <select
+                  value={editPlatform}
+                  onChange={(e) => setEditPlatform(e.target.value as Platform)}
+                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none bg-white"
+                >
+                  <option value="whatsapp">WhatsApp</option>
+                  <option value="telegram">Telegram</option>
+                  <option value="line">LINE</option>
+                  <option value="custom">自定义</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  工单 <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={editLabel}
+                  onChange={(e) => setEditLabel(e.target.value)}
+                  placeholder="请输入工单号"
+                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  号码 <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={editPhone}
+                  onChange={(e) => setEditPhone(e.target.value)}
+                  placeholder="请输入号码"
+                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">状态</label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="editStatus"
+                      value="active"
+                      checked={editStatus === 'active'}
+                      onChange={() => setEditStatus('active')}
+                      className="text-green-500"
+                    />
+                    <span className="text-sm text-gray-700">正常</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="editStatus"
+                      value="inactive"
+                      checked={editStatus === 'inactive'}
+                      onChange={() => setEditStatus('inactive')}
+                      className="text-green-500"
+                    />
+                    <span className="text-sm text-gray-700">停用</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => setShowEditModal(false)}
+                  className="flex-1 py-2.5 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium transition-colors"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleEditNumber}
+                  disabled={editSaving}
+                  className="flex-1 py-2.5 bg-green-500 hover:bg-green-600 disabled:bg-green-300 text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  {editSaving ? '保存中...' : '确定'}
                 </button>
               </div>
             </div>

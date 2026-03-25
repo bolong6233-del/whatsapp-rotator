@@ -252,21 +252,31 @@ function CountrySelect({
   onChange: (country: string) => void
 }) {
   const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false)
+        setSearch('')
+      }
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
+  const filtered = countries.filter((c) => {
+    const zh = COUNTRY_ZH[c] ?? ''
+    const q = search.toLowerCase()
+    return c.toLowerCase().includes(q) || zh.includes(q)
+  })
+
   return (
     <div ref={ref} className="relative min-w-52">
       <button
         type="button"
-        onClick={() => setOpen((p) => !p)}
+        onClick={() => { setOpen((p) => !p); setSearch('') }}
         className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm hover:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-colors"
       >
         <span className={value ? 'text-gray-800 font-medium' : 'text-gray-500'}>
@@ -277,27 +287,41 @@ function CountrySelect({
 
       {open && (
         <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+          <div className="p-2 border-b border-gray-100">
+            <input
+              autoFocus
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="搜索国家..."
+              className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+            />
+          </div>
           <ul className="max-h-52 overflow-y-auto py-1">
             <li>
               <button
                 type="button"
-                onClick={() => { onChange(''); setOpen(false) }}
+                onClick={() => { onChange(''); setOpen(false); setSearch('') }}
                 className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition-colors ${!value ? 'text-blue-600 font-medium bg-blue-50' : 'text-gray-700'}`}
               >
                 全部国家
               </button>
             </li>
-            {countries.map((c) => (
-              <li key={c}>
-                <button
-                  type="button"
-                  onClick={() => { onChange(c); setOpen(false) }}
-                  className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition-colors ${value === c ? 'text-blue-600 font-medium bg-blue-50' : 'text-gray-700'}`}
-                >
-                  {countryDisplay(c)}
-                </button>
-              </li>
-            ))}
+            {filtered.length === 0 ? (
+              <li className="px-3 py-2 text-sm text-gray-400">无匹配结果</li>
+            ) : (
+              filtered.map((c) => (
+                <li key={c}>
+                  <button
+                    type="button"
+                    onClick={() => { onChange(c); setOpen(false); setSearch('') }}
+                    className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition-colors ${value === c ? 'text-blue-600 font-medium bg-blue-50' : 'text-gray-700'}`}
+                  >
+                    {countryDisplay(c)}
+                  </button>
+                </li>
+              ))
+            )}
           </ul>
         </div>
       )}
@@ -448,7 +472,10 @@ export default function LogsPage() {
       if (countryRes.data) {
         const freq: Record<string, number> = {}
         for (const row of (countryRes.data as unknown as { country: string | null }[])) {
-          if (row.country) freq[row.country] = (freq[row.country] ?? 0) + 1
+          if (row.country) {
+            const code = row.country.toUpperCase()
+            freq[code] = (freq[code] ?? 0) + 1
+          }
         }
         const sorted = Object.entries(freq).sort((a, b) => b[1] - a[1])
         topCountry = sorted[0]?.[0] ?? null
@@ -559,13 +586,6 @@ export default function LogsPage() {
           value={filterCountry}
           onChange={handleCountryChange}
         />
-        <button
-          type="button"
-          onClick={() => mutateLogs()}
-          className="px-5 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors shadow-sm"
-        >
-          查询
-        </button>
         {(filterSlug || filterCountry) && (
           <button
             type="button"
