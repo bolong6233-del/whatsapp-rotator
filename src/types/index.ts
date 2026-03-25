@@ -94,7 +94,7 @@ export interface ClickLog {
   }
 }
 
-export type TicketType = '云控' | 'A2C'
+export type TicketType = '云控'
 
 export interface WorkOrderShortLink {
   id: string
