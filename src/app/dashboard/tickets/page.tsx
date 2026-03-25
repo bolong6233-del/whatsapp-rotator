@@ -10,7 +10,6 @@ import Pagination from '@/components/ui/Pagination'
 
 const TICKET_TYPES: TicketType[] = [
   '云控',
-  'A2C',
 ]
 
 const NUMBER_TYPES: { value: Platform; label: string }[] = [
@@ -233,34 +232,7 @@ export default function TicketsPage() {
     }
   }, [])
 
-  // Sync a single A2C work order using the A2C official API
-  const syncA2CWorkOrder = useCallback(async (order: WorkOrder): Promise<Partial<WorkOrder>> => {
-    try {
-      const res = await fetch('/api/sync/a2c', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ work_order_id: order.id }),
-      })
-      const result = await res.json()
-      if (!result.success) return {}
-
-      const { numbers, total_count, total_sum, total_day_sum, online_count, offline_count } = result.data
-      return {
-        sync_total_sum: total_sum,
-        sync_total_day_sum: total_day_sum,
-        sync_total_numbers: total_count,
-        sync_online_count: online_count,
-        sync_offline_count: offline_count,
-        sync_numbers: numbers as SyncNumber[],
-        last_synced_at: new Date().toISOString(),
-      }
-    } catch (err) {
-      console.error('[syncA2CWorkOrder] Failed to sync A2C work order', order.id, err)
-      return {}
-    }
-  }, [])
-
-  // Sync all active orders (云控 via Yunkon API, A2C via server-side Puppeteer)
+  // Sync all active orders (云控 via Yunkon API)
   const syncAllActive = useCallback(async () => {
     const orders = workOrdersRef.current
     const activeOrders = orders.filter((o) => o.status === 'active')
@@ -269,12 +241,8 @@ export default function TicketsPage() {
     const updatesMap: Record<string, Partial<WorkOrder>> = {}
     await Promise.all(
       activeOrders.map(async (order) => {
-        let updates: Partial<WorkOrder> = {}
-        if (order.ticket_type === '云控') {
-          updates = await syncWorkOrder(order)
-        } else if (order.ticket_type === 'A2C') {
-          updates = await syncA2CWorkOrder(order)
-        }
+        if (order.ticket_type !== '云控') return
+        const updates = await syncWorkOrder(order)
         if (Object.keys(updates).length > 0) {
           updatesMap[order.id] = updates
         }
@@ -292,7 +260,7 @@ export default function TicketsPage() {
         { revalidate: false }
       )
     }
-  }, [syncWorkOrder, syncA2CWorkOrder, mutate])
+  }, [syncWorkOrder, mutate])
 
   useEffect(() => {
     fetchSlugs()
@@ -474,16 +442,11 @@ export default function TicketsPage() {
       await mutate()
       setShowModal(false)
 
-      // Immediately sync after creating any order
-      if (newOrder.ticket_link) {
+      // Immediately sync after creating a 云控 order
+      if (newOrder.ticket_link && newOrder.ticket_type === '云控') {
         // Fire and forget - let the sync happen in the background
         const syncFn = async () => {
-          let updates: Partial<WorkOrder> = {}
-          if (newOrder.ticket_type === '云控') {
-            updates = await syncWorkOrder(newOrder)
-          } else if (newOrder.ticket_type === 'A2C') {
-            updates = await syncA2CWorkOrder(newOrder)
-          }
+          const updates = await syncWorkOrder(newOrder)
           if (Object.keys(updates).length > 0) {
             await mutate(
               (prev) => prev
