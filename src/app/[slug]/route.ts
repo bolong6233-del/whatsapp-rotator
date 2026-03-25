@@ -280,7 +280,6 @@ export async function GET(
     var a=document.getElementsByTagName("script")[0];a.parentNode.insertBefore(o,a)
   };
   ttq.load(${safePixelId});
-  ttq.page();
   ttq.track(${safeEventType});
 }(window,document,"ttq");
 </script>`
