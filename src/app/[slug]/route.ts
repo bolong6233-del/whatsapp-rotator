@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { ALLOWED_TIKTOK_EVENTS } from '@/lib/utils'
 
 // NOTE: Run the following migrations in Supabase before deploying:
 // ALTER TABLE short_links ADD COLUMN IF NOT EXISTS tiktok_event_type TEXT DEFAULT 'SubmitForm';
@@ -261,7 +262,8 @@ export async function GET(
 
     if (hasTiktokPixel) {
       const safePixelId = JSON.stringify(tiktok_pixel_id as string)
-      const eventType = (tiktok_event_type as string) ?? 'SubmitForm'
+      const rawEventType = (tiktok_event_type as string) ?? 'SubmitForm'
+      const eventType = ALLOWED_TIKTOK_EVENTS.includes(rawEventType) ? rawEventType : 'SubmitForm'
       const safeEventType = JSON.stringify(eventType)
       pixelScripts += `
 <script>

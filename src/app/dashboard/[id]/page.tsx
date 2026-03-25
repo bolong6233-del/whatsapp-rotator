@@ -4,7 +4,7 @@ import { use, useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase-client'
-import { getBaseUrl, copyToClipboard } from '@/lib/utils'
+import { getBaseUrl, copyToClipboard, TIKTOK_EVENT_OPTIONS, TikTokEventType } from '@/lib/utils'
 import type { ShortLink } from '@/types'
 
 const ROOT_ADMIN_EMAIL = 'bolong6233@gmail.com'
@@ -21,7 +21,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
   const [description, setDescription] = useState('')
   const [tiktokPixelEnabled, setTiktokPixelEnabled] = useState(false)
   const [tiktokPixelId, setTiktokPixelId] = useState('')
-  const [tiktokEventType, setTiktokEventType] = useState<'SubmitForm' | 'CompletePayment' | 'ClickButton'>('SubmitForm')
+  const [tiktokEventType, setTiktokEventType] = useState<TikTokEventType>('SubmitForm')
   const [fbPixelEnabled, setFbPixelEnabled] = useState(false)
   const [fbPixelId, setFbPixelId] = useState('')
   const [fbEventType, setFbEventType] = useState<'Lead' | 'Purchase' | 'ViewContent'>('Lead')
@@ -68,7 +68,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
     setDescription(linkData.description || '')
     setTiktokPixelEnabled(linkData.tiktok_pixel_enabled || false)
     setTiktokPixelId(linkData.tiktok_pixel_id || '')
-    setTiktokEventType((linkData.tiktok_event_type as 'SubmitForm' | 'CompletePayment' | 'ClickButton') || 'SubmitForm')
+    setTiktokEventType((linkData.tiktok_event_type as TikTokEventType) || 'SubmitForm')
     setFbPixelEnabled(linkData.fb_pixel_enabled || false)
     setFbPixelId(linkData.fb_pixel_id || '')
     setFbEventType((linkData.fb_event_type as 'Lead' | 'Purchase' | 'ViewContent') || 'Lead')
@@ -271,11 +271,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
                 <div>
                   <label className="block text-xs font-medium text-indigo-800 mb-2">事件类型</label>
                   <div className="flex gap-2">
-                    {([
-                      { value: 'SubmitForm', label: '提交表单' },
-                      { value: 'CompletePayment', label: '转化' },
-                      { value: 'ClickButton', label: '点击' },
-                    ] as const).map((opt) => (
+                    {TIKTOK_EVENT_OPTIONS.map((opt) => (
                       <button
                         key={opt.value}
                         type="button"
