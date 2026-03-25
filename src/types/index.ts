@@ -83,6 +83,7 @@ export interface ClickLog {
   os: string | null
   browser: string | null
   device_type: string | null
+  isp: string | null
   clicked_at: string
   whatsapp_numbers?: {
     phone_number: string

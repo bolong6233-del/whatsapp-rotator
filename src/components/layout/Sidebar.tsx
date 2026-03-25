@@ -23,11 +23,11 @@ export default function Sidebar({ role = 'agent', isAdmin }: { role?: string; is
   const allItems = canManageAgents ? [...navItems, ...adminNavItems] : navItems
 
   return (
-    <aside className="w-56 bg-white border-r border-gray-200 flex flex-col">
-      <div className="p-5 border-b border-gray-200">
+    <aside className="w-56 bg-gray-900 border-r border-gray-800 flex flex-col">
+      <div className="p-5 border-b border-gray-700/60">
         <Link href="/dashboard" className="flex items-center gap-2">
           <span className="text-2xl">💬</span>
-          <span className="font-bold text-gray-900">分流后台管理</span>
+          <span className="font-bold text-white">分流后台管理</span>
         </Link>
       </div>
       <nav className="flex-1 p-4 space-y-1">
@@ -41,8 +41,8 @@ export default function Sidebar({ role = 'agent', isAdmin }: { role?: string; is
               href={item.href}
               className={`block px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 active:scale-95 ${
                 isActive
-                  ? 'bg-green-50 text-green-700 border-l-4 border-green-600 pl-2'
-                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 border-l-4 border-transparent pl-2'
+                  ? 'bg-blue-600/20 text-blue-400 border-l-4 border-blue-500 pl-2'
+                  : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200 border-l-4 border-transparent pl-2'
               }`}
             >
               {item.label}
