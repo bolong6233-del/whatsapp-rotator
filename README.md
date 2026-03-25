@@ -94,7 +94,90 @@ npm run dev
 - 每个号码的接待量
 - 最近 50 条点击记录（时间、分配号码、IP、来源）
 
-## 数据库结构
+## 海王同步 - Cloudflare Worker 代理接入说明
+
+由于 Vercel 等云平台的出口 IP 会被 Cloudflare 防护拦截（返回 403），海王同步 API 的所有请求已全量切换为通过 Cloudflare Worker 代理转发。
+
+### Worker 代理工作原理
+
+```
+新系统 (Vercel) → POST Cloudflare Worker → admin.haiwangweb.com
+```
+
+Worker 负责将请求以普通流量形式转发，彻底绕过 Cloudflare 403 拦截。
+
+### 部署你自己的 Worker（可选）
+
+如果需要使用自己的 Worker：
+
+1. 登录 [dash.cloudflare.com](https://dash.cloudflare.com) → **Workers & Pages** → **Create Worker**
+2. 将以下代码粘贴进去并 **Save and Deploy**：
+
+```javascript
+const PROXY_SECRET = "YOUR_SECRET_KEY_HERE"; // 替换为你自己的密钥，并在环境变量 HAIWANG_WORKER_PROXY_SECRET 中填入相同的值
+
+export default {
+  async fetch(request) {
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "POST, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, x-proxy-secret",
+        },
+      });
+    }
+    if (request.method !== "POST") {
+      return new Response(JSON.stringify({ error: "Method not allowed" }), {
+        status: 405, headers: { "Content-Type": "application/json" },
+      });
+    }
+    const authHeader = request.headers.get("x-proxy-secret");
+    if (authHeader !== PROXY_SECRET) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: { "Content-Type": "application/json" },
+      });
+    }
+    try {
+      const body = await request.json();
+      const { url, method, headers, jsonBody } = body;
+      if (!url) {
+        return new Response(JSON.stringify({ error: "url is required" }), {
+          status: 400, headers: { "Content-Type": "application/json" },
+        });
+      }
+      const fetchOptions = { method: method || "GET", headers: headers || {} };
+      if (jsonBody) fetchOptions.body = JSON.stringify(jsonBody);
+      const response = await fetch(url, fetchOptions);
+      const responseBody = await response.text();
+      return new Response(responseBody, {
+        status: response.status,
+        headers: {
+          "Content-Type": response.headers.get("Content-Type") || "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      });
+    } catch (err) {
+      return new Response(JSON.stringify({ error: err.message }), {
+        status: 500, headers: { "Content-Type": "application/json" },
+      });
+    }
+  },
+};
+```
+
+3. 在 Vercel 项目设置中添加以下环境变量：
+
+```env
+HAIWANG_WORKER_PROXY_URL=https://你的worker名.你的用户名.workers.dev/
+HAIWANG_WORKER_PROXY_SECRET=你的密钥
+```
+
+### 默认配置
+
+如不设置环境变量，系统将使用内置默认 Worker（`haiwang-proxy.bolong6233.workers.dev`）。
+
+
 
 - `short_links` - 短链信息
 - `whatsapp_numbers` - 绑定的 WhatsApp 号码
