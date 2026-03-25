@@ -115,7 +115,6 @@ export default function DashboardPage() {
   const [allLinks, setAllLinks] = useState<ShortLinkOption[]>([])
   const [loading, setLoading] = useState(true)
   const [searchSlug, setSearchSlug] = useState('')
-  const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -180,11 +179,6 @@ export default function DashboardPage() {
       if (searchSlug) {
         query = query.eq('slug', searchSlug)
       }
-      if (filterStatus === 'active') {
-        query = query.eq('is_active', true)
-      } else if (filterStatus === 'inactive') {
-        query = query.eq('is_active', false)
-      }
 
       const from = (page - 1) * pageSize
       query = query.range(from, from + pageSize - 1)
@@ -198,7 +192,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, pageSize, searchSlug, filterStatus, currentUserId])
+  }, [page, pageSize, searchSlug, currentUserId])
 
   useEffect(() => {
     fetchLinks()
@@ -235,16 +229,6 @@ export default function DashboardPage() {
       setCopyToast('✅ 链接已复制')
       setTimeout(() => setCopyToast(''), 2500)
     })
-  }
-
-  const handleToggleStatus = async () => {
-    if (selected.size === 0) return
-    const firstId = Array.from(selected)[0]
-    const firstLink = links.find((l) => l.id === firstId)
-    const newStatus = !firstLink?.is_active
-    await supabase.from('short_links').update({ is_active: newStatus }).in('id', Array.from(selected))
-    setSelected(new Set())
-    fetchLinks()
   }
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -357,17 +341,8 @@ export default function DashboardPage() {
             value={searchSlug}
             onChange={(slug) => { setSearchSlug(slug); setPage(1) }}
           />
-          <select
-            value={filterStatus}
-            onChange={(e) => { setFilterStatus(e.target.value as 'all' | 'active' | 'inactive'); setPage(1) }}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none bg-white"
-          >
-            <option value="all">全部状态</option>
-            <option value="active">正常</option>
-            <option value="inactive">关闭</option>
-          </select>
           <button
-            onClick={() => { setSearchSlug(''); setFilterStatus('all'); setPage(1) }}
+            onClick={() => { setSearchSlug(''); setPage(1) }}
             className="px-4 py-2 text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
           >
             重置
@@ -385,17 +360,6 @@ export default function DashboardPage() {
         >
           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
           新增
-        </button>
-        <button
-          onClick={() => {
-            if (selected.size !== 1) return
-            window.location.href = `/dashboard/${Array.from(selected)[0]}`
-          }}
-          disabled={selected.size !== 1}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-green-50 hover:bg-green-100 text-green-600 border border-green-200 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-          修改
         </button>
         <button
           onClick={handleDelete}
