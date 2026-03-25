@@ -1,3 +1,14 @@
+export const TIKTOK_EVENT_OPTIONS = [
+  { value: 'SubmitForm', label: '提交表单' },
+  { value: 'Contact', label: '联系' },
+  { value: 'Download', label: '下载' },
+  { value: 'CompleteRegistration', label: '完成注册' },
+] as const
+
+export type TikTokEventType = (typeof TIKTOK_EVENT_OPTIONS)[number]['value']
+
+export const ALLOWED_TIKTOK_EVENTS: readonly string[] = TIKTOK_EVENT_OPTIONS.map((o) => o.value)
+
 export function formatDate(date: string): string {
   return new Date(date).toLocaleString('zh-CN', {
     year: 'numeric',

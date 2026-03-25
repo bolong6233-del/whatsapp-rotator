@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { generateSlug } from '@/lib/utils'
+import { generateSlug, TIKTOK_EVENT_OPTIONS, TikTokEventType } from '@/lib/utils'
 
 export default function CreateLinkPage() {
   const router = useRouter()
@@ -11,7 +11,7 @@ export default function CreateLinkPage() {
   const [description, setDescription] = useState('')
   const [tiktokPixelEnabled, setTiktokPixelEnabled] = useState(false)
   const [tiktokPixelId, setTiktokPixelId] = useState('')
-  const [tiktokEventType, setTiktokEventType] = useState<'SubmitForm' | 'CompletePayment' | 'ClickButton'>('SubmitForm')
+  const [tiktokEventType, setTiktokEventType] = useState<TikTokEventType>('SubmitForm')
   const [fbPixelEnabled, setFbPixelEnabled] = useState(false)
   const [fbPixelId, setFbPixelId] = useState('')
   const [fbEventType, setFbEventType] = useState<'Lead' | 'Purchase' | 'ViewContent'>('Lead')
@@ -198,11 +198,7 @@ export default function CreateLinkPage() {
               <div>
                 <label className="block text-sm font-medium text-indigo-800 mb-2">事件类型</label>
                 <div className="flex gap-2">
-                  {([
-                    { value: 'SubmitForm', label: '提交表单' },
-                    { value: 'CompletePayment', label: '转化' },
-                    { value: 'ClickButton', label: '点击' },
-                  ] as const).map((opt) => (
+                  {TIKTOK_EVENT_OPTIONS.map((opt) => (
                     <button
                       key={opt.value}
                       type="button"

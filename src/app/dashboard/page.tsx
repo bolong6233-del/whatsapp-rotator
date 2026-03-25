@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase-client'
-import { generateSlug, getBaseUrl } from '@/lib/utils'
+import { generateSlug, getBaseUrl, TIKTOK_EVENT_OPTIONS, TikTokEventType } from '@/lib/utils'
 import type { ShortLink } from '@/types'
 import Link from 'next/link'
 import Pagination from '@/components/ui/Pagination'
@@ -130,7 +130,7 @@ export default function DashboardPage() {
   const [newDescription, setNewDescription] = useState('')
   const [newTiktokPixelEnabled, setNewTiktokPixelEnabled] = useState(false)
   const [newTiktokPixelId, setNewTiktokPixelId] = useState('')
-  const [newTiktokEventType, setNewTiktokEventType] = useState<'SubmitForm' | 'CompletePayment' | 'ClickButton'>('SubmitForm')
+  const [newTiktokEventType, setNewTiktokEventType] = useState<TikTokEventType>('SubmitForm')
   const [newFbPixelEnabled, setNewFbPixelEnabled] = useState(false)
   const [newFbPixelId, setNewFbPixelId] = useState('')
   const [newFbEventType, setNewFbEventType] = useState<'Lead' | 'Purchase' | 'ViewContent'>('Lead')
@@ -577,11 +577,7 @@ export default function DashboardPage() {
                     <div>
                       <label className="block text-xs font-medium text-indigo-800 mb-2">事件类型</label>
                       <div className="flex gap-2">
-                        {([
-                          { value: 'SubmitForm', label: '提交表单' },
-                          { value: 'CompletePayment', label: '转化' },
-                          { value: 'ClickButton', label: '点击' },
-                        ] as const).map((opt) => (
+                        {TIKTOK_EVENT_OPTIONS.map((opt) => (
                           <button
                             key={opt.value}
                             type="button"
