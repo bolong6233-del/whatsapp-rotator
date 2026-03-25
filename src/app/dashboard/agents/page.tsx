@@ -17,6 +17,7 @@ interface AgentWithStats {
   expires_at: string | null
   link_count: number
   total_clicks: number
+  today_clicks: number
   plain_password?: string
   created_by_email?: string | null
   can_inject_numbers?: boolean
@@ -83,6 +84,10 @@ export default function AgentsPage() {
   const [extendAgent, setExtendAgent] = useState<AgentWithStats | null>(null)
   const [extendPeriod, setExtendPeriod] = useState('1m')
   const [extending, setExtending] = useState(false)
+
+  // Delete account modal
+  const [deleteAgent, setDeleteAgent] = useState<AgentWithStats | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const isRoot = currentEmail === ROOT_ADMIN_EMAIL
   // Role options available when creating or editing (non-root cannot assign admin)
@@ -174,6 +179,33 @@ export default function AgentsPage() {
     }
   }
 
+  function handleOpenDeleteModal(agent: AgentWithStats) {
+    setDeleteAgent(agent)
+  }
+
+  function handleCloseDeleteModal() {
+    setDeleteAgent(null)
+  }
+
+  async function confirmDeleteAgent() {
+    if (!deleteAgent) return
+    setDeleting(true)
+    setError('')
+
+    const res = await fetch(`/api/admin/agents/${deleteAgent.id}`, {
+      method: 'DELETE',
+    })
+
+    if (res.ok) {
+      setSuccess(`账号 ${deleteAgent.email} 已永久删除`)
+      setDeleteAgent(null)
+      mutate()
+    } else {
+      const data = await res.json()
+      setError(data.error || '删除失败')
+    }
+    setDeleting(false)
+  }
   async function handleToggleInjectPermission(agent: AgentWithStats) {
     const newValue = !agent.can_inject_numbers
     const res = await fetch(`/api/admin/agents/${agent.id}`, {
@@ -366,6 +398,7 @@ export default function AgentsPage() {
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">到期时间</th>
                 <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">短链数</th>
                 <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">总点击</th>
+                <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">今日点击</th>
                 <th className="text-center px-4 py-3 text-xs font-medium text-gray-500 uppercase">状态</th>
                 {isRoot && (
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">创建者</th>
@@ -415,6 +448,7 @@ export default function AgentsPage() {
                     </td>
                     <td className="px-4 py-3 text-right text-gray-700">{agent.link_count}</td>
                     <td className="px-4 py-3 text-right text-gray-700">{agent.total_clicks.toLocaleString()}</td>
+                    <td className="px-4 py-3 text-right text-gray-700">{(agent.today_clicks ?? 0).toLocaleString()}</td>
                     <td className="px-4 py-3 text-center">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                         agent.status === 'active'
@@ -461,6 +495,14 @@ export default function AgentsPage() {
                         >
                           {agent.status === 'active' ? '禁用' : '启用'}
                         </button>
+                        {!isSelf && (
+                          <button
+                            onClick={() => handleOpenDeleteModal(agent)}
+                            className="text-xs text-red-700 hover:text-red-900 hover:underline font-medium"
+                          >
+                            删除账号
+                          </button>
+                        )}
                         {isRoot && !isSelf && (
                           <span className="inline-flex items-center gap-1">
                             <span className="text-xs text-orange-600 whitespace-nowrap">🔱上帝之手</span>
@@ -564,6 +606,39 @@ export default function AgentsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Account Modal */}
+      {deleteAgent && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">
+            <h3 className="text-base font-semibold text-gray-900 mb-1">删除账号</h3>
+            <p className="text-sm text-gray-500 mb-3">{deleteAgent.email}</p>
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+              <p className="text-xs text-red-700">
+                ⚠️ 此操作将永久删除该账号及其所有相关数据，<strong>无法撤销</strong>，且该账号将无法再登录系统。
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={confirmDeleteAgent}
+                disabled={deleting}
+                className="flex-1 bg-red-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50 transition-colors"
+              >
+                {deleting ? '删除中...' : '确认永久删除'}
+              </button>
+              <button
+                type="button"
+                onClick={handleCloseDeleteModal}
+                disabled={deleting}
+                className="flex-1 border border-gray-300 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                取消
+              </button>
+            </div>
           </div>
         </div>
       )}

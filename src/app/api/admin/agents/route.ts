@@ -61,16 +61,55 @@ export async function GET() {
     filteredAgents = filteredAgents.filter(a => a.email !== ROOT_ADMIN_EMAIL)
   }
 
+  // Compute today's start time (UTC midnight)
+  const todayStart = new Date()
+  todayStart.setUTCHours(0, 0, 0, 0)
+  const todayStartIso = todayStart.toISOString()
+
+  // Batch-fetch all short_links for all agents in one query
+  const allAgentIds = filteredAgents.map((a) => a.id)
+  const { data: allLinks } = allAgentIds.length > 0
+    ? await adminSupabase
+        .from('short_links')
+        .select('id, user_id, total_clicks')
+        .in('user_id', allAgentIds)
+    : { data: [] }
+
+  // Build agent_id -> links map
+  const linksByUserId = new Map<string, Array<{ id: string; total_clicks: number }>>()
+  for (const link of allLinks || []) {
+    const existing = linksByUserId.get(link.user_id) ?? []
+    existing.push(link)
+    linksByUserId.set(link.user_id, existing)
+  }
+
+  // Batch-fetch today's click counts for all links in one query (group in JS)
+  const allLinkIds = (allLinks || []).map((l) => l.id)
+  const todayClicksByLinkId = new Map<string, number>()
+  if (allLinkIds.length > 0) {
+    const { data: todayClickRows } = await adminSupabase
+      .from('click_logs')
+      .select('short_link_id')
+      .in('short_link_id', allLinkIds)
+      .gte('clicked_at', todayStartIso)
+    for (const row of todayClickRows || []) {
+      todayClicksByLinkId.set(
+        row.short_link_id,
+        (todayClicksByLinkId.get(row.short_link_id) ?? 0) + 1,
+      )
+    }
+  }
+
   // Fetch stats and creator emails for each agent in parallel
   const agentsWithStats = await Promise.all(
     filteredAgents.map(async (agent) => {
-      const { data: links } = await adminSupabase
-        .from('short_links')
-        .select('id, total_clicks')
-        .eq('user_id', agent.id)
-
-      const link_count = links?.length || 0
-      const total_clicks = links?.reduce((sum, l) => sum + (l.total_clicks || 0), 0) || 0
+      const links = linksByUserId.get(agent.id) ?? []
+      const link_count = links.length
+      const total_clicks = links.reduce((sum, l) => sum + (l.total_clicks || 0), 0)
+      const today_clicks = links.reduce(
+        (sum, l) => sum + (todayClicksByLinkId.get(l.id) ?? 0),
+        0,
+      )
 
       // Look up creator email (only meaningful for root admin view)
       let created_by_email: string | null = null
@@ -83,7 +122,7 @@ export async function GET() {
         created_by_email = creator?.email ?? null
       }
 
-      return { ...agent, link_count, total_clicks, created_by_email }
+      return { ...agent, link_count, total_clicks, today_clicks, created_by_email }
     })
   )
 
