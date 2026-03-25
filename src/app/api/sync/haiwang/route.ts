@@ -2,6 +2,50 @@ import { NextRequest, NextResponse } from 'next/server'
 
 const HAIWANG_API_KEY = process.env.HAIWANG_API_KEY ?? '6bd1257667ce007b42b4236a08de1776'
 
+// Cloudflare Worker proxy configuration
+// All requests to admin.haiwangweb.com are routed through the Worker to bypass Cloudflare 403.
+// Set HAIWANG_WORKER_PROXY_URL and HAIWANG_WORKER_PROXY_SECRET in your environment to override.
+const WORKER_PROXY_URL = process.env.HAIWANG_WORKER_PROXY_URL ?? 'https://haiwang-proxy.bolong6233.workers.dev/'
+const WORKER_PROXY_SECRET = process.env.HAIWANG_WORKER_PROXY_SECRET ?? 'haiwang-proxy-secret-key-2026'
+
+class HaiwangUpstreamError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'HaiwangUpstreamError'
+  }
+}
+
+/**
+ * Proxy a request through the Cloudflare Worker to avoid Cloudflare 403 on admin.haiwangweb.com.
+ * Worker API: POST {WORKER_PROXY_URL} with header x-proxy-secret and body { url, method, headers, jsonBody }
+ */
+async function fetchViaProxy(
+  url: string,
+  options: { method?: string; headers?: Record<string, string>; jsonBody?: unknown } = {},
+): Promise<Response> {
+  const response = await fetch(WORKER_PROXY_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-proxy-secret': WORKER_PROXY_SECRET,
+    },
+    body: JSON.stringify({
+      url,
+      method: options.method ?? 'GET',
+      headers: options.headers ?? {},
+      ...(options.jsonBody !== undefined ? { jsonBody: options.jsonBody } : {}),
+    }),
+  })
+  if (response.status === 401) {
+    throw new HaiwangUpstreamError('Worker proxy authentication failed: invalid x-proxy-secret')
+  }
+  if (response.status === 400) {
+    const text = await response.text()
+    throw new HaiwangUpstreamError(`Worker proxy bad request: ${text}`)
+  }
+  return response
+}
+
 interface HaiwangItem {
   acclist_id: number
   acclist_shareid: number
@@ -27,13 +71,6 @@ interface HaiwangListResponse {
     total: number
     items: HaiwangItem[]
     shareStatistics: HaiwangShareStatistics
-  }
-}
-
-class HaiwangUpstreamError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'HaiwangUpstreamError'
   }
 }
 
@@ -91,7 +128,7 @@ export async function POST(request: NextRequest) {
 
     const fetchPage = async (page: number, shareid: string | number): Promise<HaiwangListResponse> => {
       const apiUrl = buildListUrl(page, shareid)
-      const response = await fetch(apiUrl, { headers })
+      const response = await fetchViaProxy(apiUrl, { headers })
 
       if (!response.ok) {
         throw new HaiwangUpstreamError(`Haiwang list API error: ${response.status}`)
