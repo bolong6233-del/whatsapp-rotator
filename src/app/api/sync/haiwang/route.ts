@@ -4,6 +4,7 @@ const HAIWANG_API_KEY = process.env.HAIWANG_API_KEY ?? '6bd1257667ce007b42b4236a
 
 interface HaiwangItem {
   acclist_id: number
+  acclist_shareid: number
   acclist_account: string
   acclist_nickname: string
   acclist_status: number
@@ -26,17 +27,6 @@ interface HaiwangListResponse {
     total: number
     items: HaiwangItem[]
     shareStatistics: HaiwangShareStatistics
-  }
-}
-
-interface HaiwangRenderResponse {
-  code: number
-  msg: string
-  data: {
-    shareid?: number
-    share_id?: number
-    id?: number
-    [key: string]: unknown
   }
 }
 
@@ -72,34 +62,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'No sharekey found in ticket_link' }, { status: 400 })
     }
 
-    const headers = {
+    const headers: Record<string, string> = {
       'x-api-key': HAIWANG_API_KEY,
       'accept': 'application/json, text/plain, */*',
     }
 
-    // Step 1: Call render API to get shareid
-    const renderUrl = `https://admin.haiwangweb.com/webApi/accountshow/render?sharekey=${encodeURIComponent(sharekey)}`
-    const renderResponse = await fetch(renderUrl, { headers })
-
-    if (!renderResponse.ok) {
-      throw new HaiwangUpstreamError(`Haiwang render API error: ${renderResponse.status}`)
-    }
-
-    const renderJson: HaiwangRenderResponse = await renderResponse.json()
-
-    if (renderJson.code !== 1) {
-      throw new HaiwangUpstreamError(`Haiwang render returned error code: ${renderJson.code}`)
-    }
-
-    // Per the render API spec, shareid may be nested under different field names.
-    // Fall back to empty string so the list API can still be attempted without a shareid.
-    const shareid: number | string =
-      renderJson.data?.shareid ?? renderJson.data?.share_id ?? renderJson.data?.id ?? ''
-
-    // Step 2: Paginate through all results
     const limit = 100
 
-    const fetchPage = async (page: number): Promise<HaiwangListResponse> => {
+    // Helper to build list API URL
+    const buildListUrl = (page: number, shareid: string | number) => {
       const params = new URLSearchParams({
         page: String(page),
         limit: String(limit),
@@ -115,8 +86,11 @@ export async function POST(request: NextRequest) {
         idTop: '0',
         AcclistAppid: '',
       })
-      const apiUrl = `https://admin.haiwangweb.com/webApi/accountshow/list?${params.toString()}`
+      return `https://admin.haiwangweb.com/webApi/accountshow/list?${params.toString()}`
+    }
 
+    const fetchPage = async (page: number, shareid: string | number): Promise<HaiwangListResponse> => {
+      const apiUrl = buildListUrl(page, shareid)
       const response = await fetch(apiUrl, { headers })
 
       if (!response.ok) {
@@ -126,14 +100,26 @@ export async function POST(request: NextRequest) {
       const json: HaiwangListResponse = await response.json()
 
       if (json.code !== 1) {
-        throw new HaiwangUpstreamError(`Haiwang list returned error code: ${json.code}`)
+        throw new HaiwangUpstreamError(`Haiwang list returned error code: ${json.code}, msg: ${json.msg}`)
       }
 
       return json
     }
 
-    // Fetch first page to determine total and pages
-    const firstPage = await fetchPage(1)
+    // Step 1: Try fetching the first page WITHOUT shareid
+    // The list API may work with just sharekey, or we can extract shareid from the response
+    let shareid: string | number = ''
+
+    const firstPage = await fetchPage(1, '')
+
+    // Extract shareid from first item if available, for subsequent page requests
+    if (firstPage.data?.items?.length > 0 && firstPage.data.items[0].acclist_shareid) {
+      shareid = firstPage.data.items[0].acclist_shareid
+    } else {
+      console.warn('[haiwang sync] acclist_shareid not found in first item; subsequent pages will be requested without shareid')
+    }
+
+    // Step 2: Paginate through all results
     const totalCount = firstPage.data?.total || 0
     const totalPages = Math.ceil(totalCount / limit)
 
@@ -142,7 +128,7 @@ export async function POST(request: NextRequest) {
     // Fetch remaining pages concurrently
     if (totalPages > 1) {
       const pageNumbers = Array.from({ length: totalPages - 1 }, (_, i) => i + 2)
-      const results = await Promise.all(pageNumbers.map((p) => fetchPage(p)))
+      const results = await Promise.all(pageNumbers.map((p) => fetchPage(p, shareid)))
       for (const res of results) {
         allItems.push(...(res.data?.items || []))
       }
