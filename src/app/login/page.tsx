@@ -1,5 +1,6 @@
 'use client'
-
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase-client'
