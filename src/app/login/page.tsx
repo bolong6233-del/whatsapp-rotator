@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase-client'
 
 const BG_URL =
-  'https://lh5.googleusercontent.com/proxy/tqRHDyQaoI24mM1WN6BAphqGkeTTp-eJzXOPq4rOaJnvqX5EP7mEWSMSqFRNGQ2mYB5MMbhwIyeAYbJb1br2RcKgdSpwLE50yLaVHFETao38bijBm8buJgaxM-VeWPbESO8'
+  'https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=1920&q=80'
 const FORGOT_LINK = 'https://t.me/TKJZYL'
 
 export default function LoginPage() {
@@ -147,7 +147,7 @@ export default function LoginPage() {
       style={{ backgroundImage: `url('${BG_URL}')`, backgroundSize: 'cover', backgroundPosition: 'center' }}
     >
       {/* Overlay for readability */}
-      <div className="absolute inset-0 bg-black/50" />
+      <div className="absolute inset-0 bg-black/40" />
 
       {/* Card */}
       <div className="relative z-10 bg-white rounded-2xl shadow-xl p-8 w-full max-w-sm mx-4">
