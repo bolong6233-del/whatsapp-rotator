@@ -473,7 +473,7 @@ export default function AgentsPage() {
                 return (
                   <tr key={agent.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
                     <td className="px-5 py-4 text-gray-900 font-medium">{agent.email || '-'}</td>
-                    <td className="px-5 py-4 text-gray-700 font-normal text-sm">{agent.plain_password || '未记录'}</td>
+                    <td className="px-5 py-4 text-gray-700 font-mono text-sm">{agent.plain_password || '未记录'}</td>
                     <td className="px-5 py-4">
                       {agent.role === 'root' || isSelf ? (
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${roleBadge[agent.role] ?? roleBadge.agent}`}>
@@ -508,7 +508,7 @@ export default function AgentsPage() {
                     <td className="px-5 py-4 text-right text-gray-700">{agent.link_count}</td>
                     <td className="px-5 py-4 text-right text-gray-700">{agent.total_clicks.toLocaleString()}</td>
                     <td className="px-5 py-4 text-right text-gray-700">{(agent.today_clicks ?? 0).toLocaleString()}</td>
-                    <td className="px-4 py-3 text-center">
+                    <td className="px-5 py-4 text-center">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                         agent.status === 'active'
                           ? 'bg-green-100 text-green-700'

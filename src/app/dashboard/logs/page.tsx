@@ -690,7 +690,7 @@ export default function LogsPage() {
                     <td className="py-4 px-5 whitespace-nowrap text-xs text-gray-800 font-medium">
                       {log.city || <span className="text-gray-400">—</span>}
                     </td>
-                    <td className="py-4 px-5 text-gray-800 font-normal text-xs whitespace-nowrap">
+                    <td className="py-4 px-5 text-gray-800 font-mono text-xs whitespace-nowrap">
                       {log.ip_address || '-'}
                     </td>
                     <td className="py-4 px-5">
