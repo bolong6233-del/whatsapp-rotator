@@ -695,6 +695,13 @@ export default function NumbersPage() {
         <h1 className="text-2xl font-bold text-gray-900">📱 号码管理</h1>
         <div className="flex gap-2">
           <button
+            onClick={() => mutate()}
+            aria-label="刷新号码列表"
+            className="px-4 py-2 text-sm bg-white border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            🔄 刷新
+          </button>
+          <button
             onClick={handleExport}
             className="px-4 py-2 text-sm bg-white border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors"
           >
