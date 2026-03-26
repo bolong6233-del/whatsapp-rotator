@@ -89,7 +89,7 @@ export async function POST(
   }
 
   const body = await request.json()
-  const { phone_number, label } = body
+  const { phone_number, label, platform, is_active } = body
 
   const { data: existing } = await supabase
     .from('whatsapp_numbers')
@@ -103,6 +103,8 @@ export async function POST(
       phone_number,
       label: label || null,
       sort_order: existing?.length || 0,
+      platform: platform || 'whatsapp',
+      is_active: is_active ?? true,
     })
     .select()
     .single()
