@@ -1,9 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase-client'
 
+const BG_URL =
+  'https://lh5.googleusercontent.com/proxy/tqRHDyQaoI24mM1WN6BAphqGkeTTp-eJzXOPq4rOaJnvqX5EP7mEWSMSqFRNGQ2mYB5MMbhwIyeAYbJb1br2RcKgdSpwLE50yLaVHFETao38bijBm8buJgaxM-VeWPbESO8'
+const FORGOT_LINK = 'https://t.me/TKJZYL'
+
 export default function LoginPage() {
+  const searchParams = useSearchParams()
+  const isTimeout = searchParams.get('timeout') === '1'
+
   const [mode, setMode] = useState<'login' | 'register'>('login')
 
   // Login state
@@ -12,6 +20,13 @@ export default function LoginPage() {
   const [loginLoading, setLoginLoading] = useState(false)
   const [loginError, setLoginError] = useState('')
 
+  // Captcha state
+  const [captchaSvg, setCaptchaSvg] = useState<string>('')
+  const [captchaToken, setCaptchaToken] = useState<string>('')
+  const [captchaInput, setCaptchaInput] = useState('')
+  const [captchaTTL, setCaptchaTTL] = useState(60)
+  const [captchaLoading, setCaptchaLoading] = useState(false)
+
   // Register state
   const [regUsername, setRegUsername] = useState('')
   const [regPassword, setRegPassword] = useState('')
@@ -19,22 +34,68 @@ export default function LoginPage() {
   const [regError, setRegError] = useState('')
   const [regSuccess, setRegSuccess] = useState(false)
 
+  const fetchCaptcha = useCallback(async () => {
+    setCaptchaLoading(true)
+    try {
+      const res = await fetch('/api/captcha')
+      const data = await res.json()
+      setCaptchaSvg(data.svg ?? '')
+      setCaptchaToken(data.token ?? '')
+      setCaptchaTTL(data.expiresIn ?? 60)
+      setCaptchaInput('')
+    } catch {
+      // ignore network errors silently; user can click to retry
+    } finally {
+      setCaptchaLoading(false)
+    }
+  }, [])
+
+  // Fetch captcha on mount
+  useEffect(() => {
+    fetchCaptcha()
+  }, [fetchCaptcha])
+
+  // Countdown timer
+  useEffect(() => {
+    if (!captchaSvg) return
+    const timer = setInterval(() => setCaptchaTTL((t) => Math.max(t - 1, 0)), 1000)
+    return () => clearInterval(timer)
+  }, [captchaSvg])
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoginError('')
+
+    if (captchaTTL === 0) {
+      setLoginError('验证码已过期，请点击图片刷新')
+      return
+    }
+
     setLoginLoading(true)
 
-    // If input has no "@", append "@user.local" automatically
-    const emailToUse = loginInput.includes('@') ? loginInput : `${loginInput}@user.local`
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        emailOrUsername: loginInput.trim(),
+        password: loginPassword,
+        captchaCode: captchaInput.trim(),
+        captchaToken,
+      }),
+    })
 
-    const { error } = await supabase.auth.signInWithPassword({ email: emailToUse, password: loginPassword })
-
-    if (error) {
-      setLoginError('用户名/邮箱或密码错误，请重试')
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      setLoginError(data.error || '登录失败，请稍后重试')
       setLoginLoading(false)
-    } else {
-      window.location.href = '/dashboard'
+      // Refresh captcha on error
+      fetchCaptcha()
+      return
     }
+
+    const { access_token, refresh_token } = await res.json()
+    await supabase.auth.setSession({ access_token, refresh_token })
+    window.location.href = '/dashboard'
   }
 
   const handleRegister = async (e: React.FormEvent) => {
@@ -81,9 +142,15 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-green-50 to-white">
+    <div
+      className="min-h-screen relative flex flex-col items-center justify-center"
+      style={{ backgroundImage: `url('${BG_URL}')`, backgroundSize: 'cover', backgroundPosition: 'center' }}
+    >
+      {/* Overlay for readability */}
+      <div className="absolute inset-0 bg-black/50" />
+
       {/* Card */}
-      <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-sm mx-4">
+      <div className="relative z-10 bg-white rounded-2xl shadow-xl p-8 w-full max-w-sm mx-4">
         {/* Logo / Title */}
         <div className="text-center mb-7">
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-green-600 mb-3">
@@ -124,6 +191,12 @@ export default function LoginPage() {
         {/* ── LOGIN FORM ── */}
         {mode === 'login' && (
           <>
+            {isTimeout && (
+              <div className="bg-yellow-50 border border-yellow-200 text-yellow-700 px-4 py-3 rounded-lg mb-5 text-sm">
+                长时间未操作，会话已过期，请重新登录
+              </div>
+            )}
+
             {loginError && (
               <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg mb-5 text-sm">
                 {loginError}
@@ -165,6 +238,34 @@ export default function LoginPage() {
                 />
               </div>
 
+              {/* Captcha field */}
+              <div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={captchaInput}
+                    onChange={(e) => setCaptchaInput(e.target.value)}
+                    required
+                    placeholder="请输入验证码"
+                    maxLength={6}
+                    className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none transition text-sm bg-gray-50"
+                  />
+                  <button
+                    type="button"
+                    onClick={fetchCaptcha}
+                    disabled={captchaLoading}
+                    title={captchaTTL > 0 ? `剩余 ${captchaTTL}s，点击刷新` : '验证码已过期，点击刷新'}
+                    className="flex-shrink-0 w-[120px] h-[44px] border border-gray-300 rounded-lg overflow-hidden bg-gray-50 hover:border-green-500 transition-colors cursor-pointer disabled:opacity-60"
+                    dangerouslySetInnerHTML={{ __html: captchaSvg || '<span style="font-size:12px;color:#999;padding:4px">加载中...</span>' }}
+                  />
+                </div>
+                {captchaTTL === 0 ? (
+                  <p className="text-xs text-red-500 mt-1">验证码已过期，请点击图片刷新</p>
+                ) : (
+                  <p className="text-xs text-gray-400 mt-1">点击图片可刷新验证码（{captchaTTL}s 后过期）</p>
+                )}
+              </div>
+
               {/* Login button */}
               <button
                 type="submit"
@@ -174,6 +275,18 @@ export default function LoginPage() {
                 {loginLoading ? '登录中...' : '登 录'}
               </button>
             </form>
+
+            {/* Forgot password */}
+            <div className="mt-3 text-right">
+              <a
+                href={FORGOT_LINK}
+                target="_blank"
+                rel="noreferrer"
+                className="text-sm text-green-600 hover:text-green-700 hover:underline"
+              >
+                忘记密码？
+              </a>
+            </div>
           </>
         )}
 
@@ -244,11 +357,12 @@ export default function LoginPage() {
       </div>
 
       {/* Footer */}
-      <div className="py-4 text-center mt-4">
-        <p className="text-gray-400 text-xs">
+      <div className="relative z-10 py-4 text-center mt-4">
+        <p className="text-white/70 text-xs">
           Copyright © 2024-2026 UPAPP All Rights Reserved.
         </p>
       </div>
     </div>
   )
 }
+

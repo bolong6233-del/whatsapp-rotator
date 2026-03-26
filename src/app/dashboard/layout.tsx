@@ -8,6 +8,7 @@ import Navbar from '@/components/layout/Navbar'
 import AlertBanner from '@/components/layout/AlertBanner'
 import TopProgressBar from '@/components/ui/TopProgressBar'
 import ToastContainer from '@/components/ui/ToastContainer'
+import IdleLogout from '@/components/IdleLogout'
 import { ProgressProvider } from '@/context/ProgressContext'
 import { ToastProvider } from '@/context/ToastContext'
 import type { User } from '@supabase/supabase-js'
@@ -59,6 +60,7 @@ export default function DashboardLayout({
       <ToastProvider>
         <TopProgressBar />
         <ToastContainer />
+        <IdleLogout />
         <div className="min-h-screen bg-gray-50 flex">
           <Sidebar role={role} />
           <div className="flex-1 flex flex-col min-w-0">
