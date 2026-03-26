@@ -333,7 +333,7 @@ setTimeout(function(){window.location.href=${safeRedirectUrl};},${TIKTOK_PIXEL_R
 </head>
 <body></body>
 </html>`
-        await redis.set(
+    await redis.set(
       cacheKey,
       { redirectUrl, html },
       { ex: CACHE_TTL_SECONDS }
