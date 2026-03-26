@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import './globals.css'
 import TikTokPixel from '@/components/TikTokPixel'
 import { Analytics } from '@vercel/analytics/next'
+import { SpeedInsights } from '@vercel/speed-insights/next'
 
 export const metadata: Metadata = {
   title: '短链分流系统',
@@ -19,6 +20,7 @@ export default function RootLayout({
         <TikTokPixel />
         {children}
         <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   )
