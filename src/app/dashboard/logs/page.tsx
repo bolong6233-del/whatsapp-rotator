@@ -501,6 +501,17 @@ export default function LogsPage() {
     setPage(1)
   }
 
+  const handleRefresh = async () => {
+    start()
+    try {
+      await mutateLogs()
+    } catch {
+      showToast('刷新失败', 'error')
+    } finally {
+      done()
+    }
+  }
+
   const mobileRatio =
     stats && stats.mobileCount + stats.desktopCount > 0
       ? Math.round((stats.mobileCount / (stats.mobileCount + stats.desktopCount)) * 100)
@@ -518,7 +529,7 @@ export default function LogsPage() {
         <div className="flex items-center gap-3">
           <span className="text-sm text-gray-500">共 {totalCount} 条记录</span>
           <button
-            onClick={async () => { start(); try { await mutateLogs() } catch { showToast('刷新失败', 'error') } finally { done() } }}
+            onClick={handleRefresh}
             className="px-3 py-1.5 text-sm bg-white border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors"
           >
             🔄 刷新

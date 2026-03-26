@@ -152,6 +152,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
       }
       await deleteQuery
       showToast('短链已删除', 'success')
+      done()
       router.push('/dashboard')
     } catch {
       showToast('删除失败', 'error')

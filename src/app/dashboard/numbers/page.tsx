@@ -699,6 +699,17 @@ export default function NumbersPage() {
     done()
   }
 
+  const handleRefresh = async () => {
+    start()
+    try {
+      await mutate()
+    } catch {
+      showToast('刷新失败', 'error')
+    } finally {
+      done()
+    }
+  }
+
   const handleOpenEdit = (num: NumberWithLink) => {
     setEditId(num.id)
     setEditPhone(num.phone_number)
@@ -785,7 +796,7 @@ export default function NumbersPage() {
         <h1 className="text-2xl font-bold text-gray-900">📱 号码管理</h1>
         <div className="flex gap-2">
           <button
-            onClick={async () => { start(); try { await mutate() } finally { done() } }}
+            onClick={handleRefresh}
             aria-label="刷新号码列表"
             className="px-4 py-2 text-sm bg-white border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors"
           >

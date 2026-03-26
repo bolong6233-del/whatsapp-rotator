@@ -6,6 +6,7 @@ import React, {
   useRef,
   useState,
   useCallback,
+  useEffect,
 } from 'react'
 
 interface ProgressContextValue {
@@ -37,10 +38,17 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
   // Timer used to hide the bar after completion
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const clearTimers = () => {
+  const clearTimers = useCallback(() => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
     if (hideTimerRef.current) { clearTimeout(hideTimerRef.current); hideTimerRef.current = null }
-  }
+  }, [])
+
+  // Clean up on unmount
+  useEffect(() => {
+    return () => {
+      clearTimers()
+    }
+  }, [clearTimers])
 
   const start = useCallback(() => {
     countRef.current += 1
@@ -55,7 +63,7 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
       current = Math.min(current + increment, 80)
       setProgress(Math.round(current))
     }, 200)
-  }, [])
+  }, [clearTimers])
 
   const done = useCallback(() => {
     countRef.current = Math.max(0, countRef.current - 1)
@@ -68,7 +76,7 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
       setActive(false)
       setProgress(0)
     }, 400)
-  }, [])
+  }, [clearTimers])
 
   return (
     <ProgressContext.Provider value={{ start, done, active, progress }}>
