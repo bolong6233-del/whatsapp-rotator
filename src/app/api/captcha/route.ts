@@ -1,3 +1,4 @@
+import { createHmac } from 'crypto'
 import path from 'path'
 import svgCaptcha from 'svg-captcha'
 
@@ -17,7 +18,7 @@ if (!process.env.CAPTCHA_SECRET && process.env.NODE_ENV === 'production') {
 const EXPIRES_SECONDS = 60
 
 function sign(code: string, exp: number): string {
-  const hmac = crypto.createHmac('sha256', CAPTCHA_SECRET)
+  const hmac = createHmac('sha256', CAPTCHA_SECRET)
   hmac.update(`${code}:${exp}`)
   return hmac.digest('base64url')
 }
