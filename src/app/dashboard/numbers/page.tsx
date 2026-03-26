@@ -5,6 +5,8 @@ import useSWR from 'swr'
 import { supabase } from '@/lib/supabase-client'
 import type { WhatsAppNumber, ShortLink, Platform } from '@/types'
 import Pagination from '@/components/ui/Pagination'
+import { useTopProgress } from '@/context/ProgressContext'
+import { useToast } from '@/context/ToastContext'
 
 type NumberWithLink = WhatsAppNumber & { short_links: Pick<ShortLink, 'id' | 'slug' | 'title'> }
 
@@ -303,6 +305,9 @@ function WorkOrderSelect({
 }
 
 export default function NumbersPage() {
+  const { start, done } = useTopProgress()
+  const { showToast } = useToast()
+
   const [filterPlatform, setFilterPlatform] = useState<Platform | 'all'>('all')
   const [filterLink, setFilterLink] = useState<string>('all')
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all')
@@ -478,56 +483,97 @@ export default function NumbersPage() {
   }
 
   const handleToggleActive = async (numberId: string, currentStatus: boolean) => {
-    await supabase.from('whatsapp_numbers').update({ is_active: !currentStatus }).eq('id', numberId)
-    mutate()
+    start()
+    try {
+      await supabase.from('whatsapp_numbers').update({ is_active: !currentStatus }).eq('id', numberId)
+      mutate()
+    } catch {
+      showToast('状态切换失败', 'error')
+    } finally {
+      done()
+    }
   }
 
   const handleDelete = async (numberId: string) => {
     if (!confirm('确定要删除此号码吗？')) return
-    const { error } = await supabase.from('whatsapp_numbers').delete().eq('id', numberId)
-    if (error) setError('删除失败：' + error.message)
-    else mutate()
+    start()
+    try {
+      const { error } = await supabase.from('whatsapp_numbers').delete().eq('id', numberId)
+      if (error) {
+        setError('删除失败：' + error.message)
+        showToast('删除失败：' + error.message, 'error')
+      } else {
+        showToast('号码已删除', 'success')
+        mutate()
+      }
+    } finally {
+      done()
+    }
   }
 
   const handleBulkToggle = async (activate: boolean) => {
     if (selected.size === 0) return
-    await supabase
-      .from('whatsapp_numbers')
-      .update({ is_active: activate })
-      .in('id', Array.from(selected))
-    setSelected(new Set())
-    mutate()
+    start()
+    try {
+      await supabase
+        .from('whatsapp_numbers')
+        .update({ is_active: activate })
+        .in('id', Array.from(selected))
+      setSelected(new Set())
+      showToast(`已批量${activate ? '启用' : '停用'} ${selected.size} 个号码`, 'success')
+      mutate()
+    } catch {
+      showToast('批量操作失败', 'error')
+    } finally {
+      done()
+    }
   }
 
   const handleBulkDelete = async () => {
     if (selected.size === 0) return
     if (!confirm(`确定要删除选中的 ${selected.size} 个号码吗？`)) return
-    await supabase.from('whatsapp_numbers').delete().in('id', Array.from(selected))
-    setSelected(new Set())
-    mutate()
+    start()
+    try {
+      await supabase.from('whatsapp_numbers').delete().in('id', Array.from(selected))
+      setSelected(new Set())
+      showToast(`已删除 ${selected.size} 个号码`, 'success')
+      mutate()
+    } catch {
+      showToast('批量删除失败', 'error')
+    } finally {
+      done()
+    }
   }
 
   const handleExport = () => {
-    const rows = [['号码ID', '链接URL', '号码', '号码类型', '访问次数', '状态', '备注']]
-    numbers.forEach((n) => {
-      rows.push([
-        n.id,
-        n.short_links?.slug || '',
-        n.phone_number,
-        PLATFORM_LABELS[getPlatform(n.platform)],
-        String(n.click_count),
-        n.is_active ? '启用' : '停用',
-        n.label || '',
-      ])
-    })
-    const csv = rows.map((r) => r.map((c) => `"${c}"`).join(',')).join('\n')
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'numbers.csv'
-    a.click()
-    URL.revokeObjectURL(url)
+    start()
+    try {
+      const rows = [['号码ID', '链接URL', '号码', '号码类型', '访问次数', '状态', '备注']]
+      numbers.forEach((n) => {
+        rows.push([
+          n.id,
+          n.short_links?.slug || '',
+          n.phone_number,
+          PLATFORM_LABELS[getPlatform(n.platform)],
+          String(n.click_count),
+          n.is_active ? '启用' : '停用',
+          n.label || '',
+        ])
+      })
+      const csv = rows.map((r) => r.map((c) => `"${c}"`).join(',')).join('\n')
+      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'numbers.csv'
+      a.click()
+      URL.revokeObjectURL(url)
+      showToast('导出成功', 'success')
+    } catch {
+      showToast('导出失败', 'error')
+    } finally {
+      done()
+    }
   }
 
   const handleAddNumbers = async () => {
@@ -546,6 +592,7 @@ export default function NumbersPage() {
     }
     setAdding(true)
     setError('')
+    start()
 
     // ── Call API route per-number ──────────────────────────────────────────
     const errors: string[] = []
@@ -577,11 +624,14 @@ export default function NumbersPage() {
     }
 
     setAdding(false)
+    done()
     if (errors.length > 0) {
       setError(`部分号码添加失败：${errors.slice(0, 3).join('；')}${errors.length > 3 ? '…' : ''}`)
+      showToast(`${added} 个成功，${errors.length} 个失败`, 'error')
     } else {
       setSuccess(`成功添加 ${added} 个号码`)
       setTimeout(() => setSuccess(''), 3000)
+      showToast(`成功添加 ${added} 个号码`, 'success')
       setModalLinkId('')
       setModalPlatform('whatsapp')
       setModalLabel('')
@@ -604,6 +654,7 @@ export default function NumbersPage() {
     }
     setBulkDeleting(true)
     setError('')
+    start()
 
     const { data, error: fetchError } = await supabase
       .from('whatsapp_numbers')
@@ -613,7 +664,9 @@ export default function NumbersPage() {
 
     if (fetchError) {
       setError('查询失败：' + fetchError.message)
+      showToast('查询失败：' + fetchError.message, 'error')
       setBulkDeleting(false)
+      done()
       return
     }
 
@@ -621,6 +674,7 @@ export default function NumbersPage() {
     if (ids.length === 0) {
       setError('未找到匹配的号码')
       setBulkDeleting(false)
+      done()
       return
     }
 
@@ -631,15 +685,29 @@ export default function NumbersPage() {
 
     if (deleteError) {
       setError('删除失败：' + deleteError.message)
+      showToast('删除失败：' + deleteError.message, 'error')
     } else {
       setSuccess(`成功删除 ${ids.length} 个号码`)
       setTimeout(() => setSuccess(''), 3000)
+      showToast(`成功删除 ${ids.length} 个号码`, 'success')
       setShowBulkDeleteModal(false)
       setBulkDeleteLinkId('')
       setBulkDeleteNumbers('')
       mutate()
     }
     setBulkDeleting(false)
+    done()
+  }
+
+  const handleRefresh = async () => {
+    start()
+    try {
+      await mutate()
+    } catch {
+      showToast('刷新失败', 'error')
+    } finally {
+      done()
+    }
   }
 
   const handleOpenEdit = (num: NumberWithLink) => {
@@ -659,6 +727,7 @@ export default function NumbersPage() {
     }
     setEditSaving(true)
     setError('')
+    start()
 
     const { error: updateError } = await supabase
       .from('whatsapp_numbers')
@@ -672,19 +741,51 @@ export default function NumbersPage() {
 
     if (updateError) {
       setError('修改失败：' + updateError.message)
+      showToast('修改失败：' + updateError.message, 'error')
     } else {
       setSuccess('修改成功')
       setTimeout(() => setSuccess(''), 3000)
+      showToast('修改成功', 'success')
       setShowEditModal(false)
       mutate()
     }
     setEditSaving(false)
+    done()
   }
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-gray-500">加载中...</div>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="h-8 w-40 bg-gray-200 rounded animate-pulse" />
+          <div className="flex gap-2">
+            <div className="h-9 w-20 bg-gray-200 rounded-lg animate-pulse" />
+            <div className="h-9 w-20 bg-gray-200 rounded-lg animate-pulse" />
+            <div className="h-9 w-20 bg-gray-200 rounded-lg animate-pulse" />
+          </div>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50">
+              <tr className="text-left text-gray-500 border-b border-gray-200">
+                {['', '链接', '工单', '号码', '号码类型', '访问次数', '状态', '操作'].map((h) => (
+                  <th key={h} className="py-3 px-4 font-medium">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <tr key={i}>
+                  {Array.from({ length: 8 }).map((__, j) => (
+                    <td key={j} className="py-3 px-4">
+                      <div className="h-4 bg-gray-100 rounded animate-pulse" style={{ width: j === 0 ? '1rem' : `${60 + (j * 10) % 40}%` }} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     )
   }
@@ -695,7 +796,7 @@ export default function NumbersPage() {
         <h1 className="text-2xl font-bold text-gray-900">📱 号码管理</h1>
         <div className="flex gap-2">
           <button
-            onClick={() => mutate()}
+            onClick={handleRefresh}
             aria-label="刷新号码列表"
             className="px-4 py-2 text-sm bg-white border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors"
           >

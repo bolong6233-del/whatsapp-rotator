@@ -19,6 +19,8 @@ import { supabase } from '@/lib/supabase-client'
 import { formatDate } from '@/lib/utils'
 import type { ClickLog } from '@/types'
 import Pagination from '@/components/ui/Pagination'
+import { useTopProgress } from '@/context/ProgressContext'
+import { useToast } from '@/context/ToastContext'
 
 interface ShortLinkOption {
   id: string
@@ -330,6 +332,8 @@ function CountrySelect({
 }
 
 export default function LogsPage() {
+  const { start, done } = useTopProgress()
+  const { showToast } = useToast()
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [filterSlug, setFilterSlug] = useState('')
@@ -497,6 +501,17 @@ export default function LogsPage() {
     setPage(1)
   }
 
+  const handleRefresh = async () => {
+    start()
+    try {
+      await mutateLogs()
+    } catch {
+      showToast('刷新失败', 'error')
+    } finally {
+      done()
+    }
+  }
+
   const mobileRatio =
     stats && stats.mobileCount + stats.desktopCount > 0
       ? Math.round((stats.mobileCount / (stats.mobileCount + stats.desktopCount)) * 100)
@@ -511,7 +526,15 @@ export default function LogsPage() {
       {/* Page header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">访问记录</h1>
-        <span className="text-sm text-gray-500">共 {totalCount} 条记录</span>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-gray-500">共 {totalCount} 条记录</span>
+          <button
+            onClick={handleRefresh}
+            className="px-3 py-1.5 text-sm bg-white border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            🔄 刷新
+          </button>
+        </div>
       </div>
 
       {/* Stats cards */}
@@ -600,8 +623,27 @@ export default function LogsPage() {
       {/* Logs table */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 ring-1 ring-black/[0.03] overflow-hidden">
         {loading ? (
-          <div className="flex items-center justify-center h-48">
-            <div className="text-gray-400 text-sm">加载中...</div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-gray-500 bg-gray-50/70 border-b border-gray-100">
+                  {['访问时间','短链','国家','城市','IP 地址','设备','来源'].map((h) => (
+                    <th key={h} className="py-3 px-4 font-medium text-xs uppercase tracking-wide">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <tr key={i} className="border-b border-gray-50">
+                    {Array.from({ length: 7 }).map((__, j) => (
+                      <td key={j} className="py-3 px-4">
+                        <div className="h-4 bg-gray-100 rounded animate-pulse" style={{ width: `${50 + (j * 13) % 40}%` }} />
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         ) : logs.length === 0 ? (
           <div className="flex items-center justify-center h-48">

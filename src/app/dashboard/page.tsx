@@ -6,6 +6,8 @@ import { generateSlug, getBaseUrl, TIKTOK_EVENT_OPTIONS, TikTokEventType } from 
 import type { ShortLink } from '@/types'
 import Link from 'next/link'
 import Pagination from '@/components/ui/Pagination'
+import { useTopProgress } from '@/context/ProgressContext'
+import { useToast } from '@/context/ToastContext'
 
 interface ShortLinkOption {
   id: string
@@ -110,6 +112,9 @@ function ShortLinkSelect({
 }
 
 export default function DashboardPage() {
+  const { start, done } = useTopProgress()
+  const { showToast } = useToast()
+
   const [links, setLinks] = useState<ShortLink[]>([])
   const [totalCount, setTotalCount] = useState(0)
   const [allLinks, setAllLinks] = useState<ShortLinkOption[]>([])
@@ -169,6 +174,7 @@ export default function DashboardPage() {
   const fetchLinks = useCallback(async () => {
     if (!currentUserId) return
     setLoading(true)
+    start()
     try {
       let query = supabase
         .from('short_links')
@@ -189,10 +195,12 @@ export default function DashboardPage() {
       setTotalCount(count || 0)
     } catch (e) {
       console.error(e)
+      showToast('加载短链失败', 'error')
     } finally {
       setLoading(false)
+      done()
     }
-  }, [page, pageSize, searchSlug, currentUserId])
+  }, [page, pageSize, searchSlug, currentUserId, start, done, showToast])
 
   useEffect(() => {
     fetchLinks()
@@ -218,9 +226,17 @@ export default function DashboardPage() {
   const handleDelete = async () => {
     if (selected.size === 0) return
     if (!confirm(`确定要删除选中的 ${selected.size} 个短链吗？此操作不可撤销。`)) return
-    await supabase.from('short_links').delete().in('id', Array.from(selected))
-    setSelected(new Set())
-    fetchLinks()
+    start()
+    try {
+      await supabase.from('short_links').delete().in('id', Array.from(selected))
+      setSelected(new Set())
+      showToast(`已删除 ${selected.size} 个短链`, 'success')
+      fetchLinks()
+    } catch {
+      showToast('删除失败', 'error')
+    } finally {
+      done()
+    }
   }
 
   const handleCopyLink = (slug: string) => {
@@ -300,6 +316,7 @@ export default function DashboardPage() {
       setNewAutoReplyMessages('')
       setSuccess('短链创建成功')
       setTimeout(() => setSuccess(''), 3000)
+      showToast('短链创建成功', 'success')
       fetchLinks()
     } catch {
       setCreateError('操作失败，请重试')
@@ -380,7 +397,28 @@ export default function DashboardPage() {
       {/* Table */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         {loading ? (
-          <div className="py-16 text-center text-gray-400">加载中...</div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr className="text-left text-gray-500 border-b border-gray-200">
+                  {['', '序号', '链接 URL', '链接描述', '回复语', '状态', '操作'].map((h) => (
+                    <th key={h} className="py-3 px-4 font-medium">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={i}>
+                    {Array.from({ length: 7 }).map((__, j) => (
+                      <td key={j} className="py-3 px-4">
+                        <div className="h-4 bg-gray-100 rounded animate-pulse" style={{ width: j === 0 ? '1rem' : `${55 + (j * 13) % 40}%` }} />
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -459,8 +497,16 @@ export default function DashboardPage() {
                           <button
                             onClick={async () => {
                               if (!confirm('确定要删除此短链吗？')) return
-                              await supabase.from('short_links').delete().eq('id', link.id)
-                              fetchLinks()
+                              start()
+                              try {
+                                await supabase.from('short_links').delete().eq('id', link.id)
+                                showToast('短链已删除', 'success')
+                                fetchLinks()
+                              } catch {
+                                showToast('删除失败', 'error')
+                              } finally {
+                                done()
+                              }
                             }}
                             className="text-xs text-red-500 hover:text-red-700 transition-colors inline-flex items-center gap-0.5"
                           >

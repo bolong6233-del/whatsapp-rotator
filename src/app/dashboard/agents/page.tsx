@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import useSWR from 'swr'
 import { supabase } from '@/lib/supabase-client'
+import { useTopProgress } from '@/context/ProgressContext'
+import { useToast } from '@/context/ToastContext'
 
 const ROOT_ADMIN_EMAIL = 'bolong6233@gmail.com'
 
@@ -62,6 +64,8 @@ function formatExpiry(dateStr: string | null): string {
 
 export default function AgentsPage() {
   const router = useRouter()
+  const { start, done } = useTopProgress()
+  const { showToast } = useToast()
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [currentEmail, setCurrentEmail] = useState<string | null>(null)
   const [currentUserCanInject, setCurrentUserCanInject] = useState(false)
@@ -135,28 +139,35 @@ export default function AgentsPage() {
     setCreating(true)
     setError('')
     setSuccess('')
+    start()
 
     // Auto-append @user.local if no @ symbol
     const emailToSend = newEmail.includes('@') ? newEmail : `${newEmail}@user.local`
 
-    const res = await fetch('/api/admin/agents', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: emailToSend, password: newPassword, role: newRole }),
-    })
-    const data = await res.json()
+    try {
+      const res = await fetch('/api/admin/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailToSend, password: newPassword, role: newRole }),
+      })
+      const data = await res.json()
 
-    if (res.ok) {
-      setSuccess('账号创建成功')
-      setNewEmail('')
-      setNewPassword('')
-      setNewRole('agent')
-      setShowCreate(false)
-      mutate()
-    } else {
-      setError(data.error || '创建失败')
+      if (res.ok) {
+        setSuccess('账号创建成功')
+        showToast('账号创建成功', 'success')
+        setNewEmail('')
+        setNewPassword('')
+        setNewRole('agent')
+        setShowCreate(false)
+        mutate()
+      } else {
+        setError(data.error || '创建失败')
+        showToast(data.error || '创建失败', 'error')
+      }
+    } finally {
+      setCreating(false)
+      done()
     }
-    setCreating(false)
   }
 
   async function handleToggleStatus(agent: AgentWithStats) {
@@ -164,18 +175,25 @@ export default function AgentsPage() {
     const label = newStatus === 'disabled' ? '禁用' : '启用'
     if (!confirm(`确定要${label}账号 ${agent.email} 吗？`)) return
 
-    const res = await fetch(`/api/admin/agents/${agent.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: newStatus }),
-    })
+    start()
+    try {
+      const res = await fetch(`/api/admin/agents/${agent.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      })
 
-    if (res.ok) {
-      setSuccess(`账号已${label}`)
-      mutate()
-    } else {
-      const data = await res.json()
-      setError(data.error || '操作失败')
+      if (res.ok) {
+        setSuccess(`账号已${label}`)
+        showToast(`账号已${label}`, 'success')
+        mutate()
+      } else {
+        const data = await res.json()
+        setError(data.error || '操作失败')
+        showToast(data.error || '操作失败', 'error')
+      }
+    } finally {
+      done()
     }
   }
 
@@ -191,20 +209,27 @@ export default function AgentsPage() {
     if (!deleteAgent) return
     setDeleting(true)
     setError('')
+    start()
 
-    const res = await fetch(`/api/admin/agents/${deleteAgent.id}`, {
-      method: 'DELETE',
-    })
+    try {
+      const res = await fetch(`/api/admin/agents/${deleteAgent.id}`, {
+        method: 'DELETE',
+      })
 
-    if (res.ok) {
-      setSuccess(`账号 ${deleteAgent.email} 已永久删除`)
-      setDeleteAgent(null)
-      mutate()
-    } else {
-      const data = await res.json()
-      setError(data.error || '删除失败')
+      if (res.ok) {
+        setSuccess(`账号 ${deleteAgent.email} 已永久删除`)
+        showToast(`账号 ${deleteAgent.email} 已永久删除`, 'success')
+        setDeleteAgent(null)
+        mutate()
+      } else {
+        const data = await res.json()
+        setError(data.error || '删除失败')
+        showToast(data.error || '删除失败', 'error')
+      }
+    } finally {
+      setDeleting(false)
+      done()
     }
-    setDeleting(false)
   }
   async function handleToggleInjectPermission(agent: AgentWithStats) {
     const newValue = !agent.can_inject_numbers
@@ -254,22 +279,29 @@ export default function AgentsPage() {
     if (!pwAgent) return
     setSavingPw(true)
     setError('')
+    start()
 
-    const res = await fetch(`/api/admin/agents/${pwAgent.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: newPw }),
-    })
+    try {
+      const res = await fetch(`/api/admin/agents/${pwAgent.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: newPw }),
+      })
 
-    if (res.ok) {
-      setSuccess('密码修改成功')
-      setPwAgent(null)
-      setNewPw('')
-    } else {
-      const data = await res.json()
-      setError(data.error || '修改失败')
+      if (res.ok) {
+        setSuccess('密码修改成功')
+        showToast('密码修改成功', 'success')
+        setPwAgent(null)
+        setNewPw('')
+      } else {
+        const data = await res.json()
+        setError(data.error || '修改失败')
+        showToast(data.error || '修改失败', 'error')
+      }
+    } finally {
+      setSavingPw(false)
+      done()
     }
-    setSavingPw(false)
   }
 
   function handleOpenExtendModal(agent: AgentWithStats) {
@@ -286,24 +318,32 @@ export default function AgentsPage() {
     if (!extendAgent) return
     setExtending(true)
     setError('')
+    start()
 
-    const res = await fetch('/api/admin/agents/extend-time', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: extendAgent.id, period: extendPeriod }),
-    })
+    try {
+      const res = await fetch('/api/admin/agents/extend-time', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: extendAgent.id, period: extendPeriod }),
+      })
 
-    if (res.ok) {
-      const data = await res.json()
-      const label = timeOptions.find((o) => o.value === extendPeriod)?.label ?? extendPeriod
-      setSuccess(`已为 ${extendAgent.email} 增加 ${label}，到期时间：${formatExpiry(data.expires_at)}`)
-      setExtendAgent(null)
-      mutate()
-    } else {
-      const data = await res.json()
-      setError(data.error || '操作失败')
+      if (res.ok) {
+        const data = await res.json()
+        const label = timeOptions.find((o) => o.value === extendPeriod)?.label ?? extendPeriod
+        const msg = `已为 ${extendAgent.email} 增加 ${label}，到期时间：${formatExpiry(data.expires_at)}`
+        setSuccess(msg)
+        showToast(msg, 'success')
+        setExtendAgent(null)
+        mutate()
+      } else {
+        const data = await res.json()
+        setError(data.error || '操作失败')
+        showToast(data.error || '操作失败', 'error')
+      }
+    } finally {
+      setExtending(false)
+      done()
     }
-    setExtending(false)
   }
 
   return (
@@ -384,7 +424,26 @@ export default function AgentsPage() {
       {/* Agents Table */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         {loading ? (
-          <div className="p-8 text-center text-gray-400">加载中...</div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50">
+                {['邮箱', '密码', '角色', '注册时间', '到期时间', '短链数', '总点击', '今日点击', '状态', '操作'].map((h) => (
+                  <th key={h} className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: 4 }).map((_, i) => (
+                <tr key={i} className="border-b border-gray-50">
+                  {Array.from({ length: 10 }).map((__, j) => (
+                    <td key={j} className="px-4 py-3">
+                      <div className="h-4 bg-gray-100 rounded animate-pulse" style={{ width: `${50 + (j * 17) % 40}%` }} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         ) : agents.length === 0 ? (
           <div className="p-8 text-center text-gray-400">暂无账号</div>
         ) : (

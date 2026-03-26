@@ -6,6 +6,10 @@ import { supabase } from '@/lib/supabase-client'
 import Sidebar from '@/components/layout/Sidebar'
 import Navbar from '@/components/layout/Navbar'
 import AlertBanner from '@/components/layout/AlertBanner'
+import TopProgressBar from '@/components/ui/TopProgressBar'
+import ToastContainer from '@/components/ui/ToastContainer'
+import { ProgressProvider } from '@/context/ProgressContext'
+import { ToastProvider } from '@/context/ToastContext'
 import type { User } from '@supabase/supabase-js'
 
 const ROOT_ADMIN_EMAIL = 'bolong6233@gmail.com'
@@ -51,17 +55,23 @@ export default function DashboardLayout({
   if (!ready || !user) return null
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
-      <Sidebar role={role} />
-      <div className="flex-1 flex flex-col min-w-0">
-        <AlertBanner role={role} expiresAt={expiresAt} email={user.email ?? null} />
-        <Navbar user={user} />
-        <main className="flex-1 p-6">
-          <div key={pathname} className="animate-slide-up-fade">
-            {children}
+    <ProgressProvider>
+      <ToastProvider>
+        <TopProgressBar />
+        <ToastContainer />
+        <div className="min-h-screen bg-gray-50 flex">
+          <Sidebar role={role} />
+          <div className="flex-1 flex flex-col min-w-0">
+            <AlertBanner role={role} expiresAt={expiresAt} email={user.email ?? null} />
+            <Navbar user={user} />
+            <main className="flex-1 p-6">
+              <div key={pathname} className="animate-slide-up-fade">
+                {children}
+              </div>
+            </main>
           </div>
-        </main>
-      </div>
-    </div>
+        </div>
+      </ToastProvider>
+    </ProgressProvider>
   )
 }
