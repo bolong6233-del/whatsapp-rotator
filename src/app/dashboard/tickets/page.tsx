@@ -7,6 +7,8 @@ import { supabase } from '@/lib/supabase-client'
 import { formatDate } from '@/lib/utils'
 import type { WorkOrder, TicketType, Platform, SyncNumber } from '@/types'
 import Pagination from '@/components/ui/Pagination'
+import { useTopProgress } from '@/context/ProgressContext'
+import { useToast } from '@/context/ToastContext'
 
 const TICKET_TYPES: TicketType[] = [
   '云控',
@@ -92,6 +94,8 @@ async function workOrdersFetcher(
 
 export default function TicketsPage() {
   const router = useRouter()
+  const { start, done } = useTopProgress()
+  const { showToast } = useToast()
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [syncing, setSyncing] = useState(false)
@@ -283,10 +287,15 @@ export default function TicketsPage() {
 
   const handleManualRefresh = async () => {
     setSyncing(true)
+    start()
     try {
       await syncAllActive()
+      showToast('同步完成', 'success')
+    } catch {
+      showToast('同步失败', 'error')
     } finally {
       setSyncing(false)
+      done()
     }
   }
 
@@ -322,9 +331,17 @@ export default function TicketsPage() {
   const handleDelete = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation()
     if (!window.confirm('确认删除该工单？')) return
-    const res = await fetch(`/api/work-orders/${id}`, { method: 'DELETE' })
-    if (res.ok) {
-      await mutate()
+    start()
+    try {
+      const res = await fetch(`/api/work-orders/${id}`, { method: 'DELETE' })
+      if (res.ok) {
+        showToast('工单已删除', 'success')
+        await mutate()
+      } else {
+        showToast('删除失败', 'error')
+      }
+    } finally {
+      done()
     }
   }
 
@@ -380,6 +397,7 @@ export default function TicketsPage() {
     if (isSubmitting) return
     setIsSubmitting(true)
     setSubmitError(null)
+    start()
 
     const payload = {
       ticket_type: form.ticket_type,
@@ -415,6 +433,7 @@ export default function TicketsPage() {
             : prev,
           { revalidate: false }
         )
+        showToast('工单已更新', 'success')
         setShowModal(false)
         setEditingOrder(null)
         return
@@ -440,6 +459,7 @@ export default function TicketsPage() {
       // Rotate key after success so next create gets a fresh key.
       submitIdempotencyKeyRef.current = crypto.randomUUID()
       await mutate()
+      showToast('工单创建成功', 'success')
       setShowModal(false)
 
       // Immediately sync after creating a 云控 order
@@ -460,6 +480,7 @@ export default function TicketsPage() {
       }
     } finally {
       setIsSubmitting(false)
+      done()
     }
   }
 
@@ -481,8 +502,38 @@ export default function TicketsPage() {
 
   if (loading && workOrders.length === 0) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-gray-500">加载中...</div>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="h-8 w-40 bg-gray-200 rounded animate-pulse" />
+          <div className="flex gap-2">
+            <div className="h-9 w-20 bg-gray-200 rounded-lg animate-pulse" />
+            <div className="h-9 w-20 bg-gray-200 rounded-lg animate-pulse" />
+          </div>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50">
+              <tr className="border-b border-gray-200">
+                {Array.from({ length: TABLE_COL_COUNT }).map((_, i) => (
+                  <th key={i} className="py-3 px-4">
+                    <div className="h-4 w-12 bg-gray-200 rounded animate-pulse" />
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: 4 }).map((_, i) => (
+                <tr key={i} className="border-b border-gray-50">
+                  {Array.from({ length: TABLE_COL_COUNT }).map((__, j) => (
+                    <td key={j} className="py-3 px-4">
+                      <div className="h-4 bg-gray-100 rounded animate-pulse" style={{ width: `${45 + (j * 11) % 50}%` }} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     )
   }

@@ -6,12 +6,16 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase-client'
 import { getBaseUrl, copyToClipboard, TIKTOK_EVENT_OPTIONS, TikTokEventType } from '@/lib/utils'
 import type { ShortLink } from '@/types'
+import { useTopProgress } from '@/context/ProgressContext'
+import { useToast } from '@/context/ToastContext'
 
 const ROOT_ADMIN_EMAIL = 'bolong6233@gmail.com'
 
 export default function LinkDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const router = useRouter()
+  const { start, done } = useTopProgress()
+  const { showToast } = useToast()
   const [link, setLink] = useState<ShortLink | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -86,57 +90,73 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
     setSaving(true)
     setError('')
     setSuccess('')
+    start()
 
     if (tiktokPixelEnabled && !tiktokPixelId.trim()) {
       setError('请输入 TikTok Pixel ID')
       setSaving(false)
+      done()
       return
     }
 
     if (fbPixelEnabled && !fbPixelId.trim()) {
       setError('请输入 Facebook Pixel ID')
       setSaving(false)
+      done()
       return
     }
 
-    let updateQuery = supabase
-      .from('short_links')
-      .update({
-        description: description || null,
-        tiktok_pixel_enabled: tiktokPixelEnabled,
-        tiktok_pixel_id: tiktokPixelEnabled ? tiktokPixelId.trim() : null,
-        tiktok_access_token: null,
-        tiktok_event_type: tiktokPixelEnabled ? tiktokEventType : null,
-        fb_pixel_enabled: fbPixelEnabled,
-        fb_pixel_id: fbPixelEnabled ? fbPixelId.trim() : null,
-        fb_event_type: fbPixelEnabled ? fbEventType : null,
-        auto_reply_enabled: autoReplyEnabled,
-        auto_reply_messages: autoReplyEnabled && autoReplyMessages.trim() ? autoReplyMessages.trim() : null,
-      })
-      .eq('id', id)
-    if (!isAdmin && userId) {
-      updateQuery = updateQuery.eq('user_id', userId)
-    }
-    const { error } = await updateQuery
+    try {
+      let updateQuery = supabase
+        .from('short_links')
+        .update({
+          description: description || null,
+          tiktok_pixel_enabled: tiktokPixelEnabled,
+          tiktok_pixel_id: tiktokPixelEnabled ? tiktokPixelId.trim() : null,
+          tiktok_access_token: null,
+          tiktok_event_type: tiktokPixelEnabled ? tiktokEventType : null,
+          fb_pixel_enabled: fbPixelEnabled,
+          fb_pixel_id: fbPixelEnabled ? fbPixelId.trim() : null,
+          fb_event_type: fbPixelEnabled ? fbEventType : null,
+          auto_reply_enabled: autoReplyEnabled,
+          auto_reply_messages: autoReplyEnabled && autoReplyMessages.trim() ? autoReplyMessages.trim() : null,
+        })
+        .eq('id', id)
+      if (!isAdmin && userId) {
+        updateQuery = updateQuery.eq('user_id', userId)
+      }
+      const { error } = await updateQuery
 
-    if (error) {
-      setError('保存失败：' + error.message)
-    } else {
-      setSuccess('保存成功')
-      setTimeout(() => setSuccess(''), 3000)
+      if (error) {
+        setError('保存失败：' + error.message)
+        showToast('保存失败：' + error.message, 'error')
+      } else {
+        setSuccess('保存成功')
+        setTimeout(() => setSuccess(''), 3000)
+        showToast('保存成功', 'success')
+      }
+    } finally {
+      setSaving(false)
+      done()
     }
-    setSaving(false)
   }
 
   const handleDeleteLink = async () => {
     if (!confirm('确定要删除此短链吗？此操作不可撤销。')) return
 
-    let deleteQuery = supabase.from('short_links').delete().eq('id', id)
-    if (!isAdmin && userId) {
-      deleteQuery = deleteQuery.eq('user_id', userId)
+    start()
+    try {
+      let deleteQuery = supabase.from('short_links').delete().eq('id', id)
+      if (!isAdmin && userId) {
+        deleteQuery = deleteQuery.eq('user_id', userId)
+      }
+      await deleteQuery
+      showToast('短链已删除', 'success')
+      router.push('/dashboard')
+    } catch {
+      showToast('删除失败', 'error')
+      done()
     }
-    await deleteQuery
-    router.push('/dashboard')
   }
 
   const handleCopy = async () => {
