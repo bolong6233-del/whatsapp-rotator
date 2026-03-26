@@ -1,13 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { ALLOWED_TIKTOK_EVENTS } from '@/lib/utils'
-import { Redis } from '@upstash/redis'
 
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL!,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-})
-const CACHE_TTL_SECONDS = 60 // 先 60 秒
 // NOTE: Run the following migrations in Supabase before deploying:
 // ALTER TABLE short_links ADD COLUMN IF NOT EXISTS tiktok_event_type TEXT DEFAULT 'SubmitForm';
 // ALTER TABLE short_links ADD COLUMN IF NOT EXISTS fb_pixel_enabled BOOLEAN DEFAULT FALSE;
@@ -146,23 +140,7 @@ export async function GET(
   const { slug } = await params
   const { searchParams } = new URL(request.url)
   const isDebug = searchParams.get('debug') === '1'
-  const cacheKey = `slug:${slug}`
-  const cached = await redis.get(cacheKey)
-  if (cached) {
-    const { redirectUrl, html } = cached as { redirectUrl: string; html?: string }
-    if (html) {
-      return new Response(html, {
-        status: 200,
-        headers: {
-          'Content-Type': 'text/html; charset=utf-8',
-          'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
-          'Pragma': 'no-cache',
-          'Expires': '0',
-        },
-      })
-    }
-    return noCacheRedirect(redirectUrl)
-  }
+
   if (RESERVED_SLUGS.includes(slug)) {
     return noCacheRedirect(WHATSAPP_FALLBACK)
   }
@@ -333,11 +311,6 @@ setTimeout(function(){window.location.href=${safeRedirectUrl};},${TIKTOK_PIXEL_R
 </head>
 <body></body>
 </html>`
-    await redis.set(
-      cacheKey,
-      { redirectUrl, html },
-      { ex: CACHE_TTL_SECONDS }
-    )
     return new Response(html, {
       status: 200,
       headers: {
@@ -348,6 +321,5 @@ setTimeout(function(){window.location.href=${safeRedirectUrl};},${TIKTOK_PIXEL_R
       },
     })
   }
-  await redis.set(cacheKey, { redirectUrl }, { ex: CACHE_TTL_SECONDS })
   return noCacheRedirect(redirectUrl)
 }
