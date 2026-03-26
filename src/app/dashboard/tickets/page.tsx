@@ -515,7 +515,7 @@ export default function TicketsPage() {
             <thead className="bg-gray-50">
               <tr className="border-b border-gray-200">
                 {Array.from({ length: TABLE_COL_COUNT }).map((_, i) => (
-                  <th key={i} className="py-3 px-4">
+                  <th key={i} className="py-4 px-5">
                     <div className="h-4 w-12 bg-gray-200 rounded animate-pulse" />
                   </th>
                 ))}
@@ -525,7 +525,7 @@ export default function TicketsPage() {
               {Array.from({ length: 4 }).map((_, i) => (
                 <tr key={i} className="border-b border-gray-50">
                   {Array.from({ length: TABLE_COL_COUNT }).map((__, j) => (
-                    <td key={j} className="py-3 px-4">
+                    <td key={j} className="py-4 px-5">
                       <div className="h-4 bg-gray-100 rounded animate-pulse" style={{ width: `${45 + (j * 11) % 50}%` }} />
                     </td>
                   ))}
@@ -576,21 +576,21 @@ export default function TicketsPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-100 text-left text-gray-500">
-                <th className="px-4 py-3 font-medium w-8" />
-                <th className="px-4 py-3 font-medium">工单类型</th>
-                <th className="px-4 py-3 font-medium">工单名称</th>
-                <th className="px-4 py-3 font-medium">工单链接</th>
-                <th className="px-4 py-3 font-medium">分流链接</th>
-                <th className="px-4 py-3 font-medium">号码类型</th>
-                <th className="px-4 py-3 font-medium">开始时间</th>
-                <th className="px-4 py-3 font-medium">到期时间</th>
-                <th className="px-4 py-3 font-medium">工单总量</th>
-                <th className="px-4 py-3 font-medium">下号比率</th>
-                <th className="px-4 py-3 font-medium">同步状态</th>
-                <th className="px-4 py-3 font-medium">当日引流</th>
-                <th className="px-4 py-3 font-medium">在线号码</th>
-                <th className="px-4 py-3 font-medium">操作</th>
+              <tr className="border-b border-gray-100 text-left text-gray-700">
+                <th className="px-5 py-4 font-bold text-gray-700 w-8" />
+                <th className="px-5 py-4 font-bold text-gray-700">工单类型</th>
+                <th className="px-5 py-4 font-bold text-gray-700">工单名称</th>
+                <th className="px-5 py-4 font-bold text-gray-700">工单链接</th>
+                <th className="px-5 py-4 font-bold text-gray-700">分流链接</th>
+                <th className="px-5 py-4 font-bold text-gray-700">号码类型</th>
+                <th className="px-5 py-4 font-bold text-gray-700">开始时间</th>
+                <th className="px-5 py-4 font-bold text-gray-700">到期时间</th>
+                <th className="px-5 py-4 font-bold text-gray-700">工单总量</th>
+                <th className="px-5 py-4 font-bold text-gray-700">下号比率</th>
+                <th className="px-5 py-4 font-bold text-gray-700">同步状态</th>
+                <th className="px-5 py-4 font-bold text-gray-700">当日引流</th>
+                <th className="px-5 py-4 font-bold text-gray-700">在线号码</th>
+                <th className="px-5 py-4 font-bold text-gray-700">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -604,12 +604,12 @@ export default function TicketsPage() {
                       className={`border-b border-gray-50 hover:bg-gray-50 ${canExpand ? 'cursor-pointer' : ''}`}
                       onClick={() => canExpand && toggleExpand(order.id)}
                     >
-                      <td className="px-4 py-3 text-gray-400">
+                      <td className="px-5 py-4 text-gray-600">
                         {canExpand ? (isExpanded ? '▾' : '▸') : ''}
                       </td>
-                      <td className="px-4 py-3">{order.ticket_type}</td>
-                      <td className="px-4 py-3">{order.ticket_name}</td>
-                      <td className="px-4 py-3 max-w-[160px] truncate">
+                      <td className="px-5 py-4">{order.ticket_type}</td>
+                      <td className="px-5 py-4">{order.ticket_name}</td>
+                      <td className="px-5 py-4 max-w-[160px] truncate">
                         <a
                           href={order.ticket_link}
                           target="_blank"
@@ -620,13 +620,13 @@ export default function TicketsPage() {
                           {order.ticket_link}
                         </a>
                       </td>
-                      <td className="px-4 py-3">{order.distribution_link_slug}</td>
-                      <td className="px-4 py-3 capitalize">{order.number_type}</td>
-                      <td className="px-4 py-3">{formatDate(order.start_time)}</td>
-                      <td className="px-4 py-3">{formatDate(order.end_time)}</td>
-                      <td className="px-4 py-3">{order.total_quantity}</td>
-                      <td className="px-4 py-3">{order.download_ratio}</td>
-                      <td className="px-4 py-3">
+                      <td className="px-5 py-4">{order.distribution_link_slug}</td>
+                      <td className="px-5 py-4 capitalize">{order.number_type}</td>
+                      <td className="px-5 py-4">{formatDate(order.start_time)}</td>
+                      <td className="px-5 py-4">{formatDate(order.end_time)}</td>
+                      <td className="px-5 py-4">{order.total_quantity}</td>
+                      <td className="px-5 py-4">{order.download_ratio}</td>
+                      <td className="px-5 py-4">
                         {order.last_synced_at && order.sync_online_count !== undefined
                           ? <span className="text-green-600 font-medium">已同步</span>
                           : !order.last_synced_at && order.status === 'active'
@@ -635,17 +635,17 @@ export default function TicketsPage() {
                               ? <span className="text-red-500 font-medium">异常</span>
                               : <span className="text-gray-400">待同步</span>}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-5 py-4">
                         {order.sync_total_day_sum !== undefined
                           ? `${order.sync_total_day_sum}/${order.total_quantity}`
                           : '-'}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-5 py-4">
                         {order.sync_online_count !== undefined
                           ? `${order.sync_online_count}`
                           : '-'}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-5 py-4">
                         <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                           {/* Toggle switch */}
                           <button
@@ -679,13 +679,13 @@ export default function TicketsPage() {
                         <td colSpan={TABLE_COL_COUNT} className="px-8 py-3">
                           <table className="w-full text-xs border border-gray-200 rounded-lg overflow-hidden">
                             <thead>
-                              <tr className="bg-gray-100 text-gray-500">
-                                <th className="px-3 py-2 text-left font-medium">ID</th>
-                                <th className="px-3 py-2 text-left font-medium">账号</th>
-                                <th className="px-3 py-2 text-left font-medium">昵称</th>
-                                <th className="px-3 py-2 text-left font-medium">状态</th>
-                                <th className="px-3 py-2 text-left font-medium">去重引流数</th>
-                                <th className="px-3 py-2 text-left font-medium">今日引流</th>
+                              <tr className="bg-gray-100 text-gray-700">
+                                <th className="px-5 py-4 text-left font-bold text-gray-700">ID</th>
+                                <th className="px-5 py-4 text-left font-bold text-gray-700">账号</th>
+                                <th className="px-5 py-4 text-left font-bold text-gray-700">昵称</th>
+                                <th className="px-5 py-4 text-left font-bold text-gray-700">状态</th>
+                                <th className="px-5 py-4 text-left font-bold text-gray-700">去重引流数</th>
+                                <th className="px-5 py-4 text-left font-bold text-gray-700">今日引流</th>
                               </tr>
                             </thead>
                             <tbody>

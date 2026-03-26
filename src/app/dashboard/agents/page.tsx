@@ -428,7 +428,7 @@ export default function AgentsPage() {
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
                 {['邮箱', '密码', '角色', '注册时间', '到期时间', '短链数', '总点击', '今日点击', '状态', '操作'].map((h) => (
-                  <th key={h} className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">{h}</th>
+                  <th key={h} className="text-left px-5 py-4 text-sm font-bold text-gray-700">{h}</th>
                 ))}
               </tr>
             </thead>
@@ -436,7 +436,7 @@ export default function AgentsPage() {
               {Array.from({ length: 4 }).map((_, i) => (
                 <tr key={i} className="border-b border-gray-50">
                   {Array.from({ length: 10 }).map((__, j) => (
-                    <td key={j} className="px-4 py-3">
+                    <td key={j} className="px-5 py-4">
                       <div className="h-4 bg-gray-100 rounded animate-pulse" style={{ width: `${50 + (j * 17) % 40}%` }} />
                     </td>
                   ))}
@@ -450,19 +450,19 @@ export default function AgentsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">邮箱</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">密码</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">角色</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">注册时间</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">到期时间</th>
-                <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">短链数</th>
-                <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">总点击</th>
-                <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">今日点击</th>
-                <th className="text-center px-4 py-3 text-xs font-medium text-gray-500 uppercase">状态</th>
+                <th className="text-left px-5 py-4 text-sm font-bold text-gray-700">邮箱</th>
+                <th className="text-left px-5 py-4 text-sm font-bold text-gray-700">密码</th>
+                <th className="text-left px-5 py-4 text-sm font-bold text-gray-700">角色</th>
+                <th className="text-left px-5 py-4 text-sm font-bold text-gray-700">注册时间</th>
+                <th className="text-left px-5 py-4 text-sm font-bold text-gray-700">到期时间</th>
+                <th className="text-right px-5 py-4 text-sm font-bold text-gray-700">短链数</th>
+                <th className="text-right px-5 py-4 text-sm font-bold text-gray-700">总点击</th>
+                <th className="text-right px-5 py-4 text-sm font-bold text-gray-700">今日点击</th>
+                <th className="text-center px-5 py-4 text-sm font-bold text-gray-700">状态</th>
                 {isRoot && (
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">创建者</th>
+                  <th className="text-left px-5 py-4 text-sm font-bold text-gray-700">创建者</th>
                 )}
-                <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">操作</th>
+                <th className="text-right px-5 py-4 text-sm font-bold text-gray-700">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -472,9 +472,9 @@ export default function AgentsPage() {
                 const isExpired = agent.expires_at ? new Date(agent.expires_at) < now : false
                 return (
                   <tr key={agent.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
-                    <td className="px-4 py-3 text-gray-900 font-medium">{agent.email || '-'}</td>
-                    <td className="px-4 py-3 text-gray-500 font-mono text-xs">{agent.plain_password || '未记录'}</td>
-                    <td className="px-4 py-3">
+                    <td className="px-5 py-4 text-gray-900 font-medium">{agent.email || '-'}</td>
+                    <td className="px-5 py-4 text-gray-700 font-mono text-sm">{agent.plain_password || '未记录'}</td>
+                    <td className="px-5 py-4">
                       {agent.role === 'root' || isSelf ? (
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${roleBadge[agent.role] ?? roleBadge.agent}`}>
                           {roleLabel[agent.role] ?? agent.role}
@@ -491,10 +491,10 @@ export default function AgentsPage() {
                         </select>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-gray-500">
+                    <td className="px-5 py-4 text-gray-700">
                       {new Date(agent.created_at).toLocaleDateString('zh-CN')}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-5 py-4">
                       {agent.expires_at ? (
                         <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
                           isExpired ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-700'
@@ -505,10 +505,10 @@ export default function AgentsPage() {
                         <span className="text-xs text-gray-400">未分配</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-right text-gray-700">{agent.link_count}</td>
-                    <td className="px-4 py-3 text-right text-gray-700">{agent.total_clicks.toLocaleString()}</td>
-                    <td className="px-4 py-3 text-right text-gray-700">{(agent.today_clicks ?? 0).toLocaleString()}</td>
-                    <td className="px-4 py-3 text-center">
+                    <td className="px-5 py-4 text-right text-gray-700">{agent.link_count}</td>
+                    <td className="px-5 py-4 text-right text-gray-700">{agent.total_clicks.toLocaleString()}</td>
+                    <td className="px-5 py-4 text-right text-gray-700">{(agent.today_clicks ?? 0).toLocaleString()}</td>
+                    <td className="px-5 py-4 text-center">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                         agent.status === 'active'
                           ? 'bg-green-100 text-green-700'
@@ -518,11 +518,11 @@ export default function AgentsPage() {
                       </span>
                     </td>
                     {isRoot && (
-                      <td className="px-4 py-3 text-gray-500 text-xs">
+                      <td className="px-5 py-4 text-gray-700 text-sm">
                         {agent.created_by_email || '-'}
                       </td>
                     )}
-                    <td className="px-4 py-3">
+                    <td className="px-5 py-4">
                       <div className="flex items-center justify-end gap-2 flex-wrap">
                         {(isRoot || currentUserCanInject) && (
                           <Link

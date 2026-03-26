@@ -400,9 +400,9 @@ export default function DashboardPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-50">
-                <tr className="text-left text-gray-500 border-b border-gray-200">
+                <tr className="text-left text-gray-700 border-b border-gray-200">
                   {['', '序号', '链接 URL', '链接描述', '回复语', '状态', '操作'].map((h) => (
-                    <th key={h} className="py-3 px-4 font-medium">{h}</th>
+                    <th key={h} className="py-4 px-5 font-bold text-gray-700">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -410,7 +410,7 @@ export default function DashboardPage() {
                 {Array.from({ length: 5 }).map((_, i) => (
                   <tr key={i}>
                     {Array.from({ length: 7 }).map((__, j) => (
-                      <td key={j} className="py-3 px-4">
+                      <td key={j} className="py-4 px-5">
                         <div className="h-4 bg-gray-100 rounded animate-pulse" style={{ width: j === 0 ? '1rem' : `${55 + (j * 13) % 40}%` }} />
                       </td>
                     ))}
@@ -423,8 +423,8 @@ export default function DashboardPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-50">
-                <tr className="text-left text-gray-500 border-b border-gray-200">
-                  <th className="py-3 px-4">
+                <tr className="text-left text-gray-700 border-b border-gray-200">
+                  <th className="py-4 px-5">
                     <input
                       type="checkbox"
                       checked={links.length > 0 && selected.size === links.length}
@@ -432,12 +432,12 @@ export default function DashboardPage() {
                       className="rounded"
                     />
                   </th>
-                  <th className="py-3 px-4 font-medium">序号</th>
-                  <th className="py-3 px-4 font-medium">链接 URL</th>
-                  <th className="py-3 px-4 font-medium">链接描述</th>
-                  <th className="py-3 px-4 font-medium">回复语</th>
-                  <th className="py-3 px-4 font-medium">状态</th>
-                  <th className="py-3 px-4 font-medium">操作</th>
+                  <th className="py-4 px-5 font-bold text-gray-700">序号</th>
+                  <th className="py-4 px-5 font-bold text-gray-700">链接 URL</th>
+                  <th className="py-4 px-5 font-bold text-gray-700">链接描述</th>
+                  <th className="py-4 px-5 font-bold text-gray-700">回复语</th>
+                  <th className="py-4 px-5 font-bold text-gray-700">状态</th>
+                  <th className="py-4 px-5 font-bold text-gray-700">操作</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -450,7 +450,7 @@ export default function DashboardPage() {
                 ) : (
                   links.map((link, index) => (
                     <tr key={link.id} className="hover:bg-gray-50">
-                      <td className="py-3 px-4">
+                      <td className="py-4 px-5">
                         <input
                           type="checkbox"
                           checked={selected.has(link.id)}
@@ -458,10 +458,10 @@ export default function DashboardPage() {
                           className="rounded"
                         />
                       </td>
-                      <td className="py-3 px-4 text-gray-600 text-sm">
+                      <td className="py-4 px-5 text-gray-800 text-sm font-medium">
                         {(page - 1) * pageSize + index + 1}
                       </td>
-                      <td className="py-3 px-4">
+                      <td className="py-4 px-5">
                         <button
                           type="button"
                           onClick={() => handleCopyLink(link.slug)}
@@ -471,21 +471,21 @@ export default function DashboardPage() {
                           <svg className="w-3.5 h-3.5 text-blue-400 group-hover:text-blue-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                           </svg>
-                          <span className="text-sm font-mono">{link.slug}</span>
+                          <span className="text-sm font-normal">{link.slug}</span>
                         </button>
                       </td>
-                      <td className="py-3 px-4 text-gray-700 text-sm">{link.description || '-'}</td>
-                      <td className="py-3 px-4 text-gray-600 text-sm">
+                      <td className="py-4 px-5 text-gray-800 text-sm font-medium">{link.description || '-'}</td>
+                      <td className="py-4 px-5 text-gray-800 text-sm font-medium">
                         {link.auto_reply_enabled && link.auto_reply_messages
                           ? <span className="truncate max-w-[120px] block">{link.auto_reply_messages.split('\n')[0]}</span>
                           : '-'}
                       </td>
-                      <td className="py-3 px-4">
+                      <td className="py-4 px-5">
                         <span className={`px-2 py-0.5 text-xs rounded font-medium ${link.is_active ? 'bg-blue-50 text-blue-600 border border-blue-100' : 'bg-gray-100 text-gray-500'}`}>
                           {link.is_active ? '正常' : '关闭'}
                         </span>
                       </td>
-                      <td className="py-3 px-4">
+                      <td className="py-4 px-5">
                         <div className="flex items-center gap-2">
                           <Link
                             href={`/dashboard/${link.id}`}
