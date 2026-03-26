@@ -1,4 +1,3 @@
-import path from 'path'
 import svgCaptcha from 'svg-captcha'
 import { NextResponse } from 'next/server'
 import { createHmac } from 'crypto'
@@ -6,9 +5,9 @@ import { createHmac } from 'crypto'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-// 加载内置字体文件
-const fontPath = path.join(process.cwd(), 'node_modules', 'svg-captcha', 'fonts', 'Comismsh.ttf')
-svgCaptcha.loadFont(fontPath)
+// svg-captcha is declared as a serverExternalPackage (see next.config.mjs) so that
+// webpack does not bundle it.  This lets svg-captcha locate its own bundled font
+// (fonts/Comismsh.ttf) via __dirname in option-manager.js without ENOENT at build time.
 
 const CAPTCHA_SECRET = process.env.CAPTCHA_SECRET ?? 'replace-me-with-a-strong-secret'
 
