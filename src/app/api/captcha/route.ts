@@ -1,13 +1,13 @@
-export const runtime = 'nodejs'
-export const dynamic = 'force-dynamic'   // 避免静态化
-
 import path from 'path'
-import { NextResponse } from 'next/server'
 import svgCaptcha from 'svg-captcha'
-import crypto from 'crypto'
 
+// 允许本地读文件
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+// 加载内置字体文件
 const fontPath = path.join(process.cwd(), 'node_modules', 'svg-captcha', 'fonts', 'Comismsh.ttf')
-svgCaptcha.options.fontPath = fontPath
+svgCaptcha.loadFont(fontPath)  // ← 用 loadFont，而不是 options.fontPath
 
 const CAPTCHA_SECRET = process.env.CAPTCHA_SECRET ?? 'replace-me-with-a-strong-secret'
 
