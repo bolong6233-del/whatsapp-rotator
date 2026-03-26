@@ -152,7 +152,7 @@ export default function LoginClient({ isTimeout }: LoginClientProps) {
       <div className="relative z-10 bg-white rounded-2xl shadow-xl p-8 w-full max-w-sm mx-4">
         {/* Logo / Title */}
         <div className="text-center mb-7">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-green-600 mb-3">
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-[#6C7BFF] mb-3">
             <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
             </svg>
@@ -168,7 +168,7 @@ export default function LoginClient({ isTimeout }: LoginClientProps) {
             onClick={() => switchMode('login')}
             className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
               mode === 'login'
-                ? 'bg-green-600 text-white'
+                ? 'bg-[#6C7BFF] text-white'
                 : 'bg-white text-gray-500 hover:bg-gray-50'
             }`}
           >
@@ -179,7 +179,7 @@ export default function LoginClient({ isTimeout }: LoginClientProps) {
             onClick={() => switchMode('register')}
             className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
               mode === 'register'
-                ? 'bg-green-600 text-white'
+                ? 'bg-[#6C7BFF] text-white'
                 : 'bg-white text-gray-500 hover:bg-gray-50'
             }`}
           >
@@ -216,7 +216,7 @@ export default function LoginClient({ isTimeout }: LoginClientProps) {
                   onChange={(e) => setLoginInput(e.target.value)}
                   required
                   placeholder="请输入用户名或邮箱"
-                  className="w-full pl-9 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none transition text-sm bg-gray-50"
+                  className="w-full pl-9 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#7E8CFF] focus:border-[#7E8CFF] outline-none transition text-sm bg-gray-50"
                 />
               </div>
 
@@ -233,7 +233,7 @@ export default function LoginClient({ isTimeout }: LoginClientProps) {
                   onChange={(e) => setLoginPassword(e.target.value)}
                   required
                   placeholder="请输入密码"
-                  className="w-full pl-9 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none transition text-sm bg-gray-50"
+                  className="w-full pl-9 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#7E8CFF] focus:border-[#7E8CFF] outline-none transition text-sm bg-gray-50"
                 />
               </div>
 
@@ -247,14 +247,14 @@ export default function LoginClient({ isTimeout }: LoginClientProps) {
                     required
                     placeholder="请输入验证码"
                     maxLength={6}
-                    className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none transition text-sm bg-gray-50"
+                    className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#7E8CFF] focus:border-[#7E8CFF] outline-none transition text-sm bg-gray-50"
                   />
                   <button
                     type="button"
                     onClick={fetchCaptcha}
                     disabled={captchaLoading}
                     title={captchaTTL > 0 ? `剩余 ${captchaTTL}s，点击刷新` : '验证码已过期，点击刷新'}
-                    className="flex-shrink-0 w-[120px] h-[44px] border border-gray-300 rounded-lg overflow-hidden bg-gray-50 hover:border-green-500 transition-colors cursor-pointer disabled:opacity-60"
+                    className="flex-shrink-0 w-[120px] h-[44px] border border-gray-300 rounded-lg overflow-hidden bg-gray-50 hover:border-[#7E8CFF] transition-colors cursor-pointer disabled:opacity-60"
                     dangerouslySetInnerHTML={{ __html: captchaSvg || '<span style="font-size:12px;color:#999;padding:4px">加载中...</span>' }}
                   />
                 </div>
@@ -269,7 +269,7 @@ export default function LoginClient({ isTimeout }: LoginClientProps) {
               <button
                 type="submit"
                 disabled={loginLoading}
-                className="w-full bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white py-2.5 rounded-lg font-semibold transition-colors text-sm tracking-wider"
+                className="w-full bg-[#6C7BFF] hover:bg-[#5A6FF0] disabled:bg-[#E8EBFF] disabled:text-[#5A6FF0] text-white py-2.5 rounded-lg font-semibold transition-colors text-sm tracking-wider"
               >
                 {loginLoading ? '登录中...' : '登 录'}
               </button>
@@ -281,7 +281,7 @@ export default function LoginClient({ isTimeout }: LoginClientProps) {
                 href={FORGOT_LINK}
                 target="_blank"
                 rel="noreferrer"
-                className="text-sm text-green-600 hover:text-green-700 hover:underline"
+                className="text-sm text-[#6C7BFF] hover:text-[#5A6FF0] hover:underline"
               >
                 忘记密码？
               </a>
@@ -319,7 +319,7 @@ export default function LoginClient({ isTimeout }: LoginClientProps) {
                       onChange={(e) => setRegUsername(e.target.value)}
                       required
                       placeholder="请输入用户名（字母、数字、下划线）"
-                      className="w-full pl-9 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none transition text-sm bg-gray-50"
+                      className="w-full pl-9 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#7E8CFF] focus:border-[#7E8CFF] outline-none transition text-sm bg-gray-50"
                     />
                   </div>
 
@@ -336,7 +336,7 @@ export default function LoginClient({ isTimeout }: LoginClientProps) {
                       onChange={(e) => setRegPassword(e.target.value)}
                       required
                       placeholder="请输入密码（至少 6 位）"
-                      className="w-full pl-9 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none transition text-sm bg-gray-50"
+                      className="w-full pl-9 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#7E8CFF] focus:border-[#7E8CFF] outline-none transition text-sm bg-gray-50"
                     />
                   </div>
 
@@ -344,7 +344,7 @@ export default function LoginClient({ isTimeout }: LoginClientProps) {
                   <button
                     type="submit"
                     disabled={regLoading}
-                    className="w-full bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white py-2.5 rounded-lg font-semibold transition-colors text-sm tracking-wider"
+                    className="w-full bg-[#6C7BFF] hover:bg-[#5A6FF0] disabled:bg-[#E8EBFF] disabled:text-[#5A6FF0] text-white py-2.5 rounded-lg font-semibold transition-colors text-sm tracking-wider"
                   >
                     {regLoading ? '注册中...' : '立即注册'}
                   </button>
