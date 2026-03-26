@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { ALLOWED_TIKTOK_EVENTS } from '@/lib/utils'
-import { Redis } from '@upstash/redis/edge'
+import { Redis } from '@upstash/redis'
 
 const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL!,
