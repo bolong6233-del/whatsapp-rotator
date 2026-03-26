@@ -335,7 +335,7 @@ export default function LogsPage() {
   const { start, done } = useTopProgress()
   const { showToast } = useToast()
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(20)
+  const [pageSize, setPageSize] = useState(10)
   const [filterSlug, setFilterSlug] = useState('')
   const [filterCountry, setFilterCountry] = useState('')
 
@@ -626,9 +626,9 @@ export default function LogsPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-gray-500 bg-gray-50/70 border-b border-gray-100">
+                <tr className="text-left text-gray-700 bg-gray-50/70 border-b border-gray-100">
                   {['访问时间','短链','国家','城市','IP 地址','设备','来源'].map((h) => (
-                    <th key={h} className="py-3 px-4 font-medium text-xs uppercase tracking-wide">{h}</th>
+                    <th key={h} className="py-4 px-5 font-bold text-sm text-gray-700">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -636,7 +636,7 @@ export default function LogsPage() {
                 {Array.from({ length: 6 }).map((_, i) => (
                   <tr key={i} className="border-b border-gray-50">
                     {Array.from({ length: 7 }).map((__, j) => (
-                      <td key={j} className="py-3 px-4">
+                      <td key={j} className="py-4 px-5">
                         <div className="h-4 bg-gray-100 rounded animate-pulse" style={{ width: `${50 + (j * 13) % 40}%` }} />
                       </td>
                     ))}
@@ -653,26 +653,26 @@ export default function LogsPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-gray-500 bg-gray-50/70 border-b border-gray-100">
-                  <th className="py-3 px-4 font-medium text-xs uppercase tracking-wide">访问时间</th>
-                  <th className="py-3 px-4 font-medium text-xs uppercase tracking-wide">短链</th>
-                  <th className="py-3 px-4 font-medium text-xs uppercase tracking-wide">国家</th>
-                  <th className="py-3 px-4 font-medium text-xs uppercase tracking-wide">城市</th>
-                  <th className="py-3 px-4 font-medium text-xs uppercase tracking-wide">IP 地址</th>
-                  <th className="py-3 px-4 font-medium text-xs uppercase tracking-wide">设备</th>
-                  <th className="py-3 px-4 font-medium text-xs uppercase tracking-wide">操作系统</th>
-                  <th className="py-3 px-4 font-medium text-xs uppercase tracking-wide">网络服务商</th>
-                  <th className="py-3 px-4 font-medium text-xs uppercase tracking-wide">浏览器</th>
-                  <th className="py-3 px-4 font-medium text-xs uppercase tracking-wide">来源</th>
+                <tr className="text-left text-gray-700 bg-gray-50/70 border-b border-gray-100">
+                  <th className="py-4 px-5 font-bold text-sm text-gray-700">访问时间</th>
+                  <th className="py-4 px-5 font-bold text-sm text-gray-700">短链</th>
+                  <th className="py-4 px-5 font-bold text-sm text-gray-700">国家</th>
+                  <th className="py-4 px-5 font-bold text-sm text-gray-700">城市</th>
+                  <th className="py-4 px-5 font-bold text-sm text-gray-700">IP 地址</th>
+                  <th className="py-4 px-5 font-bold text-sm text-gray-700">设备</th>
+                  <th className="py-4 px-5 font-bold text-sm text-gray-700">操作系统</th>
+                  <th className="py-4 px-5 font-bold text-sm text-gray-700">网络服务商</th>
+                  <th className="py-4 px-5 font-bold text-sm text-gray-700">浏览器</th>
+                  <th className="py-4 px-5 font-bold text-sm text-gray-700">来源</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {logs.map((log) => (
                   <tr key={log.id} className="hover:bg-blue-50/30 transition-colors">
-                    <td className="py-3 px-4 text-gray-600 whitespace-nowrap text-xs">
+                    <td className="py-4 px-5 text-gray-800 whitespace-nowrap text-xs font-medium">
                       {formatDate(log.clicked_at)}
                     </td>
-                    <td className="py-3 px-4">
+                    <td className="py-4 px-5">
                       {log.short_links ? (
                         <span className="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded-lg text-gray-700">
                           {log.short_links.slug}
@@ -684,28 +684,28 @@ export default function LogsPage() {
                         <span className="ml-2 text-gray-500 text-xs">{log.short_links.title}</span>
                       )}
                     </td>
-                    <td className="py-3 px-4 whitespace-nowrap text-xs text-gray-700">
+                    <td className="py-4 px-5 whitespace-nowrap text-xs text-gray-800 font-medium">
                       {log.country ? countryDisplay(log.country) : <span className="text-gray-400">—</span>}
                     </td>
-                    <td className="py-3 px-4 whitespace-nowrap text-xs text-gray-600">
+                    <td className="py-4 px-5 whitespace-nowrap text-xs text-gray-800 font-medium">
                       {log.city || <span className="text-gray-400">—</span>}
                     </td>
-                    <td className="py-3 px-4 text-gray-600 font-mono text-xs whitespace-nowrap">
+                    <td className="py-4 px-5 text-gray-800 font-normal text-xs whitespace-nowrap">
                       {log.ip_address || '-'}
                     </td>
-                    <td className="py-3 px-4">
+                    <td className="py-4 px-5">
                       <DeviceBadge device={log.device_type ?? null} />
                     </td>
-                    <td className="py-3 px-4">
+                    <td className="py-4 px-5">
                       <OsBadge os={log.os ?? null} />
                     </td>
-                    <td className="py-3 px-4 text-xs text-gray-600 whitespace-nowrap">
+                    <td className="py-4 px-5 text-xs text-gray-800 font-medium whitespace-nowrap">
                       {log.isp || <span className="text-gray-400">—</span>}
                     </td>
-                    <td className="py-3 px-4">
+                    <td className="py-4 px-5">
                       <BrowserBadge browser={log.browser ?? null} />
                     </td>
-                    <td className="py-3 px-4">
+                    <td className="py-4 px-5">
                       <SourceBadge referer={log.referer ?? null} />
                     </td>
                   </tr>

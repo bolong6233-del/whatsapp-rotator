@@ -767,9 +767,9 @@ export default function NumbersPage() {
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-gray-50">
-              <tr className="text-left text-gray-500 border-b border-gray-200">
+              <tr className="text-left text-gray-700 border-b border-gray-200">
                 {['', '链接', '工单', '号码', '号码类型', '访问次数', '状态', '操作'].map((h) => (
-                  <th key={h} className="py-3 px-4 font-medium">{h}</th>
+                  <th key={h} className="py-4 px-5 font-bold text-gray-700">{h}</th>
                 ))}
               </tr>
             </thead>
@@ -777,7 +777,7 @@ export default function NumbersPage() {
               {Array.from({ length: 5 }).map((_, i) => (
                 <tr key={i}>
                   {Array.from({ length: 8 }).map((__, j) => (
-                    <td key={j} className="py-3 px-4">
+                    <td key={j} className="py-4 px-5">
                       <div className="h-4 bg-gray-100 rounded animate-pulse" style={{ width: j === 0 ? '1rem' : `${60 + (j * 10) % 40}%` }} />
                     </td>
                   ))}
@@ -913,8 +913,8 @@ export default function NumbersPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50">
-              <tr className="text-left text-gray-500 border-b border-gray-200">
-                <th className="py-3 px-4">
+              <tr className="text-left text-gray-700 border-b border-gray-200">
+                <th className="py-4 px-5">
                   <input
                     type="checkbox"
                     checked={numbers.length > 0 && selected.size === numbers.length}
@@ -922,13 +922,13 @@ export default function NumbersPage() {
                     className="rounded"
                   />
                 </th>
-                <th className="py-3 px-4 font-medium">链接</th>
-                <th className="py-3 px-4 font-medium">工单</th>
-                <th className="py-3 px-4 font-medium">号码</th>
-                <th className="py-3 px-4 font-medium">号码类型</th>
-                <th className="py-3 px-4 font-medium">访问次数</th>
-                <th className="py-3 px-4 font-medium">状态</th>
-                <th className="py-3 px-4 font-medium">操作</th>
+                <th className="py-4 px-5 font-bold text-gray-700">链接</th>
+                <th className="py-4 px-5 font-bold text-gray-700">工单</th>
+                <th className="py-4 px-5 font-bold text-gray-700">号码</th>
+                <th className="py-4 px-5 font-bold text-gray-700">号码类型</th>
+                <th className="py-4 px-5 font-bold text-gray-700">访问次数</th>
+                <th className="py-4 px-5 font-bold text-gray-700">状态</th>
+                <th className="py-4 px-5 font-bold text-gray-700">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
@@ -941,7 +941,7 @@ export default function NumbersPage() {
               ) : (
                 numbers.map((num) => (
                   <tr key={num.id} className="hover:bg-gray-50">
-                    <td className="py-3 px-4">
+                    <td className="py-4 px-5">
                       <input
                         type="checkbox"
                         checked={selected.has(num.id)}
@@ -949,7 +949,7 @@ export default function NumbersPage() {
                         className="rounded"
                       />
                     </td>
-                    <td className="py-3 px-4 text-gray-600">
+                    <td className="py-4 px-5 text-gray-800 font-medium">
                       <span className="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded">
                         {num.short_links?.slug || '-'}
                       </span>
@@ -957,19 +957,19 @@ export default function NumbersPage() {
                         <span className="text-gray-400 ml-1 text-xs">({num.short_links.title})</span>
                       )}
                     </td>
-                    <td className="py-3 px-4 text-gray-700 text-sm">
+                    <td className="py-4 px-5 text-gray-800 text-sm font-medium">
                       {num.label}
                     </td>
-                    <td className="py-3 px-4 text-gray-800">
+                    <td className="py-4 px-5 text-gray-800 font-medium">
                       <span className="font-medium">{num.phone_number}</span>
                     </td>
-                    <td className="py-3 px-4">
+                    <td className="py-4 px-5">
                       <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${PLATFORM_COLORS[getPlatform(num.platform)]}`}>
                         {PLATFORM_LABELS[getPlatform(num.platform)]}
                       </span>
                     </td>
-                    <td className="py-3 px-4 text-gray-600">{num.click_count}</td>
-                    <td className="py-3 px-4">
+                    <td className="py-4 px-5 text-gray-800 font-medium">{num.click_count}</td>
+                    <td className="py-4 px-5">
                       <button
                         onClick={() => handleToggleActive(num.id, num.is_active)}
                         className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
@@ -981,7 +981,7 @@ export default function NumbersPage() {
                         }`} />
                       </button>
                     </td>
-                    <td className="py-3 px-4">
+                    <td className="py-4 px-5">
                       <div className="flex items-center gap-3">
                         <button
                           onClick={() => handleOpenEdit(num)}

@@ -5,8 +5,8 @@ import { Analytics } from '@vercel/analytics/next'
 import { SpeedInsights } from '@vercel/speed-insights/next'
 
 export const metadata: Metadata = {
-  title: '短链分流系统',
-  description: '短链分流系统，智能短链生成与分流，助力广告营销',
+  title: '拓客出海',
+  description: '拓客出海 - 智能短链生成与分流，助力广告营销出海',
 }
 
 export default function RootLayout({
