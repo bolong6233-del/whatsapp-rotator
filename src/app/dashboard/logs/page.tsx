@@ -118,18 +118,72 @@ function DeviceBadge({ device }: { device: string | null }) {
   return <Badge label="🖥️ 电脑" color="bg-blue-100 text-blue-700" />
 }
 
-/** Two-state source pill: 直接访问 (no referer) or 斗篷 (has referer). */
+function detectSource(referer: string | null | undefined): 'DIRECT' | 'TK' | 'FB' | 'INS' | 'OTHER' {
+  if (!referer) return 'DIRECT'
+  try {
+    const hostname = new URL(referer).hostname.toLowerCase()
+    if (
+      hostname.includes('tiktok.com') ||
+      hostname.includes('tiktokv.com')
+    ) {
+      return 'TK'
+    }
+    if (
+      hostname === 'facebook.com' ||
+      hostname.endsWith('.facebook.com') ||
+      hostname === 'fb.com' ||
+      hostname.endsWith('.fb.com')
+    ) {
+      return 'FB'
+    }
+    if (
+      hostname === 'instagram.com' ||
+      hostname.endsWith('.instagram.com')
+    ) {
+      return 'INS'
+    }
+    return 'OTHER'
+  } catch {
+    return 'OTHER'
+  }
+}
+
+/** Source pill: classifies visit by referer hostname into 直接访问 / TK / FB / INS / 其他来源. */
 function SourceBadge({ referer }: { referer: string | null | undefined }) {
-  if (!referer) {
+  const source = detectSource(referer)
+  const title = referer || undefined
+
+  if (source === 'DIRECT') {
     return (
       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-sky-50 text-sky-700 border border-sky-200">
         直接访问
       </span>
     )
   }
+  if (source === 'TK') {
+    return (
+      <span title={title} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-neutral-100 text-neutral-800 border border-neutral-200">
+        TK
+      </span>
+    )
+  }
+  if (source === 'FB') {
+    return (
+      <span title={title} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+        FB
+      </span>
+    )
+  }
+  if (source === 'INS') {
+    return (
+      <span title={title} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-pink-50 text-pink-700 border border-pink-200">
+        INS
+      </span>
+    )
+  }
   return (
-    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
-      斗篷
+    <span title={title} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
+      其他来源
     </span>
   )
 }
