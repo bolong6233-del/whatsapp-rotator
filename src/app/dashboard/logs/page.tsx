@@ -123,8 +123,10 @@ function detectSource(referer: string | null | undefined): 'DIRECT' | 'TK' | 'FB
   try {
     const hostname = new URL(referer).hostname.toLowerCase()
     if (
-      hostname.includes('tiktok.com') ||
-      hostname.includes('tiktokv.com')
+      hostname === 'tiktok.com' ||
+      hostname.endsWith('.tiktok.com') ||
+      hostname === 'tiktokv.com' ||
+      hostname.endsWith('.tiktokv.com')
     ) {
       return 'TK'
     }
