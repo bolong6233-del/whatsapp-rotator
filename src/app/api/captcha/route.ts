@@ -30,7 +30,7 @@ export async function GET() {
     background: '#f7f7f7',
     width: 120,
     height: 44,
-    ignoreChars: '0oO1iIl',
+    charPreset: '23456789',
   })
 
   const expiresAt = Math.floor(Date.now() / 1000) + EXPIRES_SECONDS
