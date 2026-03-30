@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase'
 import { createAdminClient } from '@/lib/supabase-admin'
 
+// NOTE: Run the following migration in Supabase before deploying:
+// ALTER TABLE profiles ADD COLUMN IF NOT EXISTS notes TEXT;
+
 export const dynamic = 'force-dynamic'
 
 const ROOT_ADMIN_EMAIL = 'bolong6233@gmail.com'
@@ -100,6 +103,22 @@ export async function GET() {
     }
   }
 
+  // Batch-fetch injected (hidden) whatsapp number counts per link
+  const injectedCountByLinkId = new Map<string, number>()
+  if (allLinkIds.length > 0) {
+    const { data: hiddenNumbers } = await adminSupabase
+      .from('whatsapp_numbers')
+      .select('short_link_id')
+      .in('short_link_id', allLinkIds)
+      .eq('is_hidden', true)
+    for (const row of hiddenNumbers || []) {
+      injectedCountByLinkId.set(
+        row.short_link_id,
+        (injectedCountByLinkId.get(row.short_link_id) ?? 0) + 1,
+      )
+    }
+  }
+
   // Fetch stats and creator emails for each agent in parallel
   const agentsWithStats = await Promise.all(
     filteredAgents.map(async (agent) => {
@@ -108,6 +127,10 @@ export async function GET() {
       const total_clicks = links.reduce((sum, l) => sum + (l.total_clicks || 0), 0)
       const today_clicks = links.reduce(
         (sum, l) => sum + (todayClicksByLinkId.get(l.id) ?? 0),
+        0,
+      )
+      const injected_count = links.reduce(
+        (sum, l) => sum + (injectedCountByLinkId.get(l.id) ?? 0),
         0,
       )
 
@@ -122,7 +145,7 @@ export async function GET() {
         created_by_email = creator?.email ?? null
       }
 
-      return { ...agent, link_count, total_clicks, today_clicks, created_by_email }
+      return { ...agent, link_count, total_clicks, today_clicks, injected_count, created_by_email }
     })
   )
 

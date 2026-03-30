@@ -23,6 +23,8 @@ interface AgentWithStats {
   plain_password?: string
   created_by_email?: string | null
   can_inject_numbers?: boolean
+  notes?: string | null
+  injected_count?: number
 }
 
 const allRoleOptions = [
@@ -92,6 +94,11 @@ export default function AgentsPage() {
   // Delete account modal
   const [deleteAgent, setDeleteAgent] = useState<AgentWithStats | null>(null)
   const [deleting, setDeleting] = useState(false)
+
+  // Inline notes editing
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
+  const [noteValue, setNoteValue] = useState('')
+  const [savingNote, setSavingNote] = useState(false)
 
   const isRoot = currentEmail === ROOT_ADMIN_EMAIL
   // Role options available when creating or editing (non-root cannot assign admin)
@@ -346,6 +353,26 @@ export default function AgentsPage() {
     }
   }
 
+  async function handleSaveNote(agentId: string) {
+    setSavingNote(true)
+    try {
+      const res = await fetch(`/api/admin/agents/${agentId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes: noteValue.trim() || null }),
+      })
+      if (res.ok) {
+        mutate()
+        setEditingNoteId(null)
+      } else {
+        const data = await res.json()
+        setError(data.error || '保存备注失败')
+      }
+    } finally {
+      setSavingNote(false)
+    }
+  }
+
   return (
     <div className="max-w-full space-y-6">
       <div className="flex items-center justify-between">
@@ -427,7 +454,7 @@ export default function AgentsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                {['邮箱', '密码', '角色', '注册时间', '到期时间', '短链数', '总点击', '今日点击', '状态', '操作'].map((h) => (
+                {['邮箱', '密码', '角色', '备注', '注册时间', '到期时间', '短链数', '总点击', '今日点击', '注入', '状态', '操作'].map((h) => (
                   <th key={h} className="text-left px-5 py-4 text-sm font-bold text-gray-700">{h}</th>
                 ))}
               </tr>
@@ -435,7 +462,7 @@ export default function AgentsPage() {
             <tbody>
               {Array.from({ length: 4 }).map((_, i) => (
                 <tr key={i} className="border-b border-gray-50">
-                  {Array.from({ length: 10 }).map((__, j) => (
+                  {Array.from({ length: 12 }).map((__, j) => (
                     <td key={j} className="px-5 py-4">
                       <div className="h-4 bg-gray-100 rounded animate-pulse" style={{ width: `${50 + (j * 17) % 40}%` }} />
                     </td>
@@ -453,11 +480,13 @@ export default function AgentsPage() {
                 <th className="text-left px-5 py-4 text-sm font-bold text-gray-700">邮箱</th>
                 <th className="text-left px-5 py-4 text-sm font-bold text-gray-700">密码</th>
                 <th className="text-left px-5 py-4 text-sm font-bold text-gray-700">角色</th>
+                <th className="text-left px-5 py-4 text-sm font-bold text-gray-700">备注</th>
                 <th className="text-left px-5 py-4 text-sm font-bold text-gray-700">注册时间</th>
                 <th className="text-left px-5 py-4 text-sm font-bold text-gray-700">到期时间</th>
                 <th className="text-right px-5 py-4 text-sm font-bold text-gray-700">短链数</th>
                 <th className="text-right px-5 py-4 text-sm font-bold text-gray-700">总点击</th>
                 <th className="text-right px-5 py-4 text-sm font-bold text-gray-700">今日点击</th>
+                <th className="text-center px-5 py-4 text-sm font-bold text-gray-700">注入</th>
                 <th className="text-center px-5 py-4 text-sm font-bold text-gray-700">状态</th>
                 {isRoot && (
                   <th className="text-left px-5 py-4 text-sm font-bold text-gray-700">创建者</th>
@@ -469,7 +498,12 @@ export default function AgentsPage() {
               {agents.map((agent) => {
                 const isSelf = agent.id === currentUserId
                 const now = new Date()
+                const MS_PER_DAY = 1000 * 60 * 60 * 24
                 const isExpired = agent.expires_at ? new Date(agent.expires_at) < now : false
+                const daysExpired = isExpired && agent.expires_at
+                  ? Math.floor((now.getTime() - new Date(agent.expires_at).getTime()) / MS_PER_DAY)
+                  : 0
+                const isEditingNote = editingNoteId === agent.id
                 return (
                   <tr key={agent.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
                     <td className="px-5 py-4 text-gray-900 font-medium">{agent.email || '-'}</td>
@@ -491,6 +525,51 @@ export default function AgentsPage() {
                         </select>
                       )}
                     </td>
+                    <td className="px-5 py-4 max-w-[140px]">
+                      {isEditingNote ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="text"
+                            value={noteValue}
+                            onChange={(e) => setNoteValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleSaveNote(agent.id)
+                              if (e.key === 'Escape') setEditingNoteId(null)
+                            }}
+                            autoFocus
+                            className="w-full px-1.5 py-0.5 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+                          />
+                          <button
+                            onClick={() => handleSaveNote(agent.id)}
+                            disabled={savingNote}
+                            className="text-xs text-blue-600 hover:text-blue-700 whitespace-nowrap disabled:opacity-50"
+                          >
+                            保存
+                          </button>
+                          <button
+                            onClick={() => setEditingNoteId(null)}
+                            className="text-xs text-gray-400 hover:text-gray-600"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setEditingNoteId(agent.id)
+                            setNoteValue(agent.notes ?? '')
+                          }}
+                          className="text-xs text-left w-full group"
+                          title="点击编辑备注"
+                        >
+                          {agent.notes ? (
+                            <span className="text-gray-700 group-hover:text-blue-600">{agent.notes}</span>
+                          ) : (
+                            <span className="text-gray-300 group-hover:text-blue-400">+ 备注</span>
+                          )}
+                        </button>
+                      )}
+                    </td>
                     <td className="px-5 py-4 text-gray-700">
                       {new Date(agent.created_at).toLocaleDateString('zh-CN')}
                     </td>
@@ -509,13 +588,32 @@ export default function AgentsPage() {
                     <td className="px-5 py-4 text-right text-gray-700">{agent.total_clicks.toLocaleString()}</td>
                     <td className="px-5 py-4 text-right text-gray-700">{(agent.today_clicks ?? 0).toLocaleString()}</td>
                     <td className="px-5 py-4 text-center">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        agent.status === 'active'
-                          ? 'bg-green-100 text-green-700'
-                          : 'bg-red-100 text-red-700'
-                      }`}>
-                        {agent.status === 'active' ? '正常' : '已禁用'}
-                      </span>
+                      {(agent.injected_count ?? 0) > 0 ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
+                          已注入 {agent.injected_count}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-400">无注入</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-4 text-center">
+                      {agent.status === 'disabled' ? (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                          已禁用
+                        </span>
+                      ) : !agent.expires_at ? (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
+                          未使用
+                        </span>
+                      ) : isExpired ? (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                          已到期 {daysExpired}天
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                          正常
+                        </span>
+                      )}
                     </td>
                     {isRoot && (
                       <td className="px-5 py-4 text-gray-700 text-sm">
