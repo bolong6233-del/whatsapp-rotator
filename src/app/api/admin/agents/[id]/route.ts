@@ -104,6 +104,17 @@ export async function PUT(
     }
   }
 
+  if (body.notes !== undefined) {
+    const { error } = await adminSupabase
+      .from('profiles')
+      .update({ notes: body.notes ?? null })
+      .eq('id', id)
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
+  }
+
   return NextResponse.json({ success: true })
 }
 

@@ -15,10 +15,6 @@ export const dynamic = 'force-dynamic'
 // Fallback: redirect to WhatsApp with empty phone (shows friendly error page)
 const WHATSAPP_FALLBACK = 'https://api.whatsapp.com/send/?phone='
 
-// Delay (ms) before redirecting when a TikTok Pixel page is rendered,
-// giving the pixel script enough time to fire before navigation.
-const TIKTOK_PIXEL_REDIRECT_DELAY_MS = 500
-
 // Paths that must not be intercepted by the slug handler
 const RESERVED_SLUGS = [
   'dashboard',
@@ -261,14 +257,19 @@ export async function GET(
 
   if (hasTiktokPixel || hasFbPixel) {
     const safeRedirectUrl = JSON.stringify(redirectUrl)
-    let pixelScripts = ''
+    // Lightweight beacon scripts – fire immediately using sendBeacon / fetch keepalive
+    // so tracking requests survive page navigation even at 0ms redirect delay.
+    let beaconScript = ''
+    // Full SDK scripts – loaded asynchronously as a fallback for higher accuracy
+    let sdkScripts = ''
 
     if (hasTiktokPixel) {
       const safePixelId = JSON.stringify(tiktok_pixel_id as string)
       const rawEventType = (tiktok_event_type as string) ?? 'SubmitForm'
       const eventType = ALLOWED_TIKTOK_EVENTS.includes(rawEventType) ? rawEventType : 'SubmitForm'
       const safeEventType = JSON.stringify(eventType)
-      pixelScripts += `
+      // TikTok SDK – async fallback (may not complete before redirect)
+      sdkScripts += `
 <script>
 !function(w,d,t){
   w.TiktokAnalyticsObject=t;
@@ -294,7 +295,21 @@ export async function GET(
       const safeFbPixelId = JSON.stringify(fb_pixel_id as string)
       const fbEvent = (fb_event_type as string) ?? 'Lead'
       const safeFbEventType = JSON.stringify(fbEvent)
-      pixelScripts += `
+      // Facebook pixel lightweight beacon – hits the known noscript tracking URL
+      // fetch keepalive / sendBeacon ensures the request is sent even after navigation
+      beaconScript += `
+(function(){
+  try {
+    var fbUrl='https://www.facebook.com/tr/?id='+encodeURIComponent(${safeFbPixelId})+'&ev='+encodeURIComponent(${safeFbEventType})+'&noscript=1';
+    if(typeof navigator.sendBeacon==='function'){
+      navigator.sendBeacon(fbUrl);
+    } else {
+      fetch(fbUrl,{method:'GET',keepalive:true,mode:'no-cors'}).catch(function(){});
+    }
+  } catch(e){}
+})();`
+      // FB SDK – async fallback
+      sdkScripts += `
 <script>
 !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
 fbq('init', ${safeFbPixelId});
@@ -307,9 +322,12 @@ fbq('track', ${safeFbEventType});
 <head>
 <meta charset="utf-8" />
 <meta name="robots" content="noindex,nofollow" />
-${pixelScripts}
 <script>
-setTimeout(function(){window.location.href=${safeRedirectUrl};},${TIKTOK_PIXEL_REDIRECT_DELAY_MS});
+${beaconScript}
+</script>
+${sdkScripts}
+<script>
+window.location.href=${safeRedirectUrl};
 </script>
 </head>
 <body></body>
