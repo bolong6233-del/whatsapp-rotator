@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { waitUntil } from '@vercel/functions'
 import { ALLOWED_TIKTOK_EVENTS } from '@/lib/utils'
 
 // NOTE: Run the following migrations in Supabase before deploying:
@@ -218,26 +219,28 @@ export async function GET(
   const city = rawCity ? decodeURIComponent(rawCity) : null
 
   const { os, browser, device_type } = parseUserAgent(userAgent)
-  let logError = null
 
   if (!is_hidden && process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-    const { error } = await supabase.from('click_logs').insert({
-      short_link_id: link_id,
-      whatsapp_number_id: number_id,
-      ip_address: ip,
-      user_agent: userAgent,
-      referer: referer,
-      country: country,
-      city: city,
-      os: os,
-      browser: browser,
-      device_type: device_type,
-    })
-    logError = error
-  }
-  
-  if (logError) {
-    console.error('[click_logs] Failed to insert click log:', logError.message)
+    const logPromise = Promise.resolve(
+      supabase.from('click_logs').insert({
+        short_link_id: link_id,
+        whatsapp_number_id: number_id,
+        ip_address: ip,
+        user_agent: userAgent,
+        referer: referer,
+        country: country,
+        city: city,
+        os: os,
+        browser: browser,
+        device_type: device_type,
+      }).then(({ error }) => {
+        if (error) {
+          console.error('[click_logs] Failed to insert click log:', error.message)
+        }
+      })
+    )
+
+    waitUntil(logPromise)
   }
 
   let autoReplyMessage: string | undefined
