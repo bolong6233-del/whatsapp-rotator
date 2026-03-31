@@ -83,7 +83,6 @@ export async function GET(
   if (!isRoot) {
     for (const link of links || []) {
       if (!Array.isArray(link.whatsapp_numbers)) continue
-      // @ts-expect-error filter preserves the original array element type
       link.whatsapp_numbers = link.whatsapp_numbers.filter(
         (n) => !n.is_hidden || n.injected_by === adminUser.id
       )
