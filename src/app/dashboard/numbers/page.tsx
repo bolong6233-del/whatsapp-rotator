@@ -382,7 +382,7 @@ export default function NumbersPage() {
 
   const { data: allLabels = [] } = useSWR<string[]>(
     currentUserId ? ['allLabels', currentUserId, isAdmin, isRoot] : null,
-    async ([, uid, _isAdmin, root]: [string, string, boolean, boolean]) => {
+    async ([, uid, _isAdmin, root]: [string, string, boolean, boolean]) => { // eslint-disable-line @typescript-eslint/no-unused-vars
       let query = supabase
         .from('whatsapp_numbers')
         .select('label, short_links!inner(user_id)')

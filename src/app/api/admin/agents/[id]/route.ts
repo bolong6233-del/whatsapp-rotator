@@ -115,6 +115,25 @@ export async function PUT(
     }
   }
 
+  if (body.max_agents !== undefined) {
+    // Only Root Admin can update agent quota
+    if (!isRootAdmin(adminUser)) {
+      return NextResponse.json({ error: '无权限修改配额' }, { status: 403 })
+    }
+    const maxAgents = body.max_agents === null ? null : parseInt(body.max_agents, 10)
+    if (maxAgents !== null && (isNaN(maxAgents) || maxAgents < 0)) {
+      return NextResponse.json({ error: '无效的配额数量' }, { status: 400 })
+    }
+    const { error } = await adminSupabase
+      .from('profiles')
+      .update({ max_agents: maxAgents })
+      .eq('id', id)
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
+  }
+
   return NextResponse.json({ success: true })
 }
 

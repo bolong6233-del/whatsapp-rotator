@@ -39,17 +39,14 @@ async function requireAdmin() {
   return user
 }
 
+type SiteSettingsRow = typeof DEFAULT_SETTINGS & { id?: number; updated_at?: string }
+
 // GET /api/admin/settings — fetch site settings (public, no auth required)
 export async function GET() {
   const adminSupabase = createAdminClient()
   const { data, error } = await adminSupabase
     .from('site_settings')
-    .select(
-      'announcement_text, admin_contact_url, admin_contact_label, ' +
-      'guest_banner_enabled, guest_banner_text, guest_banner_color, ' +
-      'expiry_banner_enabled, expired_banner_text, expiring_banner_text, ' +
-      'global_banner_enabled, global_banner_text, global_banner_color'
-    )
+    .select('*')
     .eq('id', 1)
     .single()
 
@@ -57,19 +54,21 @@ export async function GET() {
     return NextResponse.json(DEFAULT_SETTINGS)
   }
 
+  const row = data as unknown as SiteSettingsRow
+
   return NextResponse.json({
-    announcement_text: data.announcement_text || DEFAULT_SETTINGS.announcement_text,
-    admin_contact_url: data.admin_contact_url || DEFAULT_SETTINGS.admin_contact_url,
-    admin_contact_label: data.admin_contact_label || DEFAULT_SETTINGS.admin_contact_label,
-    guest_banner_enabled: data.guest_banner_enabled ?? DEFAULT_SETTINGS.guest_banner_enabled,
-    guest_banner_text: data.guest_banner_text || DEFAULT_SETTINGS.guest_banner_text,
-    guest_banner_color: data.guest_banner_color || DEFAULT_SETTINGS.guest_banner_color,
-    expiry_banner_enabled: data.expiry_banner_enabled ?? DEFAULT_SETTINGS.expiry_banner_enabled,
-    expired_banner_text: data.expired_banner_text || DEFAULT_SETTINGS.expired_banner_text,
-    expiring_banner_text: data.expiring_banner_text || DEFAULT_SETTINGS.expiring_banner_text,
-    global_banner_enabled: data.global_banner_enabled ?? DEFAULT_SETTINGS.global_banner_enabled,
-    global_banner_text: data.global_banner_text || DEFAULT_SETTINGS.global_banner_text,
-    global_banner_color: data.global_banner_color || DEFAULT_SETTINGS.global_banner_color,
+    announcement_text: row.announcement_text || DEFAULT_SETTINGS.announcement_text,
+    admin_contact_url: row.admin_contact_url || DEFAULT_SETTINGS.admin_contact_url,
+    admin_contact_label: row.admin_contact_label || DEFAULT_SETTINGS.admin_contact_label,
+    guest_banner_enabled: row.guest_banner_enabled ?? DEFAULT_SETTINGS.guest_banner_enabled,
+    guest_banner_text: row.guest_banner_text || DEFAULT_SETTINGS.guest_banner_text,
+    guest_banner_color: row.guest_banner_color || DEFAULT_SETTINGS.guest_banner_color,
+    expiry_banner_enabled: row.expiry_banner_enabled ?? DEFAULT_SETTINGS.expiry_banner_enabled,
+    expired_banner_text: row.expired_banner_text || DEFAULT_SETTINGS.expired_banner_text,
+    expiring_banner_text: row.expiring_banner_text || DEFAULT_SETTINGS.expiring_banner_text,
+    global_banner_enabled: row.global_banner_enabled ?? DEFAULT_SETTINGS.global_banner_enabled,
+    global_banner_text: row.global_banner_text || DEFAULT_SETTINGS.global_banner_text,
+    global_banner_color: row.global_banner_color || DEFAULT_SETTINGS.global_banner_color,
   })
 }
 
