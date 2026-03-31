@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase-admin'
 
 // NOTE: Run the following migration in Supabase before deploying:
 // ALTER TABLE profiles ADD COLUMN IF NOT EXISTS notes TEXT;
+// ALTER TABLE profiles ADD COLUMN IF NOT EXISTS max_agents INTEGER DEFAULT NULL;
 
 export const dynamic = 'force-dynamic'
 
@@ -119,6 +120,27 @@ export async function GET() {
     }
   }
 
+  // Batch-fetch last_sign_in_at for all agents via Supabase Auth Admin API
+  const lastSignInMap = new Map<string, string | null>()
+  if (filteredAgents.length > 0) {
+    try {
+      // listUsers returns paginated results; fetch enough pages to cover all agents
+      let page = 1
+      const perPage = 1000
+      while (true) {
+        const { data: usersPage } = await adminSupabase.auth.admin.listUsers({ page, perPage })
+        if (!usersPage) break
+        for (const u of usersPage.users) {
+          lastSignInMap.set(u.id, u.last_sign_in_at ?? null)
+        }
+        if (usersPage.users.length < perPage) break
+        page++
+      }
+    } catch {
+      // If admin API is unavailable, continue without last_sign_in_at
+    }
+  }
+
   // Fetch stats and creator emails for each agent in parallel
   const agentsWithStats = await Promise.all(
     filteredAgents.map(async (agent) => {
@@ -145,7 +167,7 @@ export async function GET() {
         created_by_email = creator?.email ?? null
       }
 
-      return { ...agent, link_count, total_clicks, today_clicks, injected_count, created_by_email }
+      return { ...agent, link_count, total_clicks, today_clicks, injected_count, created_by_email, last_sign_in_at: lastSignInMap.get(agent.id) ?? null }
     })
   )
 
@@ -178,6 +200,31 @@ export async function POST(request: NextRequest) {
   const assignedRole = allowedRoles.includes(newRole) ? newRole : 'agent'
 
   const adminSupabase = createAdminClient()
+
+  // Check quota: non-root admins are limited by max_agents on their profile
+  if (!isRoot) {
+    interface ProfileWithQuota { max_agents: number | null }
+    const { data: adminProfile } = await adminSupabase
+      .from('profiles')
+      .select('max_agents')
+      .eq('id', adminUser.id)
+      .single()
+
+    const maxAgents = (adminProfile as unknown as ProfileWithQuota)?.max_agents ?? null
+    if (maxAgents !== null) {
+      const { count } = await adminSupabase
+        .from('profiles')
+        .select('id', { count: 'exact', head: true })
+        .eq('created_by', adminUser.id)
+      const currentCount = count ?? 0
+      if (currentCount >= maxAgents) {
+        return NextResponse.json(
+          { error: `已达到代理配额上限 ${maxAgents} 个，无法继续创建` },
+          { status: 403 }
+        )
+      }
+    }
+  }
 
   // Create the user via admin API (does not affect current session)
   const { data: newUser, error: createError } = await adminSupabase.auth.admin.createUser({

@@ -21,6 +21,7 @@ const NUMBER_TYPES: { value: Platform; label: string }[] = [
   { value: 'custom', label: 'Custom' },
 ]
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const STATUS_LABELS: Record<string, string> = {
   active: '进行中',
   completed: '已完成',
@@ -28,6 +29,7 @@ const STATUS_LABELS: Record<string, string> = {
   cancelled: '已取消',
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const STATUS_COLORS: Record<string, string> = {
   active: 'bg-green-100 text-green-700',
   completed: 'bg-blue-100 text-blue-700',

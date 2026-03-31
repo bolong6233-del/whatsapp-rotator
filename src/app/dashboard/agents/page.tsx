@@ -25,6 +25,8 @@ interface AgentWithStats {
   can_inject_numbers?: boolean
   notes?: string | null
   injected_count?: number
+  last_sign_in_at?: string | null
+  max_agents?: number | null
 }
 
 const allRoleOptions = [
@@ -64,6 +66,15 @@ function formatExpiry(dateStr: string | null): string {
   }).format(date).replace(/\//g, '-')
 }
 
+function formatLastLogin(dateStr: string | null | undefined): string {
+  if (!dateStr) return '从未'
+  const date = new Date(dateStr)
+  if (isNaN(date.getTime())) return '从未'
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(date).replace(/\//g, '-')
+}
+
 export default function AgentsPage() {
   const router = useRouter()
   const { start, done } = useTopProgress()
@@ -94,6 +105,11 @@ export default function AgentsPage() {
   // Delete account modal
   const [deleteAgent, setDeleteAgent] = useState<AgentWithStats | null>(null)
   const [deleting, setDeleting] = useState(false)
+
+  // Quota modal (root admin sets max_agents for an admin)
+  const [quotaAgent, setQuotaAgent] = useState<AgentWithStats | null>(null)
+  const [quotaValue, setQuotaValue] = useState<string>('')
+  const [savingQuota, setSavingQuota] = useState(false)
 
   // Inline notes editing
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
@@ -373,6 +389,35 @@ export default function AgentsPage() {
     }
   }
 
+  async function handleSaveQuota(e: React.FormEvent) {
+    e.preventDefault()
+    if (!quotaAgent) return
+    setSavingQuota(true)
+    try {
+      const trimmed = quotaValue.trim()
+      const max = trimmed === '' ? null : parseInt(trimmed, 10)
+      if (trimmed !== '' && (isNaN(max as number) || (max as number) < 0)) {
+        showToast('请输入有效的配额数量', 'error')
+        return
+      }
+      const res = await fetch(`/api/admin/agents/${quotaAgent.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ max_agents: max }),
+      })
+      if (res.ok) {
+        showToast('配额已更新', 'success')
+        setQuotaAgent(null)
+        mutate()
+      } else {
+        const data = await res.json()
+        showToast(data.error || '保存失败', 'error')
+      }
+    } finally {
+      setSavingQuota(false)
+    }
+  }
+
   return (
     <div className="max-w-full space-y-6">
       <div className="flex items-center justify-between">
@@ -454,7 +499,7 @@ export default function AgentsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                {['邮箱', '密码', '角色', '备注', '注册时间', '到期时间', '短链数', '总点击', '今日点击', '注入', '状态', '操作'].map((h) => (
+                {['邮箱', '密码', '角色', '备注', '注册时间', '到期时间', '最后登录', '短链数', '总点击', '今日点击', '注入', '状态', '操作'].map((h) => (
                   <th key={h} className="text-left px-5 py-4 text-sm font-bold text-gray-700">{h}</th>
                 ))}
               </tr>
@@ -462,7 +507,7 @@ export default function AgentsPage() {
             <tbody>
               {Array.from({ length: 4 }).map((_, i) => (
                 <tr key={i} className="border-b border-gray-50">
-                  {Array.from({ length: 12 }).map((__, j) => (
+                  {Array.from({ length: 13 }).map((__, j) => (
                     <td key={j} className="px-5 py-4">
                       <div className="h-4 bg-gray-100 rounded animate-pulse" style={{ width: `${50 + (j * 17) % 40}%` }} />
                     </td>
@@ -483,6 +528,7 @@ export default function AgentsPage() {
                 <th className="text-left px-5 py-4 text-sm font-bold text-gray-700">备注</th>
                 <th className="text-left px-5 py-4 text-sm font-bold text-gray-700">注册时间</th>
                 <th className="text-left px-5 py-4 text-sm font-bold text-gray-700">到期时间</th>
+                <th className="text-left px-5 py-4 text-sm font-bold text-gray-700">最后登录</th>
                 <th className="text-right px-5 py-4 text-sm font-bold text-gray-700">短链数</th>
                 <th className="text-right px-5 py-4 text-sm font-bold text-gray-700">总点击</th>
                 <th className="text-right px-5 py-4 text-sm font-bold text-gray-700">今日点击</th>
@@ -584,6 +630,9 @@ export default function AgentsPage() {
                         <span className="text-xs text-gray-400">未分配</span>
                       )}
                     </td>
+                    <td className="px-5 py-4 text-gray-600 text-xs whitespace-nowrap">
+                      {formatLastLogin(agent.last_sign_in_at)}
+                    </td>
                     <td className="px-5 py-4 text-right text-gray-700">{agent.link_count}</td>
                     <td className="px-5 py-4 text-right text-gray-700">{agent.total_clicks.toLocaleString()}</td>
                     <td className="px-5 py-4 text-right text-gray-700">{(agent.today_clicks ?? 0).toLocaleString()}</td>
@@ -670,6 +719,25 @@ export default function AgentsPage() {
                               className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${agent.can_inject_numbers ? 'bg-blue-500' : 'bg-gray-300'}`}
                             >
                               <span aria-hidden="true" className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform duration-200 ${agent.can_inject_numbers ? 'translate-x-4' : 'translate-x-0'}`} />
+                            </button>
+                          </span>
+                        )}
+                        {isRoot && !isSelf && agent.role === 'admin' && (
+                          <span className="inline-flex items-center gap-1">
+                            <span className="text-xs text-purple-600 whitespace-nowrap">
+                              {agent.max_agents !== null && agent.max_agents !== undefined
+                                ? `配额 ${agent.max_agents}`
+                                : '配额 无限'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setQuotaAgent(agent)
+                                setQuotaValue(agent.max_agents !== null && agent.max_agents !== undefined ? String(agent.max_agents) : '')
+                              }}
+                              className="text-xs text-purple-600 hover:text-purple-800 hover:underline"
+                            >
+                              设配额
                             </button>
                           </span>
                         )}
@@ -796,6 +864,48 @@ export default function AgentsPage() {
                 取消
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quota Modal */}
+      {quotaAgent && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">
+            <h3 className="text-base font-semibold text-gray-900 mb-1">设置代理配额</h3>
+            <p className="text-sm text-gray-500 mb-4">{quotaAgent.email}</p>
+            <form onSubmit={handleSaveQuota} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  最大代理数量
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="留空表示无限制"
+                  value={quotaValue}
+                  onChange={(e) => setQuotaValue(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+                <p className="text-xs text-gray-400 mt-1">输入一个正整数限制最大代理数量，留空表示无限制。填写 0 表示禁止该管理员创建代理。</p>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  type="submit"
+                  disabled={savingQuota}
+                  className="flex-1 bg-purple-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50 transition-colors"
+                >
+                  {savingQuota ? '保存中...' : '保存配额'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setQuotaAgent(null)}
+                  className="flex-1 border border-gray-300 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+                >
+                  取消
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
