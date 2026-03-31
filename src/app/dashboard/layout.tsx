@@ -13,7 +13,7 @@ import { ProgressProvider } from '@/context/ProgressContext'
 import { ToastProvider } from '@/context/ToastContext'
 import type { User } from '@supabase/supabase-js'
 
-const ROOT_ADMIN_EMAIL = 'bolong6233@gmail.com'
+const ROOT_ADMIN_EMAIL = process.env.NEXT_PUBLIC_ROOT_ADMIN_EMAIL!
 
 export default function DashboardLayout({
   children,

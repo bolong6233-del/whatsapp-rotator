@@ -35,6 +35,7 @@ export interface WhatsAppNumber {
   is_hidden: boolean
   platform: Platform
   created_at: string
+  injected_by: string | null
 }
 
 export interface Profile {

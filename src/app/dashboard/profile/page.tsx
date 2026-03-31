@@ -25,7 +25,7 @@ interface SiteSettings {
   admin_contact_label: string
 }
 
-const ROOT_ADMIN_EMAIL = 'bolong6233@gmail.com'
+const ROOT_ADMIN_EMAIL = process.env.NEXT_PUBLIC_ROOT_ADMIN_EMAIL!
 
 const roleConfig: Record<string, { label: string; color: string }> = {
   root_admin: { label: '超级管理员', color: 'bg-yellow-100 text-yellow-700' },

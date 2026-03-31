@@ -32,7 +32,7 @@ const PLATFORM_COLORS: Record<Platform, string> = {
   custom: 'bg-purple-100 text-purple-700',
 }
 
-const ROOT_ADMIN_EMAIL = 'bolong6233@gmail.com'
+const ROOT_ADMIN_EMAIL = process.env.NEXT_PUBLIC_ROOT_ADMIN_EMAIL!
 
 const DEFAULT_PLATFORM: Platform = 'whatsapp'
 

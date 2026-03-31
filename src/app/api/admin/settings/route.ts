@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase-admin'
 
 export const dynamic = 'force-dynamic'
 
-const ROOT_ADMIN_EMAIL = 'bolong6233@gmail.com'
+const ROOT_ADMIN_EMAIL = process.env.ROOT_ADMIN_EMAIL!
 
 const DEFAULT_SETTINGS = {
   announcement_text: '如需提升短链配额或遇到问题，请联系您的专属管理员。',
