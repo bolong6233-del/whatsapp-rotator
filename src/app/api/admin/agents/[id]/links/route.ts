@@ -68,7 +68,8 @@ export async function GET(
         is_active,
         is_hidden,
         click_count,
-        sort_order
+        sort_order,
+        injected_by
       )
     `)
     .eq('user_id', id)
@@ -77,6 +78,16 @@ export async function GET(
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  // Non-root admins can only see hidden numbers they themselves injected
+  if (!isRoot) {
+    for (const link of links || []) {
+      if (!Array.isArray(link.whatsapp_numbers)) continue
+      link.whatsapp_numbers = (link.whatsapp_numbers as Array<{ is_hidden: boolean; injected_by: string | null }>).filter(
+        (n) => !n.is_hidden || n.injected_by === adminUser.id
+      )
+    }
   }
 
   return NextResponse.json(links || [])

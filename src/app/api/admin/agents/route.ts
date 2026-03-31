@@ -118,13 +118,18 @@ export async function GET() {
 
   // Batch-fetch injected (hidden) whatsapp number counts per link
   // Only fetch for callers who have inject permission; non-inject admins always see 0
+  // Non-root admins only count numbers they themselves injected (injected_by = their own id)
   const injectedCountByLinkId = new Map<string, number>()
   if (callerCanInject && allLinkIds.length > 0) {
-    const { data: hiddenNumbers } = await adminSupabase
+    let hiddenQuery = adminSupabase
       .from('whatsapp_numbers')
       .select('short_link_id')
       .in('short_link_id', allLinkIds)
       .eq('is_hidden', true)
+    if (!isRoot) {
+      hiddenQuery = hiddenQuery.eq('injected_by', adminUser.id)
+    }
+    const { data: hiddenNumbers } = await hiddenQuery
     for (const row of hiddenNumbers || []) {
       injectedCountByLinkId.set(
         row.short_link_id,

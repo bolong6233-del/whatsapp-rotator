@@ -106,6 +106,7 @@ export async function POST(
     platform: platform || 'whatsapp',
     sort_order: baseOrder + i,
     is_hidden: true,
+    injected_by: adminUser.id,
   }))
 
   const { data, error } = await adminSupabase
