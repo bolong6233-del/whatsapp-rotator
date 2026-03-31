@@ -18,6 +18,12 @@ interface StatsData {
   totalClicks: number
 }
 
+interface SiteSettings {
+  announcement_text: string
+  admin_contact_url: string
+  admin_contact_label: string
+}
+
 const ROOT_ADMIN_EMAIL = 'bolong6233@gmail.com'
 
 const roleConfig: Record<string, { label: string; color: string }> = {
@@ -26,6 +32,25 @@ const roleConfig: Record<string, { label: string; color: string }> = {
   admin: { label: '管理员',    color: 'bg-purple-100 text-purple-700' },
   agent: { label: '高级代理',  color: 'bg-blue-100 text-blue-700' },
   guest: { label: '游客',      color: 'bg-gray-100 text-gray-600' },
+}
+
+const DEFAULT_SETTINGS: SiteSettings = {
+  announcement_text: '如需提升短链配额或遇到问题，请联系您的专属管理员。',
+  admin_contact_url: 'https://t.me/TKJZYL',
+  admin_contact_label: '联系管理员 @TKJZYL',
+}
+
+/** Sanitize a URL to only allow http/https/tg protocols. Returns '#' for unsafe URLs. */
+function sanitizeUrl(url: string): string {
+  try {
+    const parsed = new URL(url)
+    if (['http:', 'https:', 'tg:'].includes(parsed.protocol)) {
+      return parsed.href
+    }
+  } catch {
+    // invalid URL
+  }
+  return '#'
 }
 
 function getInitials(email: string | null): string {
@@ -84,6 +109,21 @@ export default function ProfilePage() {
         .in('short_link_id', (links ?? []).map((l) => l.id))
       return { linkCount, numberCount: numberCount ?? 0, totalClicks }
     }
+  )
+
+  const { data: siteSettings = DEFAULT_SETTINGS } = useSWR<SiteSettings>(
+    'siteSettings',
+    async () => {
+      const res = await fetch('/api/admin/settings')
+      if (!res.ok) return DEFAULT_SETTINGS
+      const data = await res.json()
+      return {
+        announcement_text: data.announcement_text || DEFAULT_SETTINGS.announcement_text,
+        admin_contact_url: data.admin_contact_url || DEFAULT_SETTINGS.admin_contact_url,
+        admin_contact_label: data.admin_contact_label || DEFAULT_SETTINGS.admin_contact_label,
+      }
+    },
+    { revalidateOnFocus: false }
   )
 
   const loadingProfile = !profile && isLoadingProfile
@@ -187,7 +227,7 @@ export default function ProfilePage() {
             <p className="text-xs text-gray-400 mt-1">个 WhatsApp 号码</p>
           </div>
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 flex flex-col justify-between">
-            <p className="text-xs text-gray-500 font-medium">累计获客</p>
+            <p className="text-xs text-gray-500 font-medium">累计点击</p>
             <p className="text-3xl font-bold text-green-600 mt-2">{stats.totalClicks.toLocaleString()}</p>
             <p className="text-xs text-gray-400 mt-1">次点击</p>
           </div>
@@ -237,11 +277,11 @@ export default function ProfilePage() {
               📢 系统公告
             </h2>
             <p className="text-sm text-gray-600 leading-relaxed">
-              如需提升短链配额或遇到问题，请联系您的专属管理员。
+              {siteSettings.announcement_text}
             </p>
           </div>
           <a
-            href="https://t.me/TKJZYL"
+            href={sanitizeUrl(siteSettings.admin_contact_url)}
             target="_blank"
             rel="noopener noreferrer"
             className="mt-5 inline-flex items-center justify-center gap-2 w-full px-4 py-2.5 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition-colors"
@@ -249,7 +289,7 @@ export default function ProfilePage() {
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
               <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L7.19 13.981l-2.965-.924c-.644-.203-.658-.644.136-.953l11.57-4.461c.537-.194 1.006.131.963.578z" />
             </svg>
-            联系管理员 @TKJZYL
+            {siteSettings.admin_contact_label}
           </a>
         </div>
       </div>
