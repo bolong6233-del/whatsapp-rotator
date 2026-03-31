@@ -10,6 +10,7 @@ interface AlertBannerProps {
 
 interface SiteSettings {
   admin_contact_url: string
+  announcement_enabled: boolean
   guest_banner_enabled: boolean
   guest_banner_text: string
   guest_banner_color: string
@@ -26,6 +27,7 @@ const DEFAULT_CONTACT_URL = 'https://t.me/TKJZYL'
 
 const DEFAULT_SETTINGS: SiteSettings = {
   admin_contact_url: DEFAULT_CONTACT_URL,
+  announcement_enabled: true,
   guest_banner_enabled: true,
   guest_banner_text: '⚠️ 您当前为游客身份，无法创建短链。联系管理员可免费试用！点击此处联系管理员开通权限！',
   guest_banner_color: 'yellow',
@@ -74,6 +76,7 @@ export default function AlertBanner({ role, expiresAt, email }: AlertBannerProps
       const data = await res.json()
       return {
         admin_contact_url: data.admin_contact_url || DEFAULT_SETTINGS.admin_contact_url,
+        announcement_enabled: data.announcement_enabled ?? DEFAULT_SETTINGS.announcement_enabled,
         guest_banner_enabled: data.guest_banner_enabled ?? DEFAULT_SETTINGS.guest_banner_enabled,
         guest_banner_text: data.guest_banner_text || DEFAULT_SETTINGS.guest_banner_text,
         guest_banner_color: data.guest_banner_color || DEFAULT_SETTINGS.guest_banner_color,
@@ -92,20 +95,28 @@ export default function AlertBanner({ role, expiresAt, email }: AlertBannerProps
   if (email === EXEMPT_EMAIL) return null
   if (role === 'admin' || role === 'root' || role === 'root_admin') return null
 
+  const contactEnabled = settings.announcement_enabled
   const contactUrl = sanitizeUrl(settings.admin_contact_url)
 
   // Global banner has highest priority — shown to all non-admin users
   if (settings.global_banner_enabled && settings.global_banner_text) {
     const colors = getColorClass(settings.global_banner_color)
+    if (contactEnabled) {
+      return (
+        <a
+          href={contactUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`block w-full ${colors.bg} ${colors.text} text-sm font-medium text-center px-4 py-2.5 ${colors.hover} transition-colors`}
+        >
+          {settings.global_banner_text}
+        </a>
+      )
+    }
     return (
-      <a
-        href={contactUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className={`block w-full ${colors.bg} ${colors.text} text-sm font-medium text-center px-4 py-2.5 ${colors.hover} transition-colors`}
-      >
+      <div className={`block w-full ${colors.bg} ${colors.text} text-sm font-medium text-center px-4 py-2.5`}>
         {settings.global_banner_text}
-      </a>
+      </div>
     )
   }
 
@@ -115,15 +126,22 @@ export default function AlertBanner({ role, expiresAt, email }: AlertBannerProps
   // Guest banner
   if (role === 'guest' && settings.guest_banner_enabled) {
     const colors = getColorClass(settings.guest_banner_color)
+    if (contactEnabled) {
+      return (
+        <a
+          href={contactUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`block w-full ${colors.bg} ${colors.text} text-sm font-medium text-center px-4 py-2.5 ${colors.hover} transition-colors`}
+        >
+          {settings.guest_banner_text}
+        </a>
+      )
+    }
     return (
-      <a
-        href={contactUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className={`block w-full ${colors.bg} ${colors.text} text-sm font-medium text-center px-4 py-2.5 ${colors.hover} transition-colors`}
-      >
+      <div className={`block w-full ${colors.bg} ${colors.text} text-sm font-medium text-center px-4 py-2.5`}>
         {settings.guest_banner_text}
-      </a>
+      </div>
     )
   }
 
@@ -133,15 +151,22 @@ export default function AlertBanner({ role, expiresAt, email }: AlertBannerProps
 
     // Expired or no time assigned
     if (!expiryDate || expiryDate < now) {
+      if (contactEnabled) {
+        return (
+          <a
+            href={contactUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block w-full bg-red-600 text-white text-sm font-medium text-center px-4 py-2.5 hover:bg-red-700 transition-colors"
+          >
+            {settings.expired_banner_text}
+          </a>
+        )
+      }
       return (
-        <a
-          href={contactUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="block w-full bg-red-600 text-white text-sm font-medium text-center px-4 py-2.5 hover:bg-red-700 transition-colors"
-        >
+        <div className="block w-full bg-red-600 text-white text-sm font-medium text-center px-4 py-2.5">
           {settings.expired_banner_text}
-        </a>
+        </div>
       )
     }
 
@@ -152,15 +177,22 @@ export default function AlertBanner({ role, expiresAt, email }: AlertBannerProps
       const hoursLeft = Math.floor(msLeft / (1000 * 60 * 60))
       const timeLabel = daysLeft >= 1 ? `${daysLeft} 天` : `${hoursLeft} 小时`
       const bannerText = settings.expiring_banner_text.replace('{time}', timeLabel)
+      if (contactEnabled) {
+        return (
+          <a
+            href={contactUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block w-full bg-orange-500 text-white text-sm font-medium text-center px-4 py-2.5 hover:bg-orange-600 transition-colors"
+          >
+            {bannerText}
+          </a>
+        )
+      }
       return (
-        <a
-          href={contactUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="block w-full bg-orange-500 text-white text-sm font-medium text-center px-4 py-2.5 hover:bg-orange-600 transition-colors"
-        >
+        <div className="block w-full bg-orange-500 text-white text-sm font-medium text-center px-4 py-2.5">
           {bannerText}
-        </a>
+        </div>
       )
     }
   }

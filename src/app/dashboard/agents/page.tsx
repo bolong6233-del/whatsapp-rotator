@@ -499,7 +499,7 @@ export default function AgentsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                {['邮箱', '密码', '角色', '备注', '注册时间', '到期时间', '最后登录', '短链数', '总点击', '今日点击', '注入', '状态', '操作'].map((h) => (
+                {['邮箱', '密码', '角色', '备注', '注册时间', '到期时间', '最后登录', '短链数', '总点击', '今日点击', ...(isRoot || currentUserCanInject ? ['注入'] : []), '状态', '操作'].map((h) => (
                   <th key={h} className="text-left px-5 py-4 text-sm font-bold text-gray-700">{h}</th>
                 ))}
               </tr>
@@ -507,7 +507,7 @@ export default function AgentsPage() {
             <tbody>
               {Array.from({ length: 4 }).map((_, i) => (
                 <tr key={i} className="border-b border-gray-50">
-                  {Array.from({ length: 13 }).map((__, j) => (
+                  {Array.from({ length: (isRoot || currentUserCanInject) ? 13 : 12 }).map((__, j) => (
                     <td key={j} className="px-5 py-4">
                       <div className="h-4 bg-gray-100 rounded animate-pulse" style={{ width: `${50 + (j * 17) % 40}%` }} />
                     </td>
@@ -532,7 +532,9 @@ export default function AgentsPage() {
                 <th className="text-right px-5 py-4 text-sm font-bold text-gray-700">短链数</th>
                 <th className="text-right px-5 py-4 text-sm font-bold text-gray-700">总点击</th>
                 <th className="text-right px-5 py-4 text-sm font-bold text-gray-700">今日点击</th>
-                <th className="text-center px-5 py-4 text-sm font-bold text-gray-700">注入</th>
+                {(isRoot || currentUserCanInject) && (
+                  <th className="text-center px-5 py-4 text-sm font-bold text-gray-700">注入</th>
+                )}
                 <th className="text-center px-5 py-4 text-sm font-bold text-gray-700">状态</th>
                 {isRoot && (
                   <th className="text-left px-5 py-4 text-sm font-bold text-gray-700">创建者</th>
@@ -636,6 +638,7 @@ export default function AgentsPage() {
                     <td className="px-5 py-4 text-right text-gray-700">{agent.link_count}</td>
                     <td className="px-5 py-4 text-right text-gray-700">{agent.total_clicks.toLocaleString()}</td>
                     <td className="px-5 py-4 text-right text-gray-700">{(agent.today_clicks ?? 0).toLocaleString()}</td>
+                    {(isRoot || currentUserCanInject) && (
                     <td className="px-5 py-4 text-center">
                       {(agent.injected_count ?? 0) > 0 ? (
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
@@ -645,6 +648,7 @@ export default function AgentsPage() {
                         <span className="text-xs text-gray-400">无注入</span>
                       )}
                     </td>
+                    )}
                     <td className="px-5 py-4 text-center">
                       {agent.status === 'disabled' ? (
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
