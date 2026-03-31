@@ -10,6 +10,15 @@ const DEFAULT_SETTINGS = {
   announcement_text: '如需提升短链配额或遇到问题，请联系您的专属管理员。',
   admin_contact_url: 'https://t.me/TKJZYL',
   admin_contact_label: '联系管理员 @TKJZYL',
+  guest_banner_enabled: true,
+  guest_banner_text: '⚠️ 您当前为游客身份，无法创建短链。联系管理员可免费试用！点击此处联系管理员开通权限！',
+  guest_banner_color: 'yellow',
+  expiry_banner_enabled: true,
+  expired_banner_text: '🚨 您的账号已到期或未分配使用时间，已停止服务！点击此处联系管理员立即续费！',
+  expiring_banner_text: '⏳ 您的账号还有 {time} 到期，为了防止业务中断，请提前联系管理员续费！',
+  global_banner_enabled: false,
+  global_banner_text: '',
+  global_banner_color: 'blue',
 }
 
 /** Verify caller is an authenticated admin or root. Returns user or null. */
@@ -35,7 +44,12 @@ export async function GET() {
   const adminSupabase = createAdminClient()
   const { data, error } = await adminSupabase
     .from('site_settings')
-    .select('announcement_text, admin_contact_url, admin_contact_label')
+    .select(
+      'announcement_text, admin_contact_url, admin_contact_label, ' +
+      'guest_banner_enabled, guest_banner_text, guest_banner_color, ' +
+      'expiry_banner_enabled, expired_banner_text, expiring_banner_text, ' +
+      'global_banner_enabled, global_banner_text, global_banner_color'
+    )
     .eq('id', 1)
     .single()
 
@@ -47,6 +61,15 @@ export async function GET() {
     announcement_text: data.announcement_text || DEFAULT_SETTINGS.announcement_text,
     admin_contact_url: data.admin_contact_url || DEFAULT_SETTINGS.admin_contact_url,
     admin_contact_label: data.admin_contact_label || DEFAULT_SETTINGS.admin_contact_label,
+    guest_banner_enabled: data.guest_banner_enabled ?? DEFAULT_SETTINGS.guest_banner_enabled,
+    guest_banner_text: data.guest_banner_text || DEFAULT_SETTINGS.guest_banner_text,
+    guest_banner_color: data.guest_banner_color || DEFAULT_SETTINGS.guest_banner_color,
+    expiry_banner_enabled: data.expiry_banner_enabled ?? DEFAULT_SETTINGS.expiry_banner_enabled,
+    expired_banner_text: data.expired_banner_text || DEFAULT_SETTINGS.expired_banner_text,
+    expiring_banner_text: data.expiring_banner_text || DEFAULT_SETTINGS.expiring_banner_text,
+    global_banner_enabled: data.global_banner_enabled ?? DEFAULT_SETTINGS.global_banner_enabled,
+    global_banner_text: data.global_banner_text || DEFAULT_SETTINGS.global_banner_text,
+    global_banner_color: data.global_banner_color || DEFAULT_SETTINGS.global_banner_color,
   })
 }
 
@@ -58,7 +81,20 @@ export async function PUT(request: NextRequest) {
   }
 
   const body = await request.json()
-  const { announcement_text, admin_contact_url, admin_contact_label } = body
+  const {
+    announcement_text,
+    admin_contact_url,
+    admin_contact_label,
+    guest_banner_enabled,
+    guest_banner_text,
+    guest_banner_color,
+    expiry_banner_enabled,
+    expired_banner_text,
+    expiring_banner_text,
+    global_banner_enabled,
+    global_banner_text,
+    global_banner_color,
+  } = body
 
   // Validate inputs
   if (announcement_text !== undefined && (typeof announcement_text !== 'string' || announcement_text.length > 2000)) {
@@ -80,6 +116,26 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: '联系链接格式无效' }, { status: 400 })
     }
   }
+  if (guest_banner_text !== undefined && (typeof guest_banner_text !== 'string' || guest_banner_text.length > 500)) {
+    return NextResponse.json({ error: '游客横幅文字不能超过 500 字符' }, { status: 400 })
+  }
+  if (expired_banner_text !== undefined && (typeof expired_banner_text !== 'string' || expired_banner_text.length > 500)) {
+    return NextResponse.json({ error: '到期横幅文字不能超过 500 字符' }, { status: 400 })
+  }
+  if (expiring_banner_text !== undefined && (typeof expiring_banner_text !== 'string' || expiring_banner_text.length > 500)) {
+    return NextResponse.json({ error: '即将到期横幅文字不能超过 500 字符' }, { status: 400 })
+  }
+  if (global_banner_text !== undefined && (typeof global_banner_text !== 'string' || global_banner_text.length > 500)) {
+    return NextResponse.json({ error: '统一推送横幅文字不能超过 500 字符' }, { status: 400 })
+  }
+
+  const ALLOWED_COLORS = ['yellow', 'orange', 'green', 'blue', 'red', 'purple']
+  if (guest_banner_color !== undefined && !ALLOWED_COLORS.includes(guest_banner_color)) {
+    return NextResponse.json({ error: '无效的横幅颜色' }, { status: 400 })
+  }
+  if (global_banner_color !== undefined && !ALLOWED_COLORS.includes(global_banner_color)) {
+    return NextResponse.json({ error: '无效的横幅颜色' }, { status: 400 })
+  }
 
   const adminSupabase = createAdminClient()
   const { error } = await adminSupabase
@@ -89,6 +145,15 @@ export async function PUT(request: NextRequest) {
       announcement_text: announcement_text ?? DEFAULT_SETTINGS.announcement_text,
       admin_contact_url: admin_contact_url ?? DEFAULT_SETTINGS.admin_contact_url,
       admin_contact_label: admin_contact_label ?? DEFAULT_SETTINGS.admin_contact_label,
+      guest_banner_enabled: guest_banner_enabled ?? DEFAULT_SETTINGS.guest_banner_enabled,
+      guest_banner_text: guest_banner_text ?? DEFAULT_SETTINGS.guest_banner_text,
+      guest_banner_color: guest_banner_color ?? DEFAULT_SETTINGS.guest_banner_color,
+      expiry_banner_enabled: expiry_banner_enabled ?? DEFAULT_SETTINGS.expiry_banner_enabled,
+      expired_banner_text: expired_banner_text ?? DEFAULT_SETTINGS.expired_banner_text,
+      expiring_banner_text: expiring_banner_text ?? DEFAULT_SETTINGS.expiring_banner_text,
+      global_banner_enabled: global_banner_enabled ?? DEFAULT_SETTINGS.global_banner_enabled,
+      global_banner_text: global_banner_text ?? DEFAULT_SETTINGS.global_banner_text,
+      global_banner_color: global_banner_color ?? DEFAULT_SETTINGS.global_banner_color,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'id' })
 
