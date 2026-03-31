@@ -79,14 +79,14 @@ export async function GET(
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
-
-  // Non-root admins can only see hidden numbers they themselves injected
+        // Non-root admins can only see hidden numbers they themselves injected
   if (!isRoot) {
     for (const link of links || []) {
-         if (!Array.isArray(link.whatsapp_numbers)) continue
+      if (!Array.isArray(link.whatsapp_numbers)) continue
       // @ts-expect-error filter preserves the original array element type
       link.whatsapp_numbers = link.whatsapp_numbers.filter(
         (n) => !n.is_hidden || n.injected_by === adminUser.id
+      )
     }
   }
 
