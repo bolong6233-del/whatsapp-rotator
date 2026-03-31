@@ -20,6 +20,7 @@ interface StatsData {
 
 interface SiteSettings {
   announcement_text: string
+  announcement_enabled: boolean
   admin_contact_url: string
   admin_contact_label: string
 }
@@ -36,6 +37,7 @@ const roleConfig: Record<string, { label: string; color: string }> = {
 
 const DEFAULT_SETTINGS: SiteSettings = {
   announcement_text: '如需提升短链配额或遇到问题，请联系您的专属管理员。',
+  announcement_enabled: true,
   admin_contact_url: 'https://t.me/TKJZYL',
   admin_contact_label: '联系管理员 @TKJZYL',
 }
@@ -119,6 +121,7 @@ export default function ProfilePage() {
       const data = await res.json()
       return {
         announcement_text: data.announcement_text || DEFAULT_SETTINGS.announcement_text,
+        announcement_enabled: data.announcement_enabled ?? DEFAULT_SETTINGS.announcement_enabled,
         admin_contact_url: data.admin_contact_url || DEFAULT_SETTINGS.admin_contact_url,
         admin_contact_label: data.admin_contact_label || DEFAULT_SETTINGS.admin_contact_label,
       }
@@ -271,6 +274,7 @@ export default function ProfilePage() {
         </div>
 
         {/* Module 4: System Notice / Contact Admin */}
+        {siteSettings.announcement_enabled && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex flex-col justify-between">
           <div>
             <h2 className="text-base font-semibold text-gray-800 mb-3 flex items-center gap-2">
@@ -292,6 +296,7 @@ export default function ProfilePage() {
             {siteSettings.admin_contact_label}
           </a>
         </div>
+        )}
       </div>
 
       {/* Password Change */}

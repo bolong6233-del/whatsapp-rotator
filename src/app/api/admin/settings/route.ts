@@ -8,6 +8,7 @@ const ROOT_ADMIN_EMAIL = 'bolong6233@gmail.com'
 
 const DEFAULT_SETTINGS = {
   announcement_text: '如需提升短链配额或遇到问题，请联系您的专属管理员。',
+  announcement_enabled: true,
   admin_contact_url: 'https://t.me/TKJZYL',
   admin_contact_label: '联系管理员 @TKJZYL',
   guest_banner_enabled: true,
@@ -21,8 +22,8 @@ const DEFAULT_SETTINGS = {
   global_banner_color: 'blue',
 }
 
-/** Verify caller is an authenticated admin or root. Returns user or null. */
-async function requireAdmin() {
+/** Verify caller is a root/root_admin or the ROOT_ADMIN_EMAIL. Returns user or null. */
+async function requireRootAdmin() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
@@ -35,7 +36,7 @@ async function requireAdmin() {
     .eq('id', user.id)
     .single()
 
-  if (!profile || !(['admin', 'root', 'root_admin'] as string[]).includes(profile.role)) return null
+  if (!profile || !(['root', 'root_admin'] as string[]).includes(profile.role)) return null
   return user
 }
 
@@ -58,6 +59,7 @@ export async function GET() {
 
   return NextResponse.json({
     announcement_text: row.announcement_text || DEFAULT_SETTINGS.announcement_text,
+    announcement_enabled: row.announcement_enabled ?? DEFAULT_SETTINGS.announcement_enabled,
     admin_contact_url: row.admin_contact_url || DEFAULT_SETTINGS.admin_contact_url,
     admin_contact_label: row.admin_contact_label || DEFAULT_SETTINGS.admin_contact_label,
     guest_banner_enabled: row.guest_banner_enabled ?? DEFAULT_SETTINGS.guest_banner_enabled,
@@ -72,9 +74,9 @@ export async function GET() {
   })
 }
 
-// PUT /api/admin/settings — update site settings (admin only)
+// PUT /api/admin/settings — update site settings (root admin only)
 export async function PUT(request: NextRequest) {
-  const adminUser = await requireAdmin()
+  const adminUser = await requireRootAdmin()
   if (!adminUser) {
     return NextResponse.json({ error: '无权限' }, { status: 403 })
   }
@@ -82,6 +84,7 @@ export async function PUT(request: NextRequest) {
   const body = await request.json()
   const {
     announcement_text,
+    announcement_enabled,
     admin_contact_url,
     admin_contact_label,
     guest_banner_enabled,
@@ -142,6 +145,7 @@ export async function PUT(request: NextRequest) {
     .upsert({
       id: 1,
       announcement_text: announcement_text ?? DEFAULT_SETTINGS.announcement_text,
+      announcement_enabled: announcement_enabled ?? DEFAULT_SETTINGS.announcement_enabled,
       admin_contact_url: admin_contact_url ?? DEFAULT_SETTINGS.admin_contact_url,
       admin_contact_label: admin_contact_label ?? DEFAULT_SETTINGS.admin_contact_label,
       guest_banner_enabled: guest_banner_enabled ?? DEFAULT_SETTINGS.guest_banner_enabled,
