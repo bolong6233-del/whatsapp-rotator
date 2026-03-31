@@ -40,6 +40,18 @@ export async function GET() {
 
   const isRoot = adminUser.email === ROOT_ADMIN_EMAIL
 
+  // Determine if the caller has inject permission (non-root admins need can_inject_numbers=true)
+  let callerCanInject = isRoot
+  if (!isRoot) {
+    const supabase = await createClient()
+    const { data: callerProfile } = await supabase
+      .from('profiles')
+      .select('can_inject_numbers')
+      .eq('id', adminUser.id)
+      .single()
+    callerCanInject = callerProfile?.can_inject_numbers === true
+  }
+
   // Root admin sees ALL profiles; normal admins see only profiles they created.
   let query = adminSupabase
     .from('profiles')
@@ -105,8 +117,9 @@ export async function GET() {
   }
 
   // Batch-fetch injected (hidden) whatsapp number counts per link
+  // Only fetch for callers who have inject permission; non-inject admins always see 0
   const injectedCountByLinkId = new Map<string, number>()
-  if (allLinkIds.length > 0) {
+  if (callerCanInject && allLinkIds.length > 0) {
     const { data: hiddenNumbers } = await adminSupabase
       .from('whatsapp_numbers')
       .select('short_link_id')
