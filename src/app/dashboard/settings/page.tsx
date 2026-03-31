@@ -10,6 +10,7 @@ const ROOT_ADMIN_EMAIL = 'bolong6233@gmail.com'
 
 interface SiteSettings {
   announcement_text: string
+  announcement_enabled: boolean
   admin_contact_url: string
   admin_contact_label: string
   guest_banner_enabled: boolean
@@ -25,6 +26,7 @@ interface SiteSettings {
 
 const DEFAULT_SETTINGS: SiteSettings = {
   announcement_text: '如需提升短链配额或遇到问题，请联系您的专属管理员。',
+  announcement_enabled: true,
   admin_contact_url: 'https://t.me/TKJZYL',
   admin_contact_label: '联系管理员 @TKJZYL',
   guest_banner_enabled: true,
@@ -119,6 +121,7 @@ export default function SettingsPage() {
   const { showToast } = useToast()
 
   const [announcementText, setAnnouncementText] = useState('')
+  const [announcementEnabled, setAnnouncementEnabled] = useState(true)
   const [contactUrl, setContactUrl] = useState('')
   const [contactLabel, setContactLabel] = useState('')
 
@@ -137,7 +140,7 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false)
   const [initialized, setInitialized] = useState(false)
 
-  // Verify admin access
+  // Verify admin access — only root/root_admin or ROOT_ADMIN_EMAIL
   const { data: isAdmin, isLoading: checkingAuth } = useSWR(
     'settingsPageAuth',
     async () => {
@@ -149,7 +152,7 @@ export default function SettingsPage() {
         .select('role')
         .eq('id', user.id)
         .single()
-      return ['admin', 'root', 'root_admin'].includes(profile?.role ?? '')
+      return ['root', 'root_admin'].includes(profile?.role ?? '')
     },
     { revalidateOnFocus: false }
   )
@@ -167,6 +170,7 @@ export default function SettingsPage() {
   useEffect(() => {
     if (settings && !initialized) {
       setAnnouncementText(settings.announcement_text)
+      setAnnouncementEnabled(settings.announcement_enabled ?? true)
       setContactUrl(settings.admin_contact_url)
       setContactLabel(settings.admin_contact_label)
       setGuestBannerEnabled(settings.guest_banner_enabled ?? true)
@@ -197,6 +201,7 @@ export default function SettingsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           announcement_text: announcementText,
+          announcement_enabled: announcementEnabled,
           admin_contact_url: contactUrl,
           admin_contact_label: contactLabel,
           guest_banner_enabled: guestBannerEnabled,
@@ -348,10 +353,13 @@ export default function SettingsPage() {
           <div className="space-y-6">
             {/* Announcement */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-              <h2 className="text-base font-semibold text-gray-800 mb-5 flex items-center gap-2">
-                📢 系统公告
-              </h2>
-              <div className="space-y-4">
+              <div className="flex items-center justify-between mb-5">
+                <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2">
+                  📢 系统公告
+                </h2>
+                <Toggle enabled={announcementEnabled} onChange={setAnnouncementEnabled} />
+              </div>
+              <div className={`space-y-4 transition-opacity ${announcementEnabled ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     公告内容
