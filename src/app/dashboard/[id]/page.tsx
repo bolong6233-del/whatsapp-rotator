@@ -9,7 +9,7 @@ import type { ShortLink } from '@/types'
 import { useTopProgress } from '@/context/ProgressContext'
 import { useToast } from '@/context/ToastContext'
 
-const ROOT_ADMIN_EMAIL = 'bolong6233@gmail.com'
+const ROOT_ADMIN_EMAIL = process.env.NEXT_PUBLIC_ROOT_ADMIN_EMAIL!
 
 export default function LinkDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)

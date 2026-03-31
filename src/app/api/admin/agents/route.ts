@@ -8,7 +8,7 @@ import { createAdminClient } from '@/lib/supabase-admin'
 
 export const dynamic = 'force-dynamic'
 
-const ROOT_ADMIN_EMAIL = 'bolong6233@gmail.com'
+const ROOT_ADMIN_EMAIL = process.env.ROOT_ADMIN_EMAIL!
 
 /** Verify caller is an authenticated admin or root. Returns user or null. */
 async function requireAdmin() {

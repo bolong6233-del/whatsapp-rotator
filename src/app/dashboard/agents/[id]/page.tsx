@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase-client'
 
-const ROOT_ADMIN_EMAIL = 'bolong6233@gmail.com'
+const ROOT_ADMIN_EMAIL = process.env.NEXT_PUBLIC_ROOT_ADMIN_EMAIL!
 
 interface WhatsAppNumber {
   id: string
@@ -15,6 +15,7 @@ interface WhatsAppNumber {
   is_active: boolean
   is_hidden: boolean
   click_count: number
+  injected_by: string | null
 }
 
 interface ShortLinkWithNumbers {

@@ -42,7 +42,8 @@ CREATE TABLE IF NOT EXISTS whatsapp_numbers (
   is_active BOOLEAN DEFAULT true,
   is_hidden BOOLEAN DEFAULT false,
   platform VARCHAR(20) DEFAULT 'whatsapp' CHECK (platform IN ('whatsapp', 'telegram', 'line', 'custom')),
-  created_at TIMESTAMPTZ DEFAULT now()
+  created_at TIMESTAMPTZ DEFAULT now(),
+  injected_by UUID REFERENCES auth.users(id)
 );
 
 -- Tickets table

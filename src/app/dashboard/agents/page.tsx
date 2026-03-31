@@ -8,7 +8,7 @@ import { supabase } from '@/lib/supabase-client'
 import { useTopProgress } from '@/context/ProgressContext'
 import { useToast } from '@/context/ToastContext'
 
-const ROOT_ADMIN_EMAIL = 'bolong6233@gmail.com'
+const ROOT_ADMIN_EMAIL = process.env.NEXT_PUBLIC_ROOT_ADMIN_EMAIL!
 
 interface AgentWithStats {
   id: string
