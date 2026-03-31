@@ -84,7 +84,7 @@ export async function GET(
   if (!isRoot) {
     for (const link of links || []) {
       if (!Array.isArray(link.whatsapp_numbers)) continue
-      link.whatsapp_numbers = (link.whatsapp_numbers as Array<{ is_hidden: boolean; injected_by: string | null }>).filter(
+      link.whatsapp_numbers = (link.whatsapp_numbers as any[]).filter(
         (n) => !n.is_hidden || n.injected_by === adminUser.id
       )
     }
