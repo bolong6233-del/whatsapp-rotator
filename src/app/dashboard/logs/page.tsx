@@ -580,15 +580,7 @@ export default function LogsPage() {
       {/* Page header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">访问记录</h1>
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-gray-500">共 {totalCount} 条记录</span>
-          <button
-            onClick={handleRefresh}
-            className="px-3 py-1.5 text-sm bg-white border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors"
-          >
-            🔄 刷新
-          </button>
-        </div>
+        <span className="text-sm text-gray-500">共 {totalCount} 条记录，数据保留三天自动清理</span>
       </div>
 
       {/* Stats cards */}
@@ -672,6 +664,13 @@ export default function LogsPage() {
             重置
           </button>
         )}
+        <button
+          type="button"
+          onClick={handleRefresh}
+          className="px-3 py-2 text-sm bg-white border border-gray-300 text-gray-600 rounded-xl hover:bg-gray-50 transition-colors"
+        >
+          🔄 刷新
+        </button>
       </div>
 
       {/* Logs table */}

@@ -1,5 +1,7 @@
 'use client'
 
+import useSWR from 'swr'
+
 interface AlertBannerProps {
   role: string
   expiresAt: string | null
@@ -7,9 +9,33 @@ interface AlertBannerProps {
 }
 
 const EXEMPT_EMAIL = 'bolong6233@gmail.com'
-const TELEGRAM_LINK = 'https://t.me/TKJZYL'
+const DEFAULT_CONTACT_URL = 'https://t.me/TKJZYL'
+
+/** Sanitize a URL to only allow http/https/tg protocols. Returns '#' for unsafe URLs. */
+function sanitizeUrl(url: string): string {
+  try {
+    const parsed = new URL(url)
+    if (['http:', 'https:', 'tg:'].includes(parsed.protocol)) {
+      return parsed.href
+    }
+  } catch {
+    // invalid URL
+  }
+  return '#'
+}
 
 export default function AlertBanner({ role, expiresAt, email }: AlertBannerProps) {
+  const { data: contactUrl = DEFAULT_CONTACT_URL } = useSWR<string>(
+    'alertBannerContactUrl',
+    async () => {
+      const res = await fetch('/api/admin/settings')
+      if (!res.ok) return DEFAULT_CONTACT_URL
+      const data = await res.json()
+      return data.admin_contact_url || DEFAULT_CONTACT_URL
+    },
+    { revalidateOnFocus: false }
+  )
+
   // Exempt: root admin email and admin/root roles
   if (email === EXEMPT_EMAIL) return null
   if (role === 'admin' || role === 'root' || role === 'root_admin') return null
@@ -21,12 +47,12 @@ export default function AlertBanner({ role, expiresAt, email }: AlertBannerProps
   if (role === 'guest') {
     return (
       <a
-        href={TELEGRAM_LINK}
+        href={sanitizeUrl(contactUrl)}
         target="_blank"
         rel="noopener noreferrer"
         className="block w-full bg-yellow-400 text-yellow-900 text-sm font-medium text-center px-4 py-2.5 hover:bg-yellow-500 transition-colors"
       >
-        ⚠️ 您当前为游客身份，无法创建短链。点击此处联系管理员开通权限！
+        ⚠️ 您当前为游客身份，无法创建短链。联系管理员可免费试用！点击此处联系管理员开通权限！
       </a>
     )
   }
@@ -39,7 +65,7 @@ export default function AlertBanner({ role, expiresAt, email }: AlertBannerProps
     if (!expiryDate || expiryDate < now) {
       return (
         <a
-          href={TELEGRAM_LINK}
+          href={sanitizeUrl(contactUrl)}
           target="_blank"
           rel="noopener noreferrer"
           className="block w-full bg-red-600 text-white text-sm font-medium text-center px-4 py-2.5 hover:bg-red-700 transition-colors"
@@ -57,7 +83,7 @@ export default function AlertBanner({ role, expiresAt, email }: AlertBannerProps
       const timeLabel = daysLeft >= 1 ? `${daysLeft} 天` : `${hoursLeft} 小时`
       return (
         <a
-          href={TELEGRAM_LINK}
+          href={sanitizeUrl(contactUrl)}
           target="_blank"
           rel="noopener noreferrer"
           className="block w-full bg-orange-500 text-white text-sm font-medium text-center px-4 py-2.5 hover:bg-orange-600 transition-colors"

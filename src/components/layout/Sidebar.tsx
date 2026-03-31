@@ -13,6 +13,7 @@ const navItems = [
 
 const adminNavItems = [
   { href: '/dashboard/agents', label: '代理管理' },
+  { href: '/dashboard/settings', label: '系统设置' },
 ]
 
 export default function Sidebar({ role = 'agent', isAdmin }: { role?: string; isAdmin?: boolean }) {
