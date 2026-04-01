@@ -10,9 +10,7 @@ import Pagination from '@/components/ui/Pagination'
 import { useTopProgress } from '@/context/ProgressContext'
 import { useToast } from '@/context/ToastContext'
 
-const TICKET_TYPES: TicketType[] = [
-  '云控',
-]
+const TICKET_TYPES: TicketType[] = ['云控', '火箭']
 
 const NUMBER_TYPES: { value: Platform; label: string }[] = [
   { value: 'whatsapp', label: 'WhatsApp' },
@@ -151,6 +149,167 @@ export default function TicketsPage() {
   // Sync a single work order by calling the sync API
   const syncWorkOrder = useCallback(async (order: WorkOrder): Promise<Partial<WorkOrder>> => {
     try {
+      // ──── 火箭云控：浏览器直接调用 ────
+      if (order.ticket_type === '火箭') {
+        // Extract work order ID from the ticket link
+        let workOrderId: string | null = null
+        try {
+          const parsed = new URL(order.ticket_link)
+          workOrderId = parsed.searchParams.get('link')
+        } catch {
+          console.error('[syncWorkOrder] Invalid huojian ticket_link:', order.ticket_link)
+          return {}
+        }
+        if (!workOrderId) {
+          console.error('[syncWorkOrder] No link= param in huojian ticket_link')
+          return {}
+        }
+        if (!order.password) {
+          console.error('[syncWorkOrder] No password for huojian order')
+          return {}
+        }
+
+        // Call Huojian API directly from browser (server requests get 403)
+        let huojianData: { code: number; data?: unknown; counterWorker?: unknown; counterCsAccountVo?: unknown[] }
+        try {
+          const huojianRes = await fetch(`https://v4.url66.me/prod-api1/biz/counter/link/share/${workOrderId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json;charset=UTF-8' },
+            body: JSON.stringify({
+              password: order.password,
+              accountLogin: '',
+              accountStatus: '',
+              csName: '',
+              isDelete: 0,
+              isEnable: '',
+            }),
+          })
+          if (!huojianRes.ok) {
+            console.error('[syncWorkOrder] Huojian API error:', huojianRes.status)
+            return {}
+          }
+          huojianData = await huojianRes.json()
+        } catch (err) {
+          console.error('[syncWorkOrder] Failed to fetch Huojian API:', err)
+          return {}
+        }
+
+        if (huojianData.code !== 0) {
+          console.error('[syncWorkOrder] Huojian returned error code:', huojianData.code)
+          return {}
+        }
+
+        // Send the fetched data to our backend for format conversion
+        const res = await fetch('/api/sync/huojian', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ huojian_data: huojianData }),
+        })
+        const result = await res.json()
+        if (!result.success) return {}
+
+        const { numbers, total_count, total_sum, total_day_sum, online_count, offline_count } = result.data
+        const updates: Partial<WorkOrder> = {
+          sync_total_sum: total_sum,
+          sync_total_day_sum: total_day_sum,
+          sync_total_numbers: total_count,
+          sync_online_count: online_count,
+          sync_offline_count: offline_count,
+          sync_numbers: numbers as SyncNumber[],
+          last_synced_at: new Date().toISOString(),
+        }
+
+        // Auto-complete when today's count reaches the daily target
+        if (total_day_sum >= order.total_quantity && order.total_quantity > 0) {
+          updates.status = 'completed'
+        }
+
+        // Persist sync results
+        const persistRes = await fetch(`/api/work-orders/${order.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updates),
+        })
+        if (!persistRes.ok) {
+          console.error('[syncWorkOrder] Failed to persist huojian sync results for order', order.id)
+        }
+
+        // Auto-complete: disable numbers
+        if (updates.status === 'completed' && order.distribution_link_slug) {
+          try {
+            const { data: linkData2 } = await supabase
+              .from('short_links')
+              .select('id')
+              .eq('slug', order.distribution_link_slug)
+              .single()
+            if (linkData2) {
+              const { data: numsToDisable } = await supabase
+                .from('whatsapp_numbers')
+                .select('phone_number')
+                .eq('short_link_id', linkData2.id)
+                .eq('label', order.ticket_name)
+              if (numsToDisable && numsToDisable.length > 0) {
+                const phoneNumbers = numsToDisable.map((n: { phone_number: string }) => n.phone_number)
+                const chunkSize = 100
+                for (let i = 0; i < phoneNumbers.length; i += chunkSize) {
+                  const chunk = phoneNumbers.slice(i, i + chunkSize)
+                  await supabase
+                    .from('whatsapp_numbers')
+                    .update({ is_active: false })
+                    .eq('short_link_id', linkData2.id)
+                    .in('phone_number', chunk)
+                }
+              }
+            }
+          } catch (err) {
+            console.error('[syncWorkOrder] Failed to disable numbers on huojian auto-complete', err)
+          }
+        }
+
+        // Push numbers to 号码管理
+        if (numbers && numbers.length > 0 && order.distribution_link_slug) {
+          try {
+            const { data: linkData } = await supabase
+              .from('short_links')
+              .select('id')
+              .eq('slug', order.distribution_link_slug)
+              .single()
+            if (linkData) {
+              const shortLinkId = linkData.id
+              const { data: existingNums } = await supabase
+                .from('whatsapp_numbers')
+                .select('phone_number')
+                .eq('short_link_id', shortLinkId)
+                .eq('label', order.ticket_name)
+              const existingSet = new Set(
+                (existingNums || []).map((n: { phone_number: string }) => n.phone_number)
+              )
+              const toInsert = (numbers as SyncNumber[])
+                .filter((num) => num.user && !existingSet.has(num.user))
+                .map((num, idx) => ({
+                  short_link_id: shortLinkId,
+                  phone_number: num.user,
+                  label: order.ticket_name,
+                  platform: order.number_type,
+                  is_active: num.online === 1,
+                  sort_order: idx,
+                }))
+              if (toInsert.length > 0) {
+                const { error: insertError } = await supabase.from('whatsapp_numbers').insert(toInsert)
+                if (insertError) {
+                  console.error('[syncWorkOrder] Failed to insert huojian numbers', insertError.message)
+                }
+              }
+            }
+          } catch (err) {
+            console.error('[syncWorkOrder] Failed to push huojian numbers', err)
+          }
+        }
+
+        return updates
+      }
+
+      // ──── 云控：原有逻辑不变 ────
       const res = await fetch('/api/sync/yunkon', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -282,7 +441,7 @@ export default function TicketsPage() {
     const updatesMap: Record<string, Partial<WorkOrder>> = {}
     await Promise.all(
       activeOrders.map(async (order) => {
-        if (order.ticket_type !== '云控') return
+        if (order.ticket_type !== '云控' && order.ticket_type !== '火箭') return
         const updates = await syncWorkOrder(order)
         if (Object.keys(updates).length > 0) {
           updatesMap[order.id] = updates
@@ -500,7 +659,7 @@ export default function TicketsPage() {
       setShowModal(false)
 
       // Immediately sync after creating a 云控 order
-      if (newOrder.ticket_link && newOrder.ticket_type === '云控') {
+      if (newOrder.ticket_link && (newOrder.ticket_type === '云控' || newOrder.ticket_type === '火箭')) {
         // Fire and forget - let the sync happen in the background
         const syncFn = async () => {
           const updates = await syncWorkOrder(newOrder)
@@ -818,7 +977,7 @@ export default function TicketsPage() {
                     value={form.ticket_link}
                     onChange={(e) => updateForm('ticket_link', e.target.value)}
                     required
-                    placeholder="请输入工单链接"
+                    placeholder={form.ticket_type === '火箭' ? '请粘贴完整链接（如 v4.url66.me/gds?link=xxx）' : '请输入工单链接'}
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
                   />
                 </div>
@@ -948,7 +1107,7 @@ export default function TicketsPage() {
                     type="password"
                     value={form.password}
                     onChange={(e) => updateForm('password', e.target.value)}
-                    placeholder="请输入工单密码（可选）"
+                    placeholder={form.ticket_type === '火箭' ? '请输入工单密码（火箭云控必填）' : '请输入工单密码（可选）'}
                     autoComplete="new-password"
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
                   />
