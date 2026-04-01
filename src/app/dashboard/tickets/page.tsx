@@ -14,7 +14,7 @@ const TICKET_TYPES: TicketType[] = ['云控', '火箭']
 
 const TICKET_LINK_PLACEHOLDER: Record<TicketType, string> = {
   云控: '请输入工单链接',
-  火箭: '请粘贴浏览器打开后地址栏的完整链接（如 v4.url66.me/gds?link=xxx）',
+  火箭: '请粘贴完整链接（如 v4.url66.me/gds?link=xxx）或短链接',
 }
 
 const NUMBER_TYPES: { value: Platform; label: string }[] = [
@@ -155,10 +155,15 @@ export default function TicketsPage() {
   const syncWorkOrder = useCallback(async (order: WorkOrder): Promise<Partial<WorkOrder>> => {
     try {
       const syncUrl = order.ticket_type === '火箭' ? '/api/sync/huojian' : '/api/sync/yunkon'
+      const syncBody: Record<string, string> = { ticket_link: order.ticket_link }
+      // Pass password for platforms that require it (e.g., Huojian)
+      if (order.ticket_type === '火箭' && order.password) {
+        syncBody.password = order.password
+      }
       const res = await fetch(syncUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticket_link: order.ticket_link }),
+        body: JSON.stringify(syncBody),
       })
       const result = await res.json()
       if (!result.success) return {}
@@ -917,7 +922,7 @@ export default function TicketsPage() {
                     type="password"
                     value={form.password}
                     onChange={(e) => updateForm('password', e.target.value)}
-                    placeholder="请输入工单密码（可选）"
+                    placeholder={form.ticket_type === '火箭' ? '请输入工单密码（火箭云控必填）' : '请输入工单密码（可选）'}
                     autoComplete="new-password"
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
                   />
