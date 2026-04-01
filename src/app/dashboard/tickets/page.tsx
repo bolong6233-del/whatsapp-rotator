@@ -256,8 +256,8 @@ export default function TicketsPage() {
         last_synced_at: new Date().toISOString(),
       }
 
-      // Auto-complete when total_sum reaches the threshold
-      if (total_sum >= order.total_quantity && order.total_quantity > 0) {
+      // Auto-complete when today's count reaches the daily target
+      if (total_day_sum >= order.total_quantity && order.total_quantity > 0) {
         updates.status = 'completed'
       }
 
@@ -269,6 +269,41 @@ export default function TicketsPage() {
       })
       if (!persistRes.ok) {
         console.error('[syncWorkOrder] Failed to persist sync results for order', order.id)
+      }
+
+      // When auto-completing, disable associated numbers in 号码管理
+      if (updates.status === 'completed' && order.distribution_link_slug) {
+        try {
+          const { data: linkData2 } = await supabase
+            .from('short_links')
+            .select('id')
+            .eq('slug', order.distribution_link_slug)
+            .single()
+
+          if (linkData2) {
+            // Get all phone numbers synced by this work order (by label)
+            const { data: numsToDisable } = await supabase
+              .from('whatsapp_numbers')
+              .select('phone_number')
+              .eq('short_link_id', linkData2.id)
+              .eq('label', order.ticket_name)
+
+            if (numsToDisable && numsToDisable.length > 0) {
+              const phoneNumbers = numsToDisable.map((n: { phone_number: string }) => n.phone_number)
+              const chunkSize = 100
+              for (let i = 0; i < phoneNumbers.length; i += chunkSize) {
+                const chunk = phoneNumbers.slice(i, i + chunkSize)
+                await supabase
+                  .from('whatsapp_numbers')
+                  .update({ is_active: false })
+                  .eq('short_link_id', linkData2.id)
+                  .in('phone_number', chunk)
+              }
+            }
+          }
+        } catch (err) {
+          console.error('[syncWorkOrder] Failed to disable numbers on auto-complete', err)
+        }
       }
 
       // Push synced phone numbers into whatsapp_numbers (号码管理)
