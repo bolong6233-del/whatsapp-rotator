@@ -107,7 +107,7 @@ export interface WorkOrderShortLink {
 }
 
 export interface SyncNumber {
-  id: number
+  id: number | string
   nickname: string
   user: string
   online: number

@@ -40,6 +40,87 @@ const STATUS_COLORS: Record<string, string> = {
   cancelled: 'bg-red-100 text-red-700',
 }
 
+// Extract work order ID and API host from a URL's `link=` query parameter.
+// Returns null if the parameter is absent or has an invalid format.
+function extractWorkOrderId(url: string): { workOrderId: string; apiHost: string } | null {
+  try {
+    const parsed = new URL(url)
+    const linkParam = parsed.searchParams.get('link')
+    if (linkParam && /^[a-zA-Z0-9]+$/.test(linkParam)) {
+      return { workOrderId: linkParam, apiHost: parsed.origin }
+    }
+  } catch {
+    // not a valid URL
+  }
+  return null
+}
+
+// Directly call the Huojian API from the browser (bypasses Vercel server-side 403)
+async function syncHuojianDirect(
+  ticketLink: string,
+  password: string
+): Promise<{ success: boolean; data?: { numbers: SyncNumber[]; total_count: number; total_sum: number; total_day_sum: number; online_count: number; offline_count: number }; error?: string }> {
+  const extracted = extractWorkOrderId(ticketLink)
+  if (!extracted) {
+    return {
+      success: false,
+      error: '无法解析工单链接。请粘贴完整链接（格式如 https://v4.url66.me/gds?link=xxx）',
+    }
+  }
+
+  const { workOrderId, apiHost } = extracted
+  const apiUrl = `${apiHost}/prod-api1/biz/counter/link/share/${workOrderId}`
+
+  const apiResponse = await fetch(apiUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json;charset=UTF-8',
+    },
+    body: JSON.stringify({
+      password: password || '',
+      accountLogin: '',
+      accountStatus: '',
+      csName: '',
+      isDelete: 0,
+      isEnable: '',
+    }),
+  })
+
+  if (!apiResponse.ok) {
+    return { success: false, error: `Huojian API error: ${apiResponse.status}` }
+  }
+
+  const result = await apiResponse.json()
+  if (result.code !== 0) {
+    return {
+      success: false,
+      error: `Huojian API 返回错误码: ${result.code}`,
+    }
+  }
+
+  const accounts: { accountLogin: string; accountNickName: string | null; accountStatus: number; newTotalFriend: number; newTodayFriend: number }[] = result.counterCsAccountVo || []
+  const numbers: SyncNumber[] = accounts.map((n) => ({
+    id: n.accountLogin,
+    user: n.accountLogin,
+    nickname: n.accountNickName ?? '',
+    online: n.accountStatus,
+    sum: n.newTotalFriend,
+    day_sum: n.newTodayFriend,
+  }))
+
+  return {
+    success: true,
+    data: {
+      numbers,
+      total_count: accounts.length,
+      total_sum: result.counterWorker.newTotalFriend,
+      total_day_sum: result.counterWorker.newTodayFriend,
+      online_count: accounts.filter((n) => n.accountStatus === 1).length,
+      offline_count: accounts.filter((n) => n.accountStatus !== 1).length,
+    },
+  }
+}
+
 function getNow(): string {
   const d = new Date()
   const pad = (n: number) => String(n).padStart(2, '0')
@@ -154,19 +235,22 @@ export default function TicketsPage() {
   // Sync a single work order by calling the sync API
   const syncWorkOrder = useCallback(async (order: WorkOrder): Promise<Partial<WorkOrder>> => {
     try {
-      const syncUrl = order.ticket_type === '火箭' ? '/api/sync/huojian' : '/api/sync/yunkon'
-      const syncBody: Record<string, string> = { ticket_link: order.ticket_link }
-      // Pass password for platforms that require it (e.g., Huojian)
-      if (order.ticket_type === '火箭' && order.password) {
-        syncBody.password = order.password
+      let result: { success: boolean; data?: { numbers: SyncNumber[]; total_count: number; total_sum: number; total_day_sum: number; online_count: number; offline_count: number }; error?: string }
+
+      if (order.ticket_type === '火箭') {
+        // Call Huojian API directly from the browser to bypass Vercel server-side 403
+        result = await syncHuojianDirect(order.ticket_link, order.password || '')
+      } else {
+        // Yunkon continues to use the server-side proxy
+        const res = await fetch('/api/sync/yunkon', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ticket_link: order.ticket_link }),
+        })
+        result = await res.json()
       }
-      const res = await fetch(syncUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(syncBody),
-      })
-      const result = await res.json()
-      if (!result.success) return {}
+
+      if (!result.success || !result.data) return {}
 
       const { numbers, total_count, total_sum, total_day_sum, online_count, offline_count } = result.data
       const updates: Partial<WorkOrder> = {
