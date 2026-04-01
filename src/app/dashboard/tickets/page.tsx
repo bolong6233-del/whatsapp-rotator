@@ -12,11 +12,6 @@ import { useToast } from '@/context/ToastContext'
 
 const TICKET_TYPES: TicketType[] = ['云控', '火箭']
 
-const TICKET_LINK_PLACEHOLDER: Record<TicketType, string> = {
-  云控: '请输入工单链接',
-  火箭: '请粘贴完整链接（如 v4.url66.me/gds?link=xxx）或短链接',
-}
-
 const NUMBER_TYPES: { value: Platform; label: string }[] = [
   { value: 'whatsapp', label: 'WhatsApp' },
   { value: 'telegram', label: 'Telegram' },
@@ -40,9 +35,13 @@ const STATUS_COLORS: Record<string, string> = {
   cancelled: 'bg-red-100 text-red-700',
 }
 
-// Extract work order ID and API host from a URL's `link=` query parameter.
-// Returns null if the parameter is absent or has an invalid format.
-function extractWorkOrderId(url: string): { workOrderId: string; apiHost: string } | null {
+const TICKET_LINK_PLACEHOLDER: Record<TicketType, string> = {
+  云控: '请输入工单链接',
+  火箭: '请粘贴完整链接（如 v4.url66.me/gds?link=xxx）',
+}
+
+// Extract work order ID and API host from a Huojian URL's `link=` query parameter.
+function extractHuojianWorkOrderId(url: string): { workOrderId: string; apiHost: string } | null {
   try {
     const parsed = new URL(url)
     const linkParam = parsed.searchParams.get('link')
@@ -60,7 +59,7 @@ async function syncHuojianDirect(
   ticketLink: string,
   password: string
 ): Promise<{ success: boolean; data?: { numbers: SyncNumber[]; total_count: number; total_sum: number; total_day_sum: number; online_count: number; offline_count: number }; error?: string }> {
-  const extracted = extractWorkOrderId(ticketLink)
+  const extracted = extractHuojianWorkOrderId(ticketLink)
   if (!extracted) {
     return {
       success: false,
@@ -71,53 +70,56 @@ async function syncHuojianDirect(
   const { workOrderId, apiHost } = extracted
   const apiUrl = `${apiHost}/prod-api1/biz/counter/link/share/${workOrderId}`
 
-  const apiResponse = await fetch(apiUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json;charset=UTF-8',
-    },
-    body: JSON.stringify({
-      password: password || '',
-      accountLogin: '',
-      accountStatus: '',
-      csName: '',
-      isDelete: 0,
-      isEnable: '',
-    }),
-  })
+  try {
+    const apiResponse = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json;charset=UTF-8',
+      },
+      body: JSON.stringify({
+        password: password || '',
+        accountLogin: '',
+        accountStatus: '',
+        csName: '',
+        isDelete: 0,
+        isEnable: '',
+      }),
+    })
 
-  if (!apiResponse.ok) {
-    return { success: false, error: `Huojian API error: ${apiResponse.status}` }
-  }
-
-  const result = await apiResponse.json()
-  if (result.code !== 0) {
-    return {
-      success: false,
-      error: `Huojian API 返回错误码: ${result.code}`,
+    if (!apiResponse.ok) {
+      return { success: false, error: `Huojian API error: ${apiResponse.status}` }
     }
-  }
 
-  const accounts: { accountLogin: string; accountNickName: string | null; accountStatus: number; newTotalFriend: number; newTodayFriend: number }[] = result.counterCsAccountVo || []
-  const numbers: SyncNumber[] = accounts.map((n) => ({
-    id: n.accountLogin,
-    user: n.accountLogin,
-    nickname: n.accountNickName ?? '',
-    online: n.accountStatus,
-    sum: n.newTotalFriend,
-    day_sum: n.newTodayFriend,
-  }))
+    const result = await apiResponse.json()
+    if (result.code !== 0) {
+      const hint = !password ? '（工单密码未填写，请检查是否需要密码）' : '（请检查工单密码是否正确）'
+      return { success: false, error: `Huojian API 返回错误码: ${result.code} ${hint}` }
+    }
 
-  return {
-    success: true,
-    data: {
-      numbers,
-      total_count: accounts.length,
-      total_sum: result.counterWorker.newTotalFriend,
-      total_day_sum: result.counterWorker.newTodayFriend,
-      online_count: accounts.filter((n) => n.accountStatus === 1).length,
-      offline_count: accounts.filter((n) => n.accountStatus !== 1).length,
-    },
+    const accounts: { accountLogin: string; accountNickName: string | null; accountStatus: number; newTotalFriend: number; newTodayFriend: number }[] = result.counterCsAccountVo || []
+    const numbers: SyncNumber[] = accounts.map((n) => ({
+      id: n.accountLogin,
+      user: n.accountLogin,
+      nickname: n.accountNickName ?? '',
+      online: n.accountStatus,
+      sum: n.newTotalFriend,
+      day_sum: n.newTodayFriend,
+    }))
+
+    return {
+      success: true,
+      data: {
+        numbers,
+        total_count: accounts.length,
+        total_sum: result.counterWorker.newTotalFriend,
+        total_day_sum: result.counterWorker.newTodayFriend,
+        online_count: accounts.filter((n) => n.accountStatus === 1).length,
+        offline_count: accounts.filter((n) => n.accountStatus !== 1).length,
+      },
+    }
+  } catch (err) {
+    console.error('[syncHuojianDirect] error:', err)
+    return { success: false, error: '火箭 API 请求失败' }
   }
 }
 
@@ -235,22 +237,13 @@ export default function TicketsPage() {
   // Sync a single work order by calling the sync API
   const syncWorkOrder = useCallback(async (order: WorkOrder): Promise<Partial<WorkOrder>> => {
     try {
-      let result: { success: boolean; data?: { numbers: SyncNumber[]; total_count: number; total_sum: number; total_day_sum: number; online_count: number; offline_count: number }; error?: string }
-
-      if (order.ticket_type === '火箭') {
-        // Call Huojian API directly from the browser to bypass Vercel server-side 403
-        result = await syncHuojianDirect(order.ticket_link, order.password || '')
-      } else {
-        // Yunkon continues to use the server-side proxy
-        const res = await fetch('/api/sync/yunkon', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ticket_link: order.ticket_link }),
-        })
-        result = await res.json()
-      }
-
-      if (!result.success || !result.data) return {}
+      const res = await fetch('/api/sync/yunkon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticket_link: order.ticket_link }),
+      })
+      const result = await res.json()
+      if (!result.success) return {}
 
       const { numbers, total_count, total_sum, total_day_sum, online_count, offline_count } = result.data
       const updates: Partial<WorkOrder> = {
@@ -331,7 +324,84 @@ export default function TicketsPage() {
     }
   }, [])
 
-  // Sync all active orders (云控 via Yunkon API)
+  // Sync a single Huojian work order — completely independent from syncWorkOrder
+  const syncHuojianOrder = useCallback(async (order: WorkOrder): Promise<Partial<WorkOrder>> => {
+    try {
+      const result = await syncHuojianDirect(order.ticket_link, order.password || '')
+      if (!result.success || !result.data) return {}
+
+      const { numbers, total_count, total_sum, total_day_sum, online_count, offline_count } = result.data
+      const updates: Partial<WorkOrder> = {
+        sync_total_sum: total_sum,
+        sync_total_day_sum: total_day_sum,
+        sync_total_numbers: total_count,
+        sync_online_count: online_count,
+        sync_offline_count: offline_count,
+        sync_numbers: numbers as SyncNumber[],
+        last_synced_at: new Date().toISOString(),
+      }
+
+      // Persist sync results to the database
+      const persistRes = await fetch(`/api/work-orders/${order.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      })
+      if (!persistRes.ok) {
+        console.error('[syncHuojianOrder] Failed to persist sync results for order', order.id)
+      }
+
+      // Push synced phone numbers into whatsapp_numbers (号码管理)
+      if (numbers && numbers.length > 0 && order.distribution_link_slug) {
+        try {
+          const { data: linkData } = await supabase
+            .from('short_links')
+            .select('id')
+            .eq('slug', order.distribution_link_slug)
+            .single()
+
+          if (linkData) {
+            const shortLinkId = linkData.id
+            const { data: existingNums } = await supabase
+              .from('whatsapp_numbers')
+              .select('phone_number')
+              .eq('short_link_id', shortLinkId)
+              .eq('label', order.ticket_name)
+
+            const existingSet = new Set(
+              (existingNums || []).map((n: { phone_number: string }) => n.phone_number)
+            )
+
+            const toInsert = (numbers as SyncNumber[])
+              .filter((num) => num.user && !existingSet.has(num.user))
+              .map((num, idx) => ({
+                short_link_id: shortLinkId,
+                phone_number: num.user,
+                label: order.ticket_name,
+                platform: order.number_type,
+                is_active: num.online === 1,
+                sort_order: idx,
+              }))
+
+            if (toInsert.length > 0) {
+              const { error: insertError } = await supabase.from('whatsapp_numbers').insert(toInsert)
+              if (insertError) {
+                console.error('[syncHuojianOrder] Failed to insert numbers', insertError.message)
+              }
+            }
+          }
+        } catch (err) {
+          console.error('[syncHuojianOrder] Failed to push numbers', err)
+        }
+      }
+
+      return updates
+    } catch {
+      return {}
+    }
+  }, [])
+
+  // Sync all active orders
   const syncAllActive = useCallback(async () => {
     const orders = workOrdersRef.current
     const activeOrders = orders.filter((o) => o.status === 'active')
@@ -340,8 +410,14 @@ export default function TicketsPage() {
     const updatesMap: Record<string, Partial<WorkOrder>> = {}
     await Promise.all(
       activeOrders.map(async (order) => {
-        if (!TICKET_TYPES.includes(order.ticket_type)) return
-        const updates = await syncWorkOrder(order)
+        let updates: Partial<WorkOrder> = {}
+        if (order.ticket_type === '云控') {
+          updates = await syncWorkOrder(order)
+        } else if (order.ticket_type === '火箭') {
+          updates = await syncHuojianOrder(order)
+        } else {
+          return
+        }
         if (Object.keys(updates).length > 0) {
           updatesMap[order.id] = updates
         }
@@ -359,7 +435,7 @@ export default function TicketsPage() {
         { revalidate: false }
       )
     }
-  }, [syncWorkOrder, mutate])
+  }, [syncWorkOrder, syncHuojianOrder, mutate])
 
   useEffect(() => {
     fetchSlugs()
@@ -557,11 +633,13 @@ export default function TicketsPage() {
       showToast('工单创建成功', 'success')
       setShowModal(false)
 
-      // Immediately sync after creating a syncable order
-      if (newOrder.ticket_link && TICKET_TYPES.includes(newOrder.ticket_type)) {
+      // Immediately sync after creating a 云控 or 火箭 order
+      if (newOrder.ticket_link && (newOrder.ticket_type === '云控' || newOrder.ticket_type === '火箭')) {
         // Fire and forget - let the sync happen in the background
         const syncFn = async () => {
-          const updates = await syncWorkOrder(newOrder)
+          const updates = newOrder.ticket_type === '火箭'
+            ? await syncHuojianOrder(newOrder)
+            : await syncWorkOrder(newOrder)
           if (Object.keys(updates).length > 0) {
             await mutate(
               (prev) => prev
