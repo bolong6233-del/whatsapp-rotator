@@ -34,6 +34,52 @@ class HuojianUpstreamError extends Error {
   }
 }
 
+/**
+ * Extract work order ID from a URL's `link=` query parameter.
+ * Returns null if the parameter is absent or has an invalid format.
+ */
+function extractWorkOrderId(url: string): string | null {
+  try {
+    const parsed = new URL(url)
+    const linkParam = parsed.searchParams.get('link')
+    if (linkParam && /^[a-zA-Z0-9]+$/.test(linkParam)) {
+      return linkParam
+    }
+  } catch {
+    // not a valid URL
+  }
+  return null
+}
+
+/**
+ * Returns true when the hostname must not be fetched server-side
+ * (loopback, link-local, private RFC-1918 ranges, cloud metadata endpoints).
+ * Prevents SSRF attacks via crafted redirect destinations.
+ */
+function isPrivateOrReservedHostname(hostname: string): boolean {
+  // Strip port if present
+  const host = hostname.replace(/:\d+$/, '').toLowerCase()
+  if (host === 'localhost') return true
+
+  // IPv4 private/reserved ranges
+  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
+  if (ipv4) {
+    const [, a, b] = ipv4.map(Number)
+    // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8, 169.254.0.0/16
+    if (a === 10) return true
+    if (a === 172 && b >= 16 && b <= 31) return true
+    if (a === 192 && b === 168) return true
+    if (a === 127) return true
+    if (a === 169 && b === 254) return true
+    if (a === 0) return true
+  }
+
+  // IPv6 loopback / link-local
+  if (host === '::1' || host.startsWith('fe80:')) return true
+
+  return false
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -54,80 +100,95 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'ticket_link must use HTTPS' }, { status: 400 })
     }
 
-    // Step 1: Follow ALL redirects manually, collecting cookies along the way
-    let currentUrl = parsedTicketLink.href
+    if (isPrivateOrReservedHostname(parsedTicketLink.hostname)) {
+      return NextResponse.json({ success: false, error: 'Invalid ticket_link URL' }, { status: 400 })
+    }
+
+    // Step 1: Try to extract work order ID directly from the provided URL (complete link format)
+    let workOrderId = extractWorkOrderId(ticket_link)
     const allCookies: string[] = []
-    let finalUrl = ''
-    const maxRedirects = 10
 
-    for (let i = 0; i < maxRedirects; i++) {
-      console.log(`[huojian sync] redirect step ${i}: ${currentUrl}`)
-      let response: Response
-      try {
-        response = await fetch(currentUrl, {
-          redirect: 'manual',
-          headers: allCookies.length > 0 ? { Cookie: allCookies.join('; ') } : {},
-        })
-      } catch {
-        return NextResponse.json({ success: false, error: `Failed to fetch ticket_link at redirect step ${i}: ${currentUrl}` }, { status: 502 })
-      }
+    if (workOrderId) {
+      console.log(`[huojian sync] Direct extraction — work order ID: ${workOrderId}`)
+    } else {
+      // Step 2: URL doesn't contain link= param (short link), try following HTTP redirects
+      console.log(`[huojian sync] No link= param found, attempting redirect tracking from: ${ticket_link}`)
+      let currentUrl = parsedTicketLink.href
+      let finalUrl = parsedTicketLink.href
+      const maxRedirects = 10
 
-      // Collect cookies from this response
-      const setCookieHeaders = response.headers.getSetCookie
-        ? response.headers.getSetCookie()
-        : (response.headers.get('set-cookie') ? [response.headers.get('set-cookie')!] : [])
-
-      for (const cookie of setCookieHeaders) {
-        allCookies.push(cookie.split(';')[0])
-      }
-
-      const status = response.status
-      if (status >= 300 && status < 400) {
-        const location = response.headers.get('location')
-        if (!location) break
-        // Handle relative URLs
-        const nextUrl = location.startsWith('http') ? location : new URL(location, currentUrl).href
-        // Validate redirect destination uses HTTPS to prevent SSRF to internal resources
-        if (!nextUrl.startsWith('https://')) {
-          return NextResponse.json({ success: false, error: 'Redirect destination must use HTTPS' }, { status: 502 })
+      for (let i = 0; i < maxRedirects; i++) {
+        console.log(`[huojian sync] redirect step ${i}: ${currentUrl}`)
+        let response: Response
+        try {
+          response = await fetch(currentUrl, {
+            redirect: 'manual',
+            headers: allCookies.length > 0 ? { Cookie: allCookies.join('; ') } : {},
+          })
+        } catch {
+          break
         }
-        currentUrl = nextUrl
-        finalUrl = currentUrl
-      } else {
-        // Not a redirect - we've reached the final destination
-        finalUrl = currentUrl
-        break
+
+        // Collect cookies from this response
+        const setCookieHeaders = response.headers.getSetCookie
+          ? response.headers.getSetCookie()
+          : (response.headers.get('set-cookie') ? [response.headers.get('set-cookie')!] : [])
+
+        for (const cookie of setCookieHeaders) {
+          allCookies.push(cookie.split(';')[0])
+        }
+
+        const status = response.status
+        if (status >= 300 && status < 400) {
+          const location = response.headers.get('location')
+          if (!location) break
+          // Handle relative URLs
+          const nextUrl = location.startsWith('http') ? location : new URL(location, currentUrl).href
+          // Validate redirect destination uses HTTPS and is not a private/internal host (SSRF prevention)
+          if (!nextUrl.startsWith('https://')) {
+            return NextResponse.json({ success: false, error: 'Redirect destination must use HTTPS' }, { status: 502 })
+          }
+          try {
+            const nextParsed = new URL(nextUrl)
+            if (isPrivateOrReservedHostname(nextParsed.hostname)) {
+              return NextResponse.json({ success: false, error: 'Redirect destination is not allowed' }, { status: 502 })
+            }
+          } catch {
+            return NextResponse.json({ success: false, error: 'Redirect destination must use HTTPS' }, { status: 502 })
+          }
+          currentUrl = nextUrl
+          finalUrl = currentUrl
+
+          workOrderId = extractWorkOrderId(currentUrl)
+          if (workOrderId) {
+            console.log(`[huojian sync] Found work order ID from redirect: ${workOrderId}`)
+            break
+          }
+        } else {
+          // Not a redirect — reached the final destination
+          finalUrl = currentUrl
+          break
+        }
+      }
+
+      console.log(`[huojian sync] final URL after redirect tracking: ${finalUrl}`)
+      console.log(`[huojian sync] collected cookies from redirects: ${allCookies.length}`)
+
+      // If still no work order ID, the short link uses JS redirect which server-side fetch cannot follow
+      if (!workOrderId) {
+        console.error(`[huojian sync] Could not extract work order ID. Final URL: ${finalUrl}`)
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              '短链接无法自动解析。请在浏览器中打开短链接，等页面跳转后，复制地址栏中的完整链接（格式如 v4.url66.me/gds?link=xxx）粘贴到工单链接中。',
+          },
+          { status: 400 }
+        )
       }
     }
 
-    console.log(`[huojian sync] final URL: ${finalUrl}`)
-    console.log(`[huojian sync] collected cookies: ${allCookies.length}`)
-
-    // Step 2: Extract the work order ID from the final URL (link= query param)
-    let workOrderId: string | null = null
-    try {
-      const parsed = new URL(finalUrl)
-      workOrderId = parsed.searchParams.get('link')
-    } catch {
-      console.error('[huojian sync] Failed to parse final URL:', finalUrl)
-      // handled below
-    }
-
-    if (!workOrderId) {
-      console.error('[huojian sync] Could not extract work order ID from final URL:', finalUrl)
-      return NextResponse.json(
-        { success: false, error: `Could not extract work order ID. Final URL: ${finalUrl}` },
-        { status: 502 }
-      )
-    }
-
-    // Validate work order ID to prevent path traversal / injection
-    if (!/^[a-zA-Z0-9]+$/.test(workOrderId)) {
-      return NextResponse.json({ success: false, error: 'Invalid work order ID format' }, { status: 502 })
-    }
-
-    // Step 3: If no cookies were collected during redirects, try fetching the gds page
-    // The gds page may set authentication cookies needed for the API call
+    // Step 3: If no cookies were collected during redirects, fetch the gds page to get auth cookies
     if (allCookies.length === 0) {
       console.log('[huojian sync] No cookies from redirects, trying to fetch gds page...')
       const gdsUrl = `https://v4.url66.me/gds?link=${workOrderId}`
