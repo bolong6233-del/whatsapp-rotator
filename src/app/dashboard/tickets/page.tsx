@@ -12,6 +12,11 @@ import { useToast } from '@/context/ToastContext'
 
 const TICKET_TYPES: TicketType[] = ['云控', '火箭']
 
+const TICKET_LINK_PLACEHOLDER: Record<TicketType, string> = {
+  云控: '请输入工单链接',
+  火箭: '请粘贴浏览器打开后地址栏的完整链接（如 v4.url66.me/gds?link=xxx）',
+}
+
 const NUMBER_TYPES: { value: Platform; label: string }[] = [
   { value: 'whatsapp', label: 'WhatsApp' },
   { value: 'telegram', label: 'Telegram' },
@@ -782,7 +787,7 @@ export default function TicketsPage() {
                     value={form.ticket_link}
                     onChange={(e) => updateForm('ticket_link', e.target.value)}
                     required
-                    placeholder="请输入工单链接"
+                    placeholder={TICKET_LINK_PLACEHOLDER[form.ticket_type as TicketType] ?? '请输入工单链接'}
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
                   />
                 </div>
