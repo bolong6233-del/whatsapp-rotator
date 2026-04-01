@@ -35,15 +35,15 @@ class HuojianUpstreamError extends Error {
 }
 
 /**
- * Extract work order ID from a URL's `link=` query parameter.
+ * Extract work order ID and API host from a URL's `link=` query parameter.
  * Returns null if the parameter is absent or has an invalid format.
  */
-function extractWorkOrderId(url: string): string | null {
+function extractWorkOrderId(url: string): { workOrderId: string; apiHost: string } | null {
   try {
     const parsed = new URL(url)
     const linkParam = parsed.searchParams.get('link')
     if (linkParam && /^[a-zA-Z0-9]+$/.test(linkParam)) {
-      return linkParam
+      return { workOrderId: linkParam, apiHost: parsed.origin }
     }
   } catch {
     // not a valid URL
@@ -83,7 +83,7 @@ function isPrivateOrReservedHostname(hostname: string): boolean {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { ticket_link } = body
+    const { ticket_link, password } = body
 
     if (!ticket_link) {
       return NextResponse.json({ success: false, error: 'ticket_link is required' }, { status: 400 })
@@ -105,11 +105,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Step 1: Try to extract work order ID directly from the provided URL (complete link format)
-    let workOrderId = extractWorkOrderId(ticket_link)
-    const allCookies: string[] = []
+    let extracted = extractWorkOrderId(ticket_link)
 
-    if (workOrderId) {
-      console.log(`[huojian sync] Direct extraction — work order ID: ${workOrderId}`)
+    if (extracted) {
+      console.log(`[huojian sync] Direct extraction — work order ID: ${extracted.workOrderId}`)
     } else {
       // Step 2: URL doesn't contain link= param (short link), try following HTTP redirects
       console.log(`[huojian sync] No link= param found, attempting redirect tracking from: ${ticket_link}`)
@@ -121,21 +120,9 @@ export async function POST(request: NextRequest) {
         console.log(`[huojian sync] redirect step ${i}: ${currentUrl}`)
         let response: Response
         try {
-          response = await fetch(currentUrl, {
-            redirect: 'manual',
-            headers: allCookies.length > 0 ? { Cookie: allCookies.join('; ') } : {},
-          })
+          response = await fetch(currentUrl, { redirect: 'manual' })
         } catch {
           break
-        }
-
-        // Collect cookies from this response
-        const setCookieHeaders = response.headers.getSetCookie
-          ? response.headers.getSetCookie()
-          : (response.headers.get('set-cookie') ? [response.headers.get('set-cookie')!] : [])
-
-        for (const cookie of setCookieHeaders) {
-          allCookies.push(cookie.split(';')[0])
         }
 
         const status = response.status
@@ -159,9 +146,9 @@ export async function POST(request: NextRequest) {
           currentUrl = nextUrl
           finalUrl = currentUrl
 
-          workOrderId = extractWorkOrderId(currentUrl)
-          if (workOrderId) {
-            console.log(`[huojian sync] Found work order ID from redirect: ${workOrderId}`)
+          extracted = extractWorkOrderId(currentUrl)
+          if (extracted) {
+            console.log(`[huojian sync] Found work order ID from redirect: ${extracted.workOrderId}`)
             break
           }
         } else {
@@ -172,60 +159,60 @@ export async function POST(request: NextRequest) {
       }
 
       console.log(`[huojian sync] final URL after redirect tracking: ${finalUrl}`)
-      console.log(`[huojian sync] collected cookies from redirects: ${allCookies.length}`)
 
       // If still no work order ID, the short link uses JS redirect which server-side fetch cannot follow
-      if (!workOrderId) {
+      if (!extracted) {
         console.error(`[huojian sync] Could not extract work order ID. Final URL: ${finalUrl}`)
         return NextResponse.json(
           {
             success: false,
             error:
-              '短链接无法自动解析。请在浏览器中打开短链接，等页面跳转后，复制地址栏中的完整链接（格式如 v4.url66.me/gds?link=xxx）粘贴到工单链接中。',
+              '无法解析工单链接。请在浏览器中打开短链接，等页面加载后复制地址栏的完整链接（格式如 v4.url66.me/gds?link=xxx）粘贴到工单链接中。',
           },
           { status: 400 }
         )
       }
     }
 
-    // Step 3: If no cookies were collected during redirects, fetch the gds page to get auth cookies
-    if (allCookies.length === 0) {
-      console.log('[huojian sync] No cookies from redirects, trying to fetch gds page...')
-      const gdsUrl = `https://v4.url66.me/gds?link=${workOrderId}`
-      try {
-        const gdsResponse = await fetch(gdsUrl, { redirect: 'follow' })
-        const gdsCookies = gdsResponse.headers.getSetCookie
-          ? gdsResponse.headers.getSetCookie()
-          : (gdsResponse.headers.get('set-cookie') ? [gdsResponse.headers.get('set-cookie')!] : [])
+    const { workOrderId, apiHost } = extracted
 
-        for (const cookie of gdsCookies) {
-          allCookies.push(cookie.split(';')[0])
-        }
-      } catch {
-        console.warn('[huojian sync] Failed to fetch gds page for cookies')
-        // Non-fatal: proceed without extra cookies
+    // Validate apiHost before using it (SSRF prevention — redundant but explicit)
+    try {
+      const apiHostParsed = new URL(apiHost)
+      if (apiHostParsed.protocol !== 'https:' || isPrivateOrReservedHostname(apiHostParsed.hostname)) {
+        return NextResponse.json({ success: false, error: 'Invalid ticket_link URL' }, { status: 400 })
       }
-      console.log(`[huojian sync] cookies after gds page: ${allCookies.length}`)
+    } catch {
+      return NextResponse.json({ success: false, error: 'Invalid ticket_link URL' }, { status: 400 })
     }
 
-    const cookieString = allCookies.join('; ')
+    // Step 2: Call the Huojian API with password in the request body
+    const apiUrl = `${apiHost}/prod-api1/biz/counter/link/share/${workOrderId}`
+    console.log(`[huojian sync] Calling API: ${apiUrl}, password provided: ${!!password}`)
+    if (!password) {
+      console.warn('[huojian sync] No password provided — request may fail if the work order requires one')
+    }
 
-    // Step 4: Call the Huojian API
-    const apiUrl = `https://v4.url66.me/prod-api1/biz/counter/link/share/${workOrderId}`
-    console.log(`[huojian sync] calling API: ${apiUrl}`)
     const apiResponse = await fetch(apiUrl, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        ...(cookieString ? { Cookie: cookieString } : {}),
+        'Content-Type': 'application/json;charset=UTF-8',
       },
+      body: JSON.stringify({
+        password: password || '',
+        accountLogin: '',
+        accountStatus: '',
+        csName: '',
+        isDelete: 0,
+        isEnable: '',
+      }),
     })
 
     console.log(`[huojian sync] API response status: ${apiResponse.status}`)
 
     if (!apiResponse.ok) {
       const errorText = await apiResponse.text().catch(() => '')
-      console.error(`[huojian sync] API error response: ${errorText}`)
+      console.error(`[huojian sync] API error response: ${errorText.substring(0, 500)}`)
       throw new HuojianUpstreamError(`Huojian API error: ${apiResponse.status}`)
     }
 
@@ -233,10 +220,11 @@ export async function POST(request: NextRequest) {
     console.log(`[huojian sync] API response code: ${result.code}`)
 
     if (result.code !== 0) {
-      throw new HuojianUpstreamError(`Huojian returned error code: ${result.code}`)
+      const hint = !password ? '（工单密码未填写，请检查是否需要密码）' : '（请检查工单密码是否正确）'
+      throw new HuojianUpstreamError(`Huojian API 返回错误码: ${result.code}${hint}`)
     }
 
-    // Step 5: Map Huojian data to the unified SyncNumber format
+    // Step 3: Map Huojian data to the unified SyncNumber format
     const accounts = result.counterCsAccountVo || []
     const numbers = accounts.map((n) => ({
       id: n.accountLogin,
