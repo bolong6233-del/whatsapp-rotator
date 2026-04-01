@@ -264,6 +264,43 @@ export default function TicketsPage() {
                 console.error('[syncWorkOrder] Failed to insert numbers to 号码管理', insertError.message)
               }
             }
+
+            // Update is_active for existing numbers based on online status
+            const onlinePhones = (numbers as SyncNumber[])
+              .filter((num) => num.user && num.online === 1)
+              .map((num) => num.user)
+
+            const offlinePhones = (numbers as SyncNumber[])
+              .filter((num) => num.user && num.online !== 1)
+              .map((num) => num.user)
+
+            const chunkSize = 100
+
+            for (let i = 0; i < onlinePhones.length; i += chunkSize) {
+              const chunk = onlinePhones.slice(i, i + chunkSize)
+              const { error: updateOnlineErr } = await supabase
+                .from('whatsapp_numbers')
+                .update({ is_active: true })
+                .eq('short_link_id', shortLinkId)
+                .eq('label', order.ticket_name)
+                .in('phone_number', chunk)
+              if (updateOnlineErr) {
+                console.error('[syncWorkOrder] Failed to enable online numbers', updateOnlineErr.message)
+              }
+            }
+
+            for (let i = 0; i < offlinePhones.length; i += chunkSize) {
+              const chunk = offlinePhones.slice(i, i + chunkSize)
+              const { error: updateOfflineErr } = await supabase
+                .from('whatsapp_numbers')
+                .update({ is_active: false })
+                .eq('short_link_id', shortLinkId)
+                .eq('label', order.ticket_name)
+                .in('phone_number', chunk)
+              if (updateOfflineErr) {
+                console.error('[syncWorkOrder] Failed to disable offline numbers', updateOfflineErr.message)
+              }
+            }
           }
         } catch (err) {
           console.error('[syncWorkOrder] Failed to push numbers to 号码管理', err)
@@ -383,6 +420,43 @@ export default function TicketsPage() {
               const { error: insertError } = await supabase.from('whatsapp_numbers').insert(toInsert)
               if (insertError) {
                 console.error('[syncHuojianOrder] Failed to insert numbers', insertError.message)
+              }
+            }
+
+            // Update is_active for existing numbers based on online status
+            const onlinePhones = (numbers as SyncNumber[])
+              .filter((num) => num.user && num.online === 1)
+              .map((num) => num.user)
+
+            const offlinePhones = (numbers as SyncNumber[])
+              .filter((num) => num.user && num.online !== 1)
+              .map((num) => num.user)
+
+            const chunkSize = 100
+
+            for (let i = 0; i < onlinePhones.length; i += chunkSize) {
+              const chunk = onlinePhones.slice(i, i + chunkSize)
+              const { error: updateOnlineErr } = await supabase
+                .from('whatsapp_numbers')
+                .update({ is_active: true })
+                .eq('short_link_id', shortLinkId)
+                .eq('label', order.ticket_name)
+                .in('phone_number', chunk)
+              if (updateOnlineErr) {
+                console.error('[syncHuojianOrder] Failed to enable online numbers', updateOnlineErr.message)
+              }
+            }
+
+            for (let i = 0; i < offlinePhones.length; i += chunkSize) {
+              const chunk = offlinePhones.slice(i, i + chunkSize)
+              const { error: updateOfflineErr } = await supabase
+                .from('whatsapp_numbers')
+                .update({ is_active: false })
+                .eq('short_link_id', shortLinkId)
+                .eq('label', order.ticket_name)
+                .in('phone_number', chunk)
+              if (updateOfflineErr) {
+                console.error('[syncHuojianOrder] Failed to disable offline numbers', updateOfflineErr.message)
               }
             }
           }
