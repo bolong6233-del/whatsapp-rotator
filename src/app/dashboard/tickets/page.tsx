@@ -37,90 +37,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 const TICKET_LINK_PLACEHOLDER: Record<TicketType, string> = {
   云控: '请输入工单链接',
-  火箭: '请粘贴完整链接（如 v4.url66.me/gds?link=xxx）',
-}
-
-// Extract work order ID and API host from a Huojian URL's `link=` query parameter.
-function extractHuojianWorkOrderId(url: string): { workOrderId: string; apiHost: string } | null {
-  try {
-    const parsed = new URL(url)
-    const linkParam = parsed.searchParams.get('link')
-    if (linkParam && /^[a-zA-Z0-9]+$/.test(linkParam)) {
-      return { workOrderId: linkParam, apiHost: parsed.origin }
-    }
-  } catch {
-    // not a valid URL
-  }
-  return null
-}
-
-// Directly call the Huojian API from the browser (bypasses Vercel server-side 403)
-async function syncHuojianDirect(
-  ticketLink: string,
-  password: string
-): Promise<{ success: boolean; data?: { numbers: SyncNumber[]; total_count: number; total_sum: number; total_day_sum: number; online_count: number; offline_count: number }; error?: string }> {
-  const extracted = extractHuojianWorkOrderId(ticketLink)
-  if (!extracted) {
-    return {
-      success: false,
-      error: '无法解析工单链接。请粘贴完整链接（格式如 https://v4.url66.me/gds?link=xxx）',
-    }
-  }
-
-  const { workOrderId, apiHost } = extracted
-  const apiUrl = `${apiHost}/prod-api1/biz/counter/link/share/${workOrderId}`
-
-  try {
-    const apiResponse = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json;charset=UTF-8',
-      },
-      body: JSON.stringify({
-        password: password || '',
-        accountLogin: '',
-        accountStatus: '',
-        csName: '',
-        isDelete: 0,
-        isEnable: '',
-      }),
-    })
-
-    if (!apiResponse.ok) {
-      return { success: false, error: `Huojian API error: ${apiResponse.status}` }
-    }
-
-    const result = await apiResponse.json()
-    if (result.code !== 0) {
-      const hint = !password ? '（工单密码未填写，请检查是否需要密码）' : '（请检查工单密码是否正确）'
-      return { success: false, error: `Huojian API 返回错误码: ${result.code} ${hint}` }
-    }
-
-    const accounts: { accountLogin: string; accountNickName: string | null; accountStatus: number; newTotalFriend: number; newTodayFriend: number }[] = result.counterCsAccountVo || []
-    const numbers: SyncNumber[] = accounts.map((n) => ({
-      id: n.accountLogin,
-      user: n.accountLogin,
-      nickname: n.accountNickName ?? '',
-      online: n.accountStatus,
-      sum: n.newTotalFriend,
-      day_sum: n.newTodayFriend,
-    }))
-
-    return {
-      success: true,
-      data: {
-        numbers,
-        total_count: accounts.length,
-        total_sum: result.counterWorker.newTotalFriend,
-        total_day_sum: result.counterWorker.newTodayFriend,
-        online_count: accounts.filter((n) => n.accountStatus === 1).length,
-        offline_count: accounts.filter((n) => n.accountStatus !== 1).length,
-      },
-    }
-  } catch (err) {
-    console.error('[syncHuojianDirect] error:', err)
-    return { success: false, error: '火箭 API 请求失败' }
-  }
+  火箭: '请粘贴完整链接（如 v4.url66.me/gds?link=xxx）或短链接',
 }
 
 function getNow(): string {
@@ -362,8 +279,13 @@ export default function TicketsPage() {
   // Sync a single Huojian work order — completely independent from syncWorkOrder
   const syncHuojianOrder = useCallback(async (order: WorkOrder): Promise<Partial<WorkOrder>> => {
     try {
-      const result = await syncHuojianDirect(order.ticket_link, order.password || '')
-      if (!result.success || !result.data) return {}
+      const res = await fetch('/api/sync/huojian', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticket_link: order.ticket_link, password: order.password || '' }),
+      })
+      const result = await res.json()
+      if (!result.success) return {}
 
       const { numbers, total_count, total_sum, total_day_sum, online_count, offline_count } = result.data
       const updates: Partial<WorkOrder> = {
@@ -376,6 +298,11 @@ export default function TicketsPage() {
         last_synced_at: new Date().toISOString(),
       }
 
+      // Auto-complete when today's count reaches the daily target
+      if (total_day_sum >= order.total_quantity && order.total_quantity > 0) {
+        updates.status = 'completed'
+      }
+
       // Persist sync results to the database
       const persistRes = await fetch(`/api/work-orders/${order.id}`, {
         method: 'PUT',
@@ -384,6 +311,40 @@ export default function TicketsPage() {
       })
       if (!persistRes.ok) {
         console.error('[syncHuojianOrder] Failed to persist sync results for order', order.id)
+      }
+
+      // When auto-completing, disable associated numbers in 号码管理
+      if (updates.status === 'completed' && order.distribution_link_slug) {
+        try {
+          const { data: linkData2 } = await supabase
+            .from('short_links')
+            .select('id')
+            .eq('slug', order.distribution_link_slug)
+            .single()
+
+          if (linkData2) {
+            const { data: numsToDisable } = await supabase
+              .from('whatsapp_numbers')
+              .select('phone_number')
+              .eq('short_link_id', linkData2.id)
+              .eq('label', order.ticket_name)
+
+            if (numsToDisable && numsToDisable.length > 0) {
+              const phoneNumbers = numsToDisable.map((n: { phone_number: string }) => n.phone_number)
+              const chunkSize = 100
+              for (let i = 0; i < phoneNumbers.length; i += chunkSize) {
+                const chunk = phoneNumbers.slice(i, i + chunkSize)
+                await supabase
+                  .from('whatsapp_numbers')
+                  .update({ is_active: false })
+                  .eq('short_link_id', linkData2.id)
+                  .in('phone_number', chunk)
+              }
+            }
+          }
+        } catch (err) {
+          console.error('[syncHuojianOrder] Failed to disable numbers on auto-complete', err)
+        }
       }
 
       // Push synced phone numbers into whatsapp_numbers (号码管理)
@@ -426,7 +387,7 @@ export default function TicketsPage() {
             }
           }
         } catch (err) {
-          console.error('[syncHuojianOrder] Failed to push numbers', err)
+          console.error('[syncHuojianOrder] Failed to push numbers to 号码管理', err)
         }
       }
 
