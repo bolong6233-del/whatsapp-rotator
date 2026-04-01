@@ -43,7 +43,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'ticket_link is required' }, { status: 400 })
     }
 
-    // Validate that ticket_link is from the expected short link domain
     let parsedTicketLink: URL
     try {
       parsedTicketLink = new URL(ticket_link)
@@ -51,53 +50,73 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Invalid ticket_link URL' }, { status: 400 })
     }
 
-    if (parsedTicketLink.hostname !== 's.url99.me') {
-      return NextResponse.json(
-        { success: false, error: 'ticket_link must be a s.url99.me short link' },
-        { status: 400 }
-      )
+    if (parsedTicketLink.protocol !== 'https:') {
+      return NextResponse.json({ success: false, error: 'ticket_link must use HTTPS' }, { status: 400 })
     }
 
-    // Build the fetch URL from a hardcoded origin so only the path comes from user input
-    const safeUrl = new URL(parsedTicketLink.pathname + parsedTicketLink.search, 'https://s.url99.me').href
+    // Step 1: Follow ALL redirects manually, collecting cookies along the way
+    let currentUrl = parsedTicketLink.href
+    const allCookies: string[] = []
+    let finalUrl = ''
+    const maxRedirects = 10
 
-    // Step 1: Follow the short link redirect manually to get the final URL and Cookie
-    let redirectResponse: Response
-    try {
-      redirectResponse = await fetch(safeUrl, { redirect: 'manual' })
-    } catch {
-      return NextResponse.json({ success: false, error: 'Failed to fetch ticket_link' }, { status: 502 })
+    for (let i = 0; i < maxRedirects; i++) {
+      console.log(`[huojian sync] redirect step ${i}: ${currentUrl}`)
+      let response: Response
+      try {
+        response = await fetch(currentUrl, {
+          redirect: 'manual',
+          headers: allCookies.length > 0 ? { Cookie: allCookies.join('; ') } : {},
+        })
+      } catch {
+        return NextResponse.json({ success: false, error: `Failed to fetch ticket_link at redirect step ${i}: ${currentUrl}` }, { status: 502 })
+      }
+
+      // Collect cookies from this response
+      const setCookieHeaders = response.headers.getSetCookie
+        ? response.headers.getSetCookie()
+        : (response.headers.get('set-cookie') ? [response.headers.get('set-cookie')!] : [])
+
+      for (const cookie of setCookieHeaders) {
+        allCookies.push(cookie.split(';')[0])
+      }
+
+      const status = response.status
+      if (status >= 300 && status < 400) {
+        const location = response.headers.get('location')
+        if (!location) break
+        // Handle relative URLs
+        const nextUrl = location.startsWith('http') ? location : new URL(location, currentUrl).href
+        // Validate redirect destination uses HTTPS to prevent SSRF to internal resources
+        if (!nextUrl.startsWith('https://')) {
+          return NextResponse.json({ success: false, error: 'Redirect destination must use HTTPS' }, { status: 502 })
+        }
+        currentUrl = nextUrl
+        finalUrl = currentUrl
+      } else {
+        // Not a redirect - we've reached the final destination
+        finalUrl = currentUrl
+        break
+      }
     }
 
-    const location = redirectResponse.headers.get('location')
-    if (!location) {
-      return NextResponse.json(
-        { success: false, error: 'No redirect location found from short link' },
-        { status: 502 }
-      )
-    }
-
-    // Collect cookies from the redirect response
-    const setCookieHeaders = redirectResponse.headers.getSetCookie
-      ? redirectResponse.headers.getSetCookie()
-      : (redirectResponse.headers.get('set-cookie') ? [redirectResponse.headers.get('set-cookie')!] : [])
-
-    const cookieString = setCookieHeaders
-      .map((c) => c.split(';')[0])
-      .join('; ')
+    console.log(`[huojian sync] final URL: ${finalUrl}`)
+    console.log(`[huojian sync] collected cookies: ${allCookies.length}`)
 
     // Step 2: Extract the work order ID from the final URL (link= query param)
-    let finalUrl: URL
+    let workOrderId: string | null = null
     try {
-      finalUrl = new URL(location)
+      const parsed = new URL(finalUrl)
+      workOrderId = parsed.searchParams.get('link')
     } catch {
-      return NextResponse.json({ success: false, error: 'Invalid redirect URL from short link' }, { status: 502 })
+      console.error('[huojian sync] Failed to parse final URL:', finalUrl)
+      // handled below
     }
 
-    const workOrderId = finalUrl.searchParams.get('link')
     if (!workOrderId) {
+      console.error('[huojian sync] Could not extract work order ID from final URL:', finalUrl)
       return NextResponse.json(
-        { success: false, error: 'No link parameter found in redirect URL' },
+        { success: false, error: `Could not extract work order ID. Final URL: ${finalUrl}` },
         { status: 502 }
       )
     }
@@ -107,26 +126,56 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Invalid work order ID format' }, { status: 502 })
     }
 
-    // Step 3: Call the Huojian API
+    // Step 3: If no cookies were collected during redirects, try fetching the gds page
+    // The gds page may set authentication cookies needed for the API call
+    if (allCookies.length === 0) {
+      console.log('[huojian sync] No cookies from redirects, trying to fetch gds page...')
+      const gdsUrl = `https://v4.url66.me/gds?link=${workOrderId}`
+      try {
+        const gdsResponse = await fetch(gdsUrl, { redirect: 'follow' })
+        const gdsCookies = gdsResponse.headers.getSetCookie
+          ? gdsResponse.headers.getSetCookie()
+          : (gdsResponse.headers.get('set-cookie') ? [gdsResponse.headers.get('set-cookie')!] : [])
+
+        for (const cookie of gdsCookies) {
+          allCookies.push(cookie.split(';')[0])
+        }
+      } catch {
+        console.warn('[huojian sync] Failed to fetch gds page for cookies')
+        // Non-fatal: proceed without extra cookies
+      }
+      console.log(`[huojian sync] cookies after gds page: ${allCookies.length}`)
+    }
+
+    const cookieString = allCookies.join('; ')
+
+    // Step 4: Call the Huojian API
     const apiUrl = `https://v4.url66.me/prod-api1/biz/counter/link/share/${workOrderId}`
+    console.log(`[huojian sync] calling API: ${apiUrl}`)
     const apiResponse = await fetch(apiUrl, {
       method: 'POST',
       headers: {
+        'Content-Type': 'application/json',
         ...(cookieString ? { Cookie: cookieString } : {}),
       },
     })
 
+    console.log(`[huojian sync] API response status: ${apiResponse.status}`)
+
     if (!apiResponse.ok) {
+      const errorText = await apiResponse.text().catch(() => '')
+      console.error(`[huojian sync] API error response: ${errorText}`)
       throw new HuojianUpstreamError(`Huojian API error: ${apiResponse.status}`)
     }
 
     const result: HuojianApiResponse = await apiResponse.json()
+    console.log(`[huojian sync] API response code: ${result.code}`)
 
     if (result.code !== 0) {
       throw new HuojianUpstreamError(`Huojian returned error code: ${result.code}`)
     }
 
-    // Step 4: Map Huojian data to the unified SyncNumber format
+    // Step 5: Map Huojian data to the unified SyncNumber format
     const accounts = result.counterCsAccountVo || []
     const numbers = accounts.map((n) => ({
       id: n.accountLogin,
