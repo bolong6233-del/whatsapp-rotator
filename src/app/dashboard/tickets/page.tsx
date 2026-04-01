@@ -10,9 +10,7 @@ import Pagination from '@/components/ui/Pagination'
 import { useTopProgress } from '@/context/ProgressContext'
 import { useToast } from '@/context/ToastContext'
 
-const TICKET_TYPES: TicketType[] = [
-  '云控',
-]
+const TICKET_TYPES: TicketType[] = ['云控', '火箭']
 
 const NUMBER_TYPES: { value: Platform; label: string }[] = [
   { value: 'whatsapp', label: 'WhatsApp' },
@@ -151,7 +149,8 @@ export default function TicketsPage() {
   // Sync a single work order by calling the sync API
   const syncWorkOrder = useCallback(async (order: WorkOrder): Promise<Partial<WorkOrder>> => {
     try {
-      const res = await fetch('/api/sync/yunkon', {
+      const syncUrl = order.ticket_type === '火箭' ? '/api/sync/huojian' : '/api/sync/yunkon'
+      const res = await fetch(syncUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ticket_link: order.ticket_link }),
@@ -247,7 +246,7 @@ export default function TicketsPage() {
     const updatesMap: Record<string, Partial<WorkOrder>> = {}
     await Promise.all(
       activeOrders.map(async (order) => {
-        if (order.ticket_type !== '云控') return
+        if (!TICKET_TYPES.includes(order.ticket_type)) return
         const updates = await syncWorkOrder(order)
         if (Object.keys(updates).length > 0) {
           updatesMap[order.id] = updates
@@ -464,8 +463,8 @@ export default function TicketsPage() {
       showToast('工单创建成功', 'success')
       setShowModal(false)
 
-      // Immediately sync after creating a 云控 order
-      if (newOrder.ticket_link && newOrder.ticket_type === '云控') {
+      // Immediately sync after creating a syncable order
+      if (newOrder.ticket_link && TICKET_TYPES.includes(newOrder.ticket_type)) {
         // Fire and forget - let the sync happen in the background
         const syncFn = async () => {
           const updates = await syncWorkOrder(newOrder)
