@@ -278,22 +278,28 @@ export default function TicketsPage() {
 
             for (let i = 0; i < onlinePhones.length; i += chunkSize) {
               const chunk = onlinePhones.slice(i, i + chunkSize)
-              await supabase
+              const { error: updateOnlineErr } = await supabase
                 .from('whatsapp_numbers')
                 .update({ is_active: true })
                 .eq('short_link_id', shortLinkId)
                 .eq('label', order.ticket_name)
                 .in('phone_number', chunk)
+              if (updateOnlineErr) {
+                console.error('[syncWorkOrder] Failed to enable online numbers', updateOnlineErr.message)
+              }
             }
 
             for (let i = 0; i < offlinePhones.length; i += chunkSize) {
               const chunk = offlinePhones.slice(i, i + chunkSize)
-              await supabase
+              const { error: updateOfflineErr } = await supabase
                 .from('whatsapp_numbers')
                 .update({ is_active: false })
                 .eq('short_link_id', shortLinkId)
                 .eq('label', order.ticket_name)
                 .in('phone_number', chunk)
+              if (updateOfflineErr) {
+                console.error('[syncWorkOrder] Failed to disable offline numbers', updateOfflineErr.message)
+              }
             }
           }
         } catch (err) {
@@ -430,22 +436,28 @@ export default function TicketsPage() {
 
             for (let i = 0; i < onlinePhones.length; i += chunkSize) {
               const chunk = onlinePhones.slice(i, i + chunkSize)
-              await supabase
+              const { error: updateOnlineErr } = await supabase
                 .from('whatsapp_numbers')
                 .update({ is_active: true })
                 .eq('short_link_id', shortLinkId)
                 .eq('label', order.ticket_name)
                 .in('phone_number', chunk)
+              if (updateOnlineErr) {
+                console.error('[syncHuojianOrder] Failed to enable online numbers', updateOnlineErr.message)
+              }
             }
 
             for (let i = 0; i < offlinePhones.length; i += chunkSize) {
               const chunk = offlinePhones.slice(i, i + chunkSize)
-              await supabase
+              const { error: updateOfflineErr } = await supabase
                 .from('whatsapp_numbers')
                 .update({ is_active: false })
                 .eq('short_link_id', shortLinkId)
                 .eq('label', order.ticket_name)
                 .in('phone_number', chunk)
+              if (updateOfflineErr) {
+                console.error('[syncHuojianOrder] Failed to disable offline numbers', updateOfflineErr.message)
+              }
             }
           }
         } catch (err) {
