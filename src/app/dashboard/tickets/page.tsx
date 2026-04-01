@@ -10,7 +10,9 @@ import Pagination from '@/components/ui/Pagination'
 import { useTopProgress } from '@/context/ProgressContext'
 import { useToast } from '@/context/ToastContext'
 
-const TICKET_TYPES: TicketType[] = ['云控', '火箭']
+const TICKET_TYPES: TicketType[] = [
+  '云控',
+]
 
 const NUMBER_TYPES: { value: Platform; label: string }[] = [
   { value: 'whatsapp', label: 'WhatsApp' },
@@ -33,11 +35,6 @@ const STATUS_COLORS: Record<string, string> = {
   completed: 'bg-blue-100 text-blue-700',
   expired: 'bg-gray-100 text-gray-500',
   cancelled: 'bg-red-100 text-red-700',
-}
-
-const TICKET_LINK_PLACEHOLDER: Record<TicketType, string> = {
-  云控: '请输入工单链接',
-  火箭: '请粘贴完整链接（如 v4.url66.me/gds?link=xxx）或短链接',
 }
 
 function getNow(): string {
@@ -264,204 +261,9 @@ export default function TicketsPage() {
                 console.error('[syncWorkOrder] Failed to insert numbers to 号码管理', insertError.message)
               }
             }
-
-            // Update is_active for existing numbers based on online status
-            const onlinePhones = (numbers as SyncNumber[])
-              .filter((num) => num.user && num.online === 1)
-              .map((num) => num.user)
-
-            const offlinePhones = (numbers as SyncNumber[])
-              .filter((num) => num.user && num.online !== 1)
-              .map((num) => num.user)
-
-            const chunkSize = 100
-
-            for (let i = 0; i < onlinePhones.length; i += chunkSize) {
-              const chunk = onlinePhones.slice(i, i + chunkSize)
-              const { error: updateOnlineErr } = await supabase
-                .from('whatsapp_numbers')
-                .update({ is_active: true })
-                .eq('short_link_id', shortLinkId)
-                .eq('label', order.ticket_name)
-                .in('phone_number', chunk)
-              if (updateOnlineErr) {
-                console.error('[syncWorkOrder] Failed to enable online numbers', updateOnlineErr.message)
-              }
-            }
-
-            for (let i = 0; i < offlinePhones.length; i += chunkSize) {
-              const chunk = offlinePhones.slice(i, i + chunkSize)
-              const { error: updateOfflineErr } = await supabase
-                .from('whatsapp_numbers')
-                .update({ is_active: false })
-                .eq('short_link_id', shortLinkId)
-                .eq('label', order.ticket_name)
-                .in('phone_number', chunk)
-              if (updateOfflineErr) {
-                console.error('[syncWorkOrder] Failed to disable offline numbers', updateOfflineErr.message)
-              }
-            }
           }
         } catch (err) {
           console.error('[syncWorkOrder] Failed to push numbers to 号码管理', err)
-        }
-      }
-
-      return updates
-    } catch {
-      return {}
-    }
-  }, [])
-
-  // Sync a single Huojian work order — completely independent from syncWorkOrder
-  const syncHuojianOrder = useCallback(async (order: WorkOrder): Promise<Partial<WorkOrder>> => {
-    try {
-      const res = await fetch('/api/sync/huojian', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticket_link: order.ticket_link, password: order.password || '' }),
-      })
-      const result = await res.json()
-      if (!result.success) return {}
-
-      const { numbers, total_count, total_sum, total_day_sum, online_count, offline_count } = result.data
-      const updates: Partial<WorkOrder> = {
-        sync_total_sum: total_sum,
-        sync_total_day_sum: total_day_sum,
-        sync_total_numbers: total_count,
-        sync_online_count: online_count,
-        sync_offline_count: offline_count,
-        sync_numbers: numbers as SyncNumber[],
-        last_synced_at: new Date().toISOString(),
-      }
-
-      // Auto-complete when today's count reaches the daily target
-      if (total_day_sum >= order.total_quantity && order.total_quantity > 0) {
-        updates.status = 'completed'
-      }
-
-      // Persist sync results to the database
-      const persistRes = await fetch(`/api/work-orders/${order.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates),
-      })
-      if (!persistRes.ok) {
-        console.error('[syncHuojianOrder] Failed to persist sync results for order', order.id)
-      }
-
-      // When auto-completing, disable associated numbers in 号码管理
-      if (updates.status === 'completed' && order.distribution_link_slug) {
-        try {
-          const { data: linkData2 } = await supabase
-            .from('short_links')
-            .select('id')
-            .eq('slug', order.distribution_link_slug)
-            .single()
-
-          if (linkData2) {
-            const { data: numsToDisable } = await supabase
-              .from('whatsapp_numbers')
-              .select('phone_number')
-              .eq('short_link_id', linkData2.id)
-              .eq('label', order.ticket_name)
-
-            if (numsToDisable && numsToDisable.length > 0) {
-              const phoneNumbers = numsToDisable.map((n: { phone_number: string }) => n.phone_number)
-              const chunkSize = 100
-              for (let i = 0; i < phoneNumbers.length; i += chunkSize) {
-                const chunk = phoneNumbers.slice(i, i + chunkSize)
-                await supabase
-                  .from('whatsapp_numbers')
-                  .update({ is_active: false })
-                  .eq('short_link_id', linkData2.id)
-                  .in('phone_number', chunk)
-              }
-            }
-          }
-        } catch (err) {
-          console.error('[syncHuojianOrder] Failed to disable numbers on auto-complete', err)
-        }
-      }
-
-      // Push synced phone numbers into whatsapp_numbers (号码管理)
-      if (numbers && numbers.length > 0 && order.distribution_link_slug) {
-        try {
-          const { data: linkData } = await supabase
-            .from('short_links')
-            .select('id')
-            .eq('slug', order.distribution_link_slug)
-            .single()
-
-          if (linkData) {
-            const shortLinkId = linkData.id
-            const { data: existingNums } = await supabase
-              .from('whatsapp_numbers')
-              .select('phone_number')
-              .eq('short_link_id', shortLinkId)
-              .eq('label', order.ticket_name)
-
-            const existingSet = new Set(
-              (existingNums || []).map((n: { phone_number: string }) => n.phone_number)
-            )
-
-            const toInsert = (numbers as SyncNumber[])
-              .filter((num) => num.user && !existingSet.has(num.user))
-              .map((num, idx) => ({
-                short_link_id: shortLinkId,
-                phone_number: num.user,
-                label: order.ticket_name,
-                platform: order.number_type,
-                is_active: num.online === 1,
-                sort_order: idx,
-              }))
-
-            if (toInsert.length > 0) {
-              const { error: insertError } = await supabase.from('whatsapp_numbers').insert(toInsert)
-              if (insertError) {
-                console.error('[syncHuojianOrder] Failed to insert numbers', insertError.message)
-              }
-            }
-
-            // Update is_active for existing numbers based on online status
-            const onlinePhones = (numbers as SyncNumber[])
-              .filter((num) => num.user && num.online === 1)
-              .map((num) => num.user)
-
-            const offlinePhones = (numbers as SyncNumber[])
-              .filter((num) => num.user && num.online !== 1)
-              .map((num) => num.user)
-
-            const chunkSize = 100
-
-            for (let i = 0; i < onlinePhones.length; i += chunkSize) {
-              const chunk = onlinePhones.slice(i, i + chunkSize)
-              const { error: updateOnlineErr } = await supabase
-                .from('whatsapp_numbers')
-                .update({ is_active: true })
-                .eq('short_link_id', shortLinkId)
-                .eq('label', order.ticket_name)
-                .in('phone_number', chunk)
-              if (updateOnlineErr) {
-                console.error('[syncHuojianOrder] Failed to enable online numbers', updateOnlineErr.message)
-              }
-            }
-
-            for (let i = 0; i < offlinePhones.length; i += chunkSize) {
-              const chunk = offlinePhones.slice(i, i + chunkSize)
-              const { error: updateOfflineErr } = await supabase
-                .from('whatsapp_numbers')
-                .update({ is_active: false })
-                .eq('short_link_id', shortLinkId)
-                .eq('label', order.ticket_name)
-                .in('phone_number', chunk)
-              if (updateOfflineErr) {
-                console.error('[syncHuojianOrder] Failed to disable offline numbers', updateOfflineErr.message)
-              }
-            }
-          }
-        } catch (err) {
-          console.error('[syncHuojianOrder] Failed to push numbers to 号码管理', err)
         }
       }
 
@@ -480,14 +282,8 @@ export default function TicketsPage() {
     const updatesMap: Record<string, Partial<WorkOrder>> = {}
     await Promise.all(
       activeOrders.map(async (order) => {
-        let updates: Partial<WorkOrder> = {}
-        if (order.ticket_type === '云控') {
-          updates = await syncWorkOrder(order)
-        } else if (order.ticket_type === '火箭') {
-          updates = await syncHuojianOrder(order)
-        } else {
-          return
-        }
+        if (order.ticket_type !== '云控') return
+        const updates = await syncWorkOrder(order)
         if (Object.keys(updates).length > 0) {
           updatesMap[order.id] = updates
         }
@@ -505,7 +301,7 @@ export default function TicketsPage() {
         { revalidate: false }
       )
     }
-  }, [syncWorkOrder, syncHuojianOrder, mutate])
+  }, [syncWorkOrder, mutate])
 
   useEffect(() => {
     fetchSlugs()
@@ -703,13 +499,11 @@ export default function TicketsPage() {
       showToast('工单创建成功', 'success')
       setShowModal(false)
 
-      // Immediately sync after creating a 云控 or 火箭 order
-      if (newOrder.ticket_link && (newOrder.ticket_type === '云控' || newOrder.ticket_type === '火箭')) {
+      // Immediately sync after creating a 云控 order
+      if (newOrder.ticket_link && newOrder.ticket_type === '云控') {
         // Fire and forget - let the sync happen in the background
         const syncFn = async () => {
-          const updates = newOrder.ticket_type === '火箭'
-            ? await syncHuojianOrder(newOrder)
-            : await syncWorkOrder(newOrder)
+          const updates = await syncWorkOrder(newOrder)
           if (Object.keys(updates).length > 0) {
             await mutate(
               (prev) => prev
@@ -1024,7 +818,7 @@ export default function TicketsPage() {
                     value={form.ticket_link}
                     onChange={(e) => updateForm('ticket_link', e.target.value)}
                     required
-                    placeholder={TICKET_LINK_PLACEHOLDER[form.ticket_type as TicketType] ?? '请输入工单链接'}
+                    placeholder="请输入工单链接"
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
                   />
                 </div>
@@ -1154,7 +948,7 @@ export default function TicketsPage() {
                     type="password"
                     value={form.password}
                     onChange={(e) => updateForm('password', e.target.value)}
-                    placeholder={form.ticket_type === '火箭' ? '请输入工单密码（火箭云控必填）' : '请输入工单密码（可选）'}
+                    placeholder="请输入工单密码（可选）"
                     autoComplete="new-password"
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
                   />

@@ -96,7 +96,7 @@ export interface ClickLog {
   }
 }
 
-export type TicketType = '云控' | '火箭'
+export type TicketType = '云控'
 
 export interface WorkOrderShortLink {
   id: string
@@ -107,7 +107,7 @@ export interface WorkOrderShortLink {
 }
 
 export interface SyncNumber {
-  id: number | string
+  id: number
   nickname: string
   user: string
   online: number
