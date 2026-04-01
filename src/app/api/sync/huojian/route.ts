@@ -80,6 +80,9 @@ function isPrivateOrReservedHostname(hostname: string): boolean {
   return false
 }
 
+const BROWSER_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -120,7 +123,14 @@ export async function POST(request: NextRequest) {
         console.log(`[huojian sync] redirect step ${i}: ${currentUrl}`)
         let response: Response
         try {
-          response = await fetch(currentUrl, { redirect: 'manual' })
+          response = await fetch(currentUrl, {
+            redirect: 'manual',
+            headers: {
+              'User-Agent': BROWSER_UA,
+              Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+              'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            },
+          })
         } catch {
           break
         }
@@ -197,6 +207,11 @@ export async function POST(request: NextRequest) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json;charset=UTF-8',
+        'User-Agent': BROWSER_UA,
+        Accept: 'application/json, text/plain, */*',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+        Origin: apiHost,
+        Referer: `${apiHost}/`,
       },
       body: JSON.stringify({
         password: password || '',
