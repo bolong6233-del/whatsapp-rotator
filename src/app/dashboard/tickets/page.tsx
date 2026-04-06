@@ -106,12 +106,6 @@ export default function TicketsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const selectAllRef = useRef<HTMLInputElement>(null)
 
-  // Update indeterminate state on the select-all checkbox
-  useEffect(() => {
-    if (selectAllRef.current) {
-      selectAllRef.current.indeterminate = selected.size > 0 && selected.size < workOrders.length
-    }
-  }, [selected.size, workOrders.length])
   // Per-modal-session idempotency key; regenerated each time modal opens for create.
   const submitIdempotencyKeyRef = useRef(crypto.randomUUID())
 
@@ -128,6 +122,13 @@ export default function TicketsPage() {
 
   const workOrders = swrData?.data ?? []
   const totalCount = swrData?.count ?? 0
+
+  // Update indeterminate state on the select-all checkbox
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = selected.size > 0 && selected.size < workOrders.length
+    }
+  }, [selected.size, workOrders.length])
 
   // Keep a ref to the latest workOrders to avoid stale closures in the interval
   const workOrdersRef = useRef<WorkOrder[]>([])
