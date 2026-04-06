@@ -63,7 +63,7 @@ function getInitialForm() {
   }
 }
 
-const TABLE_COL_COUNT = 14 // total columns: 1 expand arrow + 13 data columns
+const TABLE_COL_COUNT = 15 // total columns: 1 checkbox + 1 expand arrow + 13 data columns
 
 function OnlineStatusBadge({ online }: { online: number }) {
   if (online === 1) {
@@ -103,6 +103,15 @@ export default function TicketsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [slugOptions, setSlugOptions] = useState<string[]>([])
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const selectAllRef = useRef<HTMLInputElement>(null)
+
+  // Update indeterminate state on the select-all checkbox
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = selected.size > 0 && selected.size < workOrders.length
+    }
+  }, [selected.size, workOrders.length])
   // Per-modal-session idempotency key; regenerated each time modal opens for create.
   const submitIdempotencyKeyRef = useRef(crypto.randomUUID())
 
@@ -587,6 +596,104 @@ export default function TicketsPage() {
     }
   }
 
+  const toggleSelect = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAll = () => {
+    if (selected.size === workOrders.length) {
+      setSelected(new Set())
+    } else {
+      setSelected(new Set(workOrders.map((o) => o.id)))
+    }
+  }
+
+  const handleBulkDelete = async () => {
+    if (selected.size === 0) return
+    if (!window.confirm(`确认删除选中的 ${selected.size} 个工单？`)) return
+    start()
+    try {
+      const results = await Promise.all(
+        Array.from(selected).map((id) => fetch(`/api/work-orders/${id}`, { method: 'DELETE' }))
+      )
+      const failed = results.filter((r) => !r.ok).length
+      if (failed > 0) {
+        showToast(`${failed} 个工单删除失败`, 'error')
+      } else {
+        showToast(`已删除 ${selected.size} 个工单`, 'success')
+      }
+      setSelected(new Set())
+      await mutate()
+    } catch {
+      showToast('批量删除失败', 'error')
+    } finally {
+      done()
+    }
+  }
+
+  const handleBulkToggleStatus = async (newStatus: 'active' | 'cancelled') => {
+    if (selected.size === 0) return
+    start()
+    try {
+      const targetOrders = workOrders.filter((o) => selected.has(o.id))
+      const results = await Promise.all(
+        targetOrders.map((order) =>
+          fetch(`/api/work-orders/${order.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: newStatus }),
+          })
+        )
+      )
+      const failed = results.filter((r) => !r.ok).length
+      if (failed > 0) {
+        showToast(`${failed} 个工单状态更新失败`, 'error')
+      } else {
+        showToast(`已${newStatus === 'active' ? '启用' : '停用'} ${selected.size} 个工单`, 'success')
+      }
+      // Sync whatsapp_numbers is_active for orders that succeeded
+      const succeededOrders = targetOrders.filter((_, idx) => results[idx].ok)
+      await Promise.all(
+        succeededOrders.map(async (order) => {
+          const phoneNumbers = order.sync_numbers?.map((n) => n.user).filter(Boolean) || []
+          if (phoneNumbers.length > 0 && order.distribution_link_slug) {
+            try {
+              const { data: linkData } = await supabase
+                .from('short_links')
+                .select('id')
+                .eq('slug', order.distribution_link_slug)
+                .single()
+              if (linkData) {
+                const chunkSize = 100
+                for (let i = 0; i < phoneNumbers.length; i += chunkSize) {
+                  const chunk = phoneNumbers.slice(i, i + chunkSize)
+                  await supabase
+                    .from('whatsapp_numbers')
+                    .update({ is_active: newStatus === 'active' })
+                    .eq('short_link_id', linkData.id)
+                    .in('phone_number', chunk)
+                }
+              }
+            } catch (err) {
+              console.error('[handleBulkToggleStatus] Failed to update numbers for slug', order.distribution_link_slug, err)
+            }
+          }
+        })
+      )
+      setSelected(new Set())
+      await mutate()
+    } catch {
+      showToast('批量操作失败', 'error')
+    } finally {
+      done()
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     // ── Layer 1: prevent duplicate submissions while request is in-flight ──
@@ -755,6 +862,34 @@ export default function TicketsPage() {
         </div>
       </div>
 
+      {/* Bulk Operations Bar */}
+      <div className="flex items-center gap-3 flex-wrap">
+        {selected.size > 0 && (
+          <span className="text-sm text-gray-600">已选 {selected.size} 个</span>
+        )}
+        <button
+          onClick={() => handleBulkToggleStatus('active')}
+          disabled={selected.size === 0}
+          className="px-3 py-1.5 text-xs bg-green-100 text-green-700 rounded-lg hover:bg-green-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          批量打开
+        </button>
+        <button
+          onClick={() => handleBulkToggleStatus('cancelled')}
+          disabled={selected.size === 0}
+          className="px-3 py-1.5 text-xs bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          批量关闭
+        </button>
+        <button
+          onClick={handleBulkDelete}
+          disabled={selected.size === 0}
+          className="px-3 py-1.5 text-xs bg-red-100 text-red-600 rounded-lg hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          批量删除
+        </button>
+      </div>
+
       {/* Work Order List */}
       {workOrders.length === 0 ? (
         <div className="bg-white rounded-xl p-12 shadow-sm border border-gray-100 text-center">
@@ -773,6 +908,15 @@ export default function TicketsPage() {
             <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 text-left text-gray-700">
+                <th className="px-5 py-4 font-bold text-gray-700 w-8">
+                  <input
+                    ref={selectAllRef}
+                    type="checkbox"
+                    checked={workOrders.length > 0 && selected.size === workOrders.length}
+                    onChange={toggleSelectAll}
+                    className="rounded"
+                  />
+                </th>
                 <th className="px-5 py-4 font-bold text-gray-700 w-8" />
                 <th className="px-5 py-4 font-bold text-gray-700">工单类型</th>
                 <th className="px-5 py-4 font-bold text-gray-700">工单名称</th>
@@ -800,6 +944,14 @@ export default function TicketsPage() {
                       className={`border-b border-gray-50 hover:bg-gray-50 ${canExpand ? 'cursor-pointer' : ''}`}
                       onClick={() => canExpand && toggleExpand(order.id)}
                     >
+                      <td className="px-5 py-4" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selected.has(order.id)}
+                          onChange={() => toggleSelect(order.id)}
+                          className="rounded"
+                        />
+                      </td>
                       <td className="px-5 py-4 text-gray-600">
                         {canExpand ? (isExpanded ? '▾' : '▸') : ''}
                       </td>
