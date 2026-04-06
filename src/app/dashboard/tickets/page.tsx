@@ -104,6 +104,14 @@ export default function TicketsPage() {
   const [slugOptions, setSlugOptions] = useState<string[]>([])
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const selectAllRef = useRef<HTMLInputElement>(null)
+
+  // Update indeterminate state on the select-all checkbox
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = selected.size > 0 && selected.size < workOrders.length
+    }
+  }, [selected.size, workOrders.length])
   // Per-modal-session idempotency key; regenerated each time modal opens for create.
   const submitIdempotencyKeyRef = useRef(crypto.randomUUID())
 
@@ -610,10 +618,15 @@ export default function TicketsPage() {
     if (!window.confirm(`确认删除选中的 ${selected.size} 个工单？`)) return
     start()
     try {
-      await Promise.all(
+      const results = await Promise.all(
         Array.from(selected).map((id) => fetch(`/api/work-orders/${id}`, { method: 'DELETE' }))
       )
-      showToast(`已删除 ${selected.size} 个工单`, 'success')
+      const failed = results.filter((r) => !r.ok).length
+      if (failed > 0) {
+        showToast(`${failed} 个工单删除失败`, 'error')
+      } else {
+        showToast(`已删除 ${selected.size} 个工单`, 'success')
+      }
       setSelected(new Set())
       await mutate()
     } catch {
@@ -628,7 +641,7 @@ export default function TicketsPage() {
     start()
     try {
       const targetOrders = workOrders.filter((o) => selected.has(o.id))
-      await Promise.all(
+      const results = await Promise.all(
         targetOrders.map((order) =>
           fetch(`/api/work-orders/${order.id}`, {
             method: 'PUT',
@@ -637,9 +650,16 @@ export default function TicketsPage() {
           })
         )
       )
-      // Sync whatsapp_numbers is_active for each order
+      const failed = results.filter((r) => !r.ok).length
+      if (failed > 0) {
+        showToast(`${failed} 个工单状态更新失败`, 'error')
+      } else {
+        showToast(`已${newStatus === 'active' ? '启用' : '停用'} ${selected.size} 个工单`, 'success')
+      }
+      // Sync whatsapp_numbers is_active for orders that succeeded
+      const succeededOrders = targetOrders.filter((_, idx) => results[idx].ok)
       await Promise.all(
-        targetOrders.map(async (order) => {
+        succeededOrders.map(async (order) => {
           const phoneNumbers = order.sync_numbers?.map((n) => n.user).filter(Boolean) || []
           if (phoneNumbers.length > 0 && order.distribution_link_slug) {
             try {
@@ -665,7 +685,6 @@ export default function TicketsPage() {
           }
         })
       )
-      showToast(`已${newStatus === 'active' ? '启用' : '停用'} ${selected.size} 个工单`, 'success')
       setSelected(new Set())
       await mutate()
     } catch {
@@ -891,6 +910,7 @@ export default function TicketsPage() {
               <tr className="border-b border-gray-100 text-left text-gray-700">
                 <th className="px-5 py-4 font-bold text-gray-700 w-8">
                   <input
+                    ref={selectAllRef}
                     type="checkbox"
                     checked={workOrders.length > 0 && selected.size === workOrders.length}
                     onChange={toggleSelectAll}
