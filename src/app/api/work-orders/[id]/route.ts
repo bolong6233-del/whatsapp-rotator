@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase'
+import { createAdminClient } from '@/lib/supabase-admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -114,21 +115,25 @@ export async function DELETE(
     .single()
 
   if (workOrder && workOrder.distribution_link_slug) {
-    // 2. Find the short_link_id
-    const { data: linkData } = await supabase
+    // 2. Find the short_link_id (use admin client so admin-created links are found)
+    const adminClient = createAdminClient()
+    const { data: linkData } = await adminClient
       .from('short_links')
       .select('id')
       .eq('slug', workOrder.distribution_link_slug)
-      .eq('user_id', user.id)
       .single()
 
     if (linkData) {
-      // 3. Delete the associated numbers from whatsapp_numbers
-      await supabase
+      // 3. Delete the associated numbers from whatsapp_numbers (bypass RLS via admin client)
+      const { error: numbersDeleteError } = await adminClient
         .from('whatsapp_numbers')
         .delete()
         .eq('short_link_id', linkData.id)
         .eq('label', workOrder.ticket_name)
+
+      if (numbersDeleteError) {
+        console.error('[work-order delete] Failed to delete whatsapp_numbers:', numbersDeleteError)
+      }
     }
   }
 
