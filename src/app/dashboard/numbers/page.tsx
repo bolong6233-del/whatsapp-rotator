@@ -318,6 +318,8 @@ export default function NumbersPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [showExportMenu, setShowExportMenu] = useState(false)
+  const exportMenuRef = useRef<HTMLDivElement>(null)
 
   // Modal state
   const [showModal, setShowModal] = useState(false)
@@ -465,6 +467,16 @@ export default function NumbersPage() {
   const links = mainData?.links ?? []
   const loading = !mainData && isValidating
 
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setShowExportMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
   const toggleSelect = (id: string) => {
     setSelected((prev) => {
       const next = new Set(prev)
@@ -545,27 +557,17 @@ export default function NumbersPage() {
     }
   }
 
-  const handleExport = () => {
+  const handleExport = (activeOnly: boolean) => {
     start()
+    setShowExportMenu(false)
     try {
-      const rows = [['号码ID', '链接URL', '号码', '号码类型', '访问次数', '状态', '备注']]
-      numbers.forEach((n) => {
-        rows.push([
-          n.id,
-          n.short_links?.slug || '',
-          n.phone_number,
-          PLATFORM_LABELS[getPlatform(n.platform)],
-          String(n.click_count),
-          n.is_active ? '启用' : '停用',
-          n.label || '',
-        ])
-      })
-      const csv = rows.map((r) => r.map((c) => `"${c}"`).join(',')).join('\n')
-      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+      const filtered = numbers.filter((n) => n.is_active === activeOnly)
+      const content = filtered.map((n) => n.phone_number).join('\n')
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8;' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = 'numbers.csv'
+      a.download = activeOnly ? 'online_numbers.txt' : 'offline_numbers.txt'
       a.click()
       URL.revokeObjectURL(url)
       showToast('导出成功', 'success')
@@ -802,12 +804,30 @@ export default function NumbersPage() {
           >
             🔄 刷新
           </button>
-          <button
-            onClick={handleExport}
-            className="px-4 py-2 text-sm bg-white border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors"
-          >
-            ⬆️ 导出
-          </button>
+          <div className="relative" ref={exportMenuRef}>
+            <button
+              onClick={() => setShowExportMenu((v) => !v)}
+              className="px-4 py-2 text-sm bg-white border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              ⬆️ 导出 ▾
+            </button>
+            {showExportMenu && (
+              <div className="absolute right-0 mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                <button
+                  onClick={() => handleExport(true)}
+                  className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-t-lg"
+                >
+                  🟢 导出在线号码
+                </button>
+                <button
+                  onClick={() => handleExport(false)}
+                  className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-b-lg"
+                >
+                  🔴 导出离线号码
+                </button>
+              </div>
+            )}
+          </div>
           <button
             onClick={() => { setError(''); setShowModal(true) }}
             className="px-4 py-2 text-sm bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors"

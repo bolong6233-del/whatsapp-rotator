@@ -392,6 +392,7 @@ export default function LogsPage() {
   const [pageSize, setPageSize] = useState(10)
   const [filterSlug, setFilterSlug] = useState('')
   const [filterCountry, setFilterCountry] = useState('')
+  const [selectedLogs, setSelectedLogs] = useState<Set<string>>(new Set())
 
   const { data: userInfo } = useSWR('logsCurrentUser', async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -566,6 +567,46 @@ export default function LogsPage() {
     }
   }
 
+  const toggleSelectLog = (id: string) => {
+    setSelectedLogs((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAllLogs = () => {
+    if (selectedLogs.size === logs.length && logs.length > 0) {
+      setSelectedLogs(new Set())
+    } else {
+      setSelectedLogs(new Set(logs.map((l) => l.id)))
+    }
+  }
+
+  const handleDeleteSelectedLogs = async () => {
+    if (selectedLogs.size === 0) return
+    if (!confirm(`确定要删除选中的 ${selectedLogs.size} 条记录吗？`)) return
+    start()
+    try {
+      const { error } = await supabase
+        .from('click_logs')
+        .delete()
+        .in('id', Array.from(selectedLogs))
+      if (error) {
+        showToast('删除失败：' + error.message, 'error')
+      } else {
+        showToast(`已删除 ${selectedLogs.size} 条记录`, 'success')
+        setSelectedLogs(new Set())
+        await mutateLogs()
+      }
+    } catch {
+      showToast('删除失败', 'error')
+    } finally {
+      done()
+    }
+  }
+
   const mobileRatio =
     stats && stats.mobileCount + stats.desktopCount > 0
       ? Math.round((stats.mobileCount / (stats.mobileCount + stats.desktopCount)) * 100)
@@ -671,6 +712,15 @@ export default function LogsPage() {
         >
           🔄 刷新
         </button>
+        {selectedLogs.size > 0 && (
+          <button
+            type="button"
+            onClick={handleDeleteSelectedLogs}
+            className="px-3 py-2 text-sm bg-red-500 text-white rounded-xl hover:bg-red-600 transition-colors"
+          >
+            🗑️ 删除 ({selectedLogs.size})
+          </button>
+        )}
       </div>
 
       {/* Logs table */}
@@ -680,6 +730,7 @@ export default function LogsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-gray-700 bg-gray-50/70 border-b border-gray-100">
+                  <th className="py-4 px-3 w-10" />
                   {['访问时间','短链','国家','城市','IP 地址','设备','来源'].map((h) => (
                     <th key={h} className="py-4 px-5 font-bold text-sm text-gray-700">{h}</th>
                   ))}
@@ -688,7 +739,7 @@ export default function LogsPage() {
               <tbody>
                 {Array.from({ length: 6 }).map((_, i) => (
                   <tr key={i} className="border-b border-gray-50">
-                    {Array.from({ length: 7 }).map((__, j) => (
+                    {Array.from({ length: 8 }).map((__, j) => (
                       <td key={j} className="py-4 px-5">
                         <div className="h-4 bg-gray-100 rounded animate-pulse" style={{ width: `${50 + (j * 13) % 40}%` }} />
                       </td>
@@ -707,6 +758,14 @@ export default function LogsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-gray-700 bg-gray-50/70 border-b border-gray-100">
+                  <th className="py-4 px-3 w-10">
+                    <input
+                      type="checkbox"
+                      checked={logs.length > 0 && selectedLogs.size === logs.length}
+                      onChange={toggleSelectAllLogs}
+                      className="rounded"
+                    />
+                  </th>
                   <th className="py-4 px-5 font-bold text-sm text-gray-700">访问时间</th>
                   <th className="py-4 px-5 font-bold text-sm text-gray-700">短链</th>
                   <th className="py-4 px-5 font-bold text-sm text-gray-700">国家</th>
@@ -722,6 +781,14 @@ export default function LogsPage() {
               <tbody className="divide-y divide-gray-50">
                 {logs.map((log) => (
                   <tr key={log.id} className="hover:bg-blue-50/30 transition-colors">
+                    <td className="py-4 px-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedLogs.has(log.id)}
+                        onChange={() => toggleSelectLog(log.id)}
+                        className="rounded"
+                      />
+                    </td>
                     <td className="py-4 px-5 text-gray-800 whitespace-nowrap text-xs font-medium">
                       {formatDate(log.clicked_at)}
                     </td>
