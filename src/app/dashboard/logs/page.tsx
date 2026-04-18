@@ -589,12 +589,14 @@ export default function LogsPage() {
     if (!confirm(`确定要删除选中的 ${selectedLogs.size} 条记录吗？`)) return
     start()
     try {
-      const { error } = await supabase
-        .from('click_logs')
-        .delete()
-        .in('id', Array.from(selectedLogs))
-      if (error) {
-        showToast('删除失败：' + error.message, 'error')
+      const res = await fetch('/api/click-logs', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedLogs) }),
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        showToast('删除失败：' + (json?.error ?? res.statusText), 'error')
       } else {
         showToast(`已删除 ${selectedLogs.size} 条记录`, 'success')
         setSelectedLogs(new Set())
