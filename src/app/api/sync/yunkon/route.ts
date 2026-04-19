@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase'
 
 interface YunkonNumber {
   id: number
@@ -28,6 +29,12 @@ class YunkonUpstreamError extends Error {
 }
 
 export async function POST(request: NextRequest) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    return NextResponse.json({ error: '未授权' }, { status: 401 })
+  }
+
   try {
     const body = await request.json()
     const { ticket_link } = body

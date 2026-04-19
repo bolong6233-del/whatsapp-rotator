@@ -90,6 +90,42 @@ export async function PUT(
     return NextResponse.json({ error: error.message }, { status: 400 })
   }
 
+  // When status is set to 'completed', disable associated numbers in 号码管理
+  if (data.status === 'completed' && data.distribution_link_slug) {
+    const adminClient = createAdminClient()
+    try {
+      const { data: linkData } = await adminClient
+        .from('short_links')
+        .select('id')
+        .eq('slug', data.distribution_link_slug)
+        .single()
+
+      if (linkData) {
+        const { data: numsToDisable } = await adminClient
+          .from('whatsapp_numbers')
+          .select('phone_number')
+          .eq('short_link_id', linkData.id)
+          .eq('label', data.ticket_name)
+
+        if (numsToDisable && numsToDisable.length > 0) {
+          const phoneNumbers = numsToDisable.map((n: { phone_number: string }) => n.phone_number)
+          const chunkSize = 100
+          for (let i = 0; i < phoneNumbers.length; i += chunkSize) {
+            const chunk = phoneNumbers.slice(i, i + chunkSize)
+            await adminClient
+              .from('whatsapp_numbers')
+              .update({ is_active: false })
+              .eq('short_link_id', linkData.id)
+              .eq('label', data.ticket_name)
+              .in('phone_number', chunk)
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[work-order PUT] Failed to disable numbers on completion', err)
+    }
+  }
+
   return NextResponse.json(data)
 }
 
