@@ -293,7 +293,7 @@ export default function TicketsPage() {
 
     const failed = results.filter((r) => r.status === 'rejected')
     if (failed.length > 0) {
-      throw new Error(`${failed.length} 个工单同步失败`)
+      throw new Error(`同步失败：${failed.length} 个工单`)
     }
   }, [syncWorkOrder, mutate])
 

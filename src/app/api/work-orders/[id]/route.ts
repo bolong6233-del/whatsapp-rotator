@@ -91,7 +91,7 @@ export async function PUT(
   }
 
   // When status is set to 'completed', disable associated numbers in 号码管理
-  if (data.status === 'completed' && data.distribution_link_slug) {
+  if (data.status === 'completed' && data.distribution_link_slug && data.ticket_name) {
     const adminClient = createAdminClient()
     try {
       const { data: linkData } = await adminClient
