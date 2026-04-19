@@ -10,7 +10,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase'
 
 export const dynamic = 'force-dynamic'
-export const runtime = 'edge'
 interface HaiwangItem {
   acclist_id: number
   acclist_account: string
@@ -61,16 +60,40 @@ class HaiwangUpstreamError extends Error {
 const HAIWANG_BASE = 'https://admin.haiwangweb.com'
 const LIST_LIMIT = 150
 
-// Cloudflare blocks plain server-side fetch calls to admin.haiwangweb.com with 403.
-// These headers mimic a legitimate browser request to bypass that protection.
-const BROWSER_HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  'Accept': 'application/json, text/plain, */*',
-  'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-  'Accept-Encoding': 'gzip, deflate, br',
-  'Connection': 'keep-alive',
-  'Referer': 'https://admin.haiwangweb.com/web',
-  'Origin': 'https://admin.haiwangweb.com',
+async function proxyFetch(targetUrl: string): Promise<Response> {
+  const proxyUrl = process.env.HAIWANG_PROXY_URL
+  const proxySecret = process.env.HAIWANG_PROXY_SECRET
+
+  if (!proxyUrl || !proxySecret) {
+    throw new HaiwangUpstreamError('HAIWANG_PROXY_URL or HAIWANG_PROXY_SECRET not configured')
+  }
+
+  const res = await fetch(proxyUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-proxy-secret': proxySecret,
+    },
+    body: JSON.stringify({
+      url: targetUrl,
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*',
+        'Referer': 'https://admin.haiwangweb.com/web',
+        'Origin': 'https://admin.haiwangweb.com',
+      },
+    }),
+  })
+
+  if (res.status === 401 || res.status === 403) {
+    throw new HaiwangUpstreamError(`Proxy authentication failed: ${res.status}`)
+  }
+  if (res.status >= 500) {
+    throw new HaiwangUpstreamError(`Proxy server error: ${res.status}`)
+  }
+
+  return res
 }
 
 export async function POST(request: NextRequest) {
@@ -97,7 +120,7 @@ export async function POST(request: NextRequest) {
 
     // Step 1: Get shareid from render API
     const renderUrl = `${HAIWANG_BASE}/webApi/accountshow/render?sharekey=${encodeURIComponent(sharekey)}`
-    const renderRes = await fetch(renderUrl, { headers: BROWSER_HEADERS })
+    const renderRes = await proxyFetch(renderUrl)
     if (!renderRes.ok) {
       throw new HaiwangUpstreamError(`Haiwang render API error: ${renderRes.status}`)
     }
@@ -125,7 +148,7 @@ export async function POST(request: NextRequest) {
         AcclistAppid: '',
       })
       const apiUrl = `${HAIWANG_BASE}/webApi/accountshow/list?${params.toString()}`
-      const res = await fetch(apiUrl, { headers: BROWSER_HEADERS })
+      const res = await proxyFetch(apiUrl)
       if (!res.ok) {
         throw new HaiwangUpstreamError(`Haiwang list API error: ${res.status}`)
       }
