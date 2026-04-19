@@ -24,7 +24,6 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase-admin'
-import crypto from 'crypto'
 
 export interface IdempotencyCheckResult {
   /** When set, the route MUST return this response immediately (cache hit). */
@@ -40,25 +39,29 @@ export interface IdempotencyCheckResult {
  * Keys are sorted recursively so the hash is independent of property insertion
  * order, enabling mismatch detection for "same key, different payload" reuse.
  */
-function hashBody(body: unknown): string {
+async function hashBody(body: unknown): Promise<string> {
   // Guard against null / primitives (unlikely but safe to handle)
+  let str: string
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
-    return crypto.createHash('sha256').update(String(body ?? '')).digest('hex')
-  }
-  // Recursively sort object keys for a stable canonical representation.
-  function sortedReplacer(_key: string, value: unknown): unknown {
-    if (value && typeof value === 'object' && !Array.isArray(value)) {
-      return Object.keys(value as object)
-        .sort()
-        .reduce<Record<string, unknown>>((acc, k) => {
-          acc[k] = (value as Record<string, unknown>)[k]
-          return acc
-        }, {})
+    str = String(body ?? '')
+  } else {
+    // Recursively sort object keys for a stable canonical representation.
+    function sortedReplacer(_key: string, value: unknown): unknown {
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        return Object.keys(value as object)
+          .sort()
+          .reduce<Record<string, unknown>>((acc, k) => {
+            acc[k] = (value as Record<string, unknown>)[k]
+            return acc
+          }, {})
+      }
+      return value
     }
-    return value
+    str = JSON.stringify(body, sortedReplacer)
   }
-  const str = JSON.stringify(body, sortedReplacer)
-  return crypto.createHash('sha256').update(str).digest('hex')
+  const encoded = new TextEncoder().encode(str)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', encoded)
+  return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
 /**
@@ -83,7 +86,7 @@ export async function checkIdempotency(
   }
 
   const supabase = createAdminClient()
-  const requestHash = hashBody(body)
+  const requestHash = await hashBody(body)
 
   // Check for an existing record with this (user, endpoint, key) tuple.
   const { data: existing } = await supabase

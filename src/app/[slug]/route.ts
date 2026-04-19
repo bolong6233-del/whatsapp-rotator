@@ -179,7 +179,7 @@ export async function GET(
   }
 
   if (rpcError || noData) {
-    if (isDebug) {
+    if (isDebug && process.env.NODE_ENV === 'development') {
       return NextResponse.json({ error: 'Redirect failed', rpcError, rpcData, slug }, { status: 500 })
     }
     return noCacheRedirect(WHATSAPP_FALLBACK)
