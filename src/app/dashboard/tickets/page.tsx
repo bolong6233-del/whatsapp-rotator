@@ -10,7 +10,7 @@ import Pagination from '@/components/ui/Pagination'
 import { useTopProgress } from '@/context/ProgressContext'
 import { useToast } from '@/context/ToastContext'
 
-const TICKET_TYPES: TicketType[] = ['星河云控', 'A2C云控']
+const TICKET_TYPES: TicketType[] = ['星河云控', 'A2C云控', '海王云控']
 
 const NUMBER_TYPES: { value: Platform; label: string }[] = [
   { value: 'whatsapp', label: 'WhatsApp' },
@@ -288,6 +288,120 @@ export default function TicketsPage() {
       const result = await res.json()
       if (!result.success) return {}
       // TODO: 解析 A2C 返回数据并构建 updates 对象
+    }
+    // ──── 海王云控同步逻辑 ────
+    else if (order.ticket_type === '海王云控') {
+      const res = await fetch('/api/sync/haiwang', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticket_link: order.ticket_link }),
+      })
+      const result = await res.json()
+      if (!result.success) return {}
+
+      const { numbers, total_count, total_sum, total_day_sum, online_count, offline_count } = result.data
+      const updates: Partial<WorkOrder> = {
+        sync_total_sum: total_sum,
+        sync_total_day_sum: total_day_sum,
+        sync_total_numbers: total_count,
+        sync_online_count: online_count,
+        sync_offline_count: offline_count,
+        sync_numbers: numbers as SyncNumber[],
+        last_synced_at: new Date().toISOString(),
+      }
+
+      // Auto-complete when today's count reaches the daily target
+      if (total_day_sum >= order.total_quantity && order.total_quantity > 0) {
+        updates.status = 'completed'
+      }
+
+      // Persist sync results to the database
+      const persistRes = await fetch(`/api/work-orders/${order.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      })
+      if (!persistRes.ok) {
+        console.error('[syncWorkOrder] Failed to persist sync results for order', order.id)
+      }
+
+      // Push synced phone numbers into whatsapp_numbers (号码管理)
+      if (numbers && numbers.length > 0 && order.distribution_link_slug) {
+        try {
+          const { data: linkData } = await supabase
+            .from('short_links')
+            .select('id')
+            .eq('slug', order.distribution_link_slug)
+            .single()
+
+          if (linkData) {
+            const shortLinkId = linkData.id
+            const { data: existingNums } = await supabase
+              .from('whatsapp_numbers')
+              .select('phone_number')
+              .eq('short_link_id', shortLinkId)
+              .eq('label', order.ticket_name)
+
+            const existingSet = new Set(
+              (existingNums || []).map((n: { phone_number: string }) => n.phone_number)
+            )
+
+            const toInsert = (numbers as SyncNumber[])
+              .filter((num) => num.user && !existingSet.has(num.user))
+              .map((num, idx) => ({
+                short_link_id: shortLinkId,
+                phone_number: num.user,
+                label: order.ticket_name,
+                platform: order.number_type,
+                is_active: num.online === 1,
+                sort_order: idx,
+              }))
+
+            if (toInsert.length > 0) {
+              const { error: insertError } = await supabase.from('whatsapp_numbers').insert(toInsert)
+              if (insertError) {
+                console.error('[syncWorkOrder] Failed to insert numbers to 号码管理', insertError.message)
+              }
+            }
+
+            // Update is_active for already-existing numbers based on current online status
+            const existingNumbers = (numbers as SyncNumber[]).filter(
+              (num) => num.user && existingSet.has(num.user)
+            )
+            const toActivate = existingNumbers.filter((n) => n.online === 1).map((n) => n.user)
+            const toDeactivate = existingNumbers.filter((n) => n.online !== 1).map((n) => n.user)
+            const chunkSize = 100
+
+            if (toActivate.length > 0) {
+              for (let i = 0; i < toActivate.length; i += chunkSize) {
+                const chunk = toActivate.slice(i, i + chunkSize)
+                await supabase
+                  .from('whatsapp_numbers')
+                  .update({ is_active: true })
+                  .eq('short_link_id', shortLinkId)
+                  .eq('label', order.ticket_name)
+                  .in('phone_number', chunk)
+              }
+            }
+
+            if (toDeactivate.length > 0) {
+              for (let i = 0; i < toDeactivate.length; i += chunkSize) {
+                const chunk = toDeactivate.slice(i, i + chunkSize)
+                await supabase
+                  .from('whatsapp_numbers')
+                  .update({ is_active: false })
+                  .eq('short_link_id', shortLinkId)
+                  .eq('label', order.ticket_name)
+                  .in('phone_number', chunk)
+              }
+            }
+          }
+        } catch (err) {
+          console.error('[syncWorkOrder] Failed to push numbers to 号码管理', err)
+        }
+      }
+
+      return updates
     }
 
     return {}
