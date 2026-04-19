@@ -10,7 +10,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase'
 
 export const dynamic = 'force-dynamic'
-
+export const runtime = 'edge'
 interface HaiwangItem {
   acclist_id: number
   acclist_account: string
