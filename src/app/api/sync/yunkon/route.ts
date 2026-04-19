@@ -1,3 +1,14 @@
+/**
+ * ⚠️ 星河云控专用同步接口 - 请勿修改
+ *
+ * 本文件仅处理星河云控平台的数据同步逻辑。
+ * 接入新平台时，请在 src/app/api/sync/ 下创建新的目录和 route.ts，
+ * 不要修改本文件的任何代码。
+ *
+ * 每个云控平台的 API 格式、认证方式、返回结构都不同，
+ * 必须作为独立模块实现。
+ */
+
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase'
 
