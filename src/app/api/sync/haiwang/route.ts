@@ -6,6 +6,7 @@
  * 不要修改 src/app/api/sync/a2c/route.ts（A2C云控）的任何代码。
  */
 
+import { createHash } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase'
 
@@ -59,6 +60,22 @@ class HaiwangUpstreamError extends Error {
 
 const HAIWANG_BASE = 'https://admin.haiwangweb.com'
 const LIST_LIMIT = 150
+const HAIWANG_SIGN_SALT = 'gcG7LnEwlS_7xJCvniqfAw2FfcaV1R230CKK977VD40@@@'
+const HAIWANG_SIGN_SUFFIX = 'haiwang'
+
+function buildHaiwangSignHeaders(): Record<string, string> {
+  const timestamp = Math.floor(Date.now() / 1000).toString()
+  // MD5 is required by the Haiwang API signing protocol (reverse-engineered from their frontend)
+  const xApiKey = createHash('md5')
+    .update(HAIWANG_SIGN_SALT + timestamp + HAIWANG_SIGN_SUFFIX)
+    .digest('hex')
+  const sign = createHash('sha256').update(xApiKey + timestamp).digest('hex')
+  return {
+    'X-Timestamp': timestamp,
+    'X-API-Key': xApiKey,
+    'X-Custom-Sign': sign,
+  }
+}
 
 async function proxyFetch(targetUrl: string): Promise<Response> {
   const proxyUrl = process.env.HAIWANG_PROXY_URL
@@ -67,6 +84,11 @@ async function proxyFetch(targetUrl: string): Promise<Response> {
   if (!proxyUrl || !proxySecret) {
     throw new HaiwangUpstreamError('HAIWANG_PROXY_URL or HAIWANG_PROXY_SECRET not configured')
   }
+
+  const signHeaders = buildHaiwangSignHeaders()
+  const authHeader = process.env.HAIWANG_AUTH_TOKEN
+    ? { Authorization: process.env.HAIWANG_AUTH_TOKEN }
+    : {}
 
   const res = await fetch(proxyUrl, {
     method: 'POST',
@@ -80,8 +102,17 @@ async function proxyFetch(targetUrl: string): Promise<Response> {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'zh-CN,zh;q=0.9',
         'Referer': 'https://admin.haiwangweb.com/web',
         'Origin': 'https://admin.haiwangweb.com',
+        'lang': 'CN',
+        'language': 'zh-CN',
+        'platform': 'Win32',
+        'useragent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'appversion': '5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'vendor': 'Google Inc.',
+        ...signHeaders,
+        ...authHeader,
       },
     }),
   })
@@ -136,8 +167,8 @@ export async function POST(request: NextRequest) {
         page: String(page),
         limit: String(LIST_LIMIT),
         sort: 'acclist_id DESC',
-        SortTop: '[0]',
-        SortType: '["acclist_logined"]',
+        SortTop: '[0,1]',
+        SortType: '["acclist_logined","acclist_id"]',
         sharecode: sharekey,
         sharekey: sharekey,
         shareid: String(shareid),
