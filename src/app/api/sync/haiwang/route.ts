@@ -60,7 +60,7 @@ class HaiwangUpstreamError extends Error {
 
 const HAIWANG_BASE = 'https://admin.haiwangweb.com'
 const LIST_LIMIT = 150
-const HAIWANG_SIGN_SALT = 'gcG7LnEwlS_7xJCvniqfAw2FfcaV1R230CKK977VD40@@@'
+const HAIWANG_SIGN_SALT = 'gcG7LnEwlS_7xJCvniqfAw2FfcaV1R230CRK977VD40&&&'
 const HAIWANG_SIGN_SUFFIX = 'haiwang'
 
 function buildHaiwangSignHeaders(): Record<string, string> {
