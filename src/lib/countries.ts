@@ -1,4 +1,4 @@
-/** Complete ISO 3166-1 alpha-2 country list with Chinese names (240 entries). */
+/** Complete ISO 3166-1 alpha-2 country list with Chinese names. */
 export const COUNTRIES: Array<{ code: string; name: string }> = [
   { code: 'AF', name: '阿富汗' },
   { code: 'AX', name: '奥兰群岛' },
