@@ -39,32 +39,41 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase'
 
-interface YunkonNumber {
+export const dynamic = 'force-dynamic'
+
+interface HuojianOldRow {
   id: number
-  nickname: string
-  user: string
-  online: number
-  sum: number
-  day_sum: number
+  csName: string
+  username: string
+  onlineType: number
+  addCount: number
+  addCountNow: number
 }
 
-interface YunkonApiResponse {
+interface HuojianOldListResponse {
+  total: number
+  rows: HuojianOldRow[]
   code: number
-  data: YunkonNumber[]
-  count: number
-  totalRow: {
-    id: string
-    day_sum: string
-    sum: string
-  }
+  msg: string
 }
 
-class YunkonUpstreamError extends Error {
+interface HuojianOldApiResponse {
+  shareInfo: { id: number; endTime: string }
+  addCount: number
+  addCountNow: number
+  list: HuojianOldListResponse
+  nowDayReset: string
+}
+
+class HuojianOldUpstreamError extends Error {
   constructor(message: string) {
     super(message)
-    this.name = 'YunkonUpstreamError'
+    this.name = 'HuojianOldUpstreamError'
   }
 }
+
+const HUOJIAN_OLD_BASE = 'https://v3.url66.me'
+const PAGE_SIZE = 200
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
@@ -75,12 +84,13 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    const { ticket_link } = body
+    const { ticket_link, password } = body
 
     if (!ticket_link) {
       return NextResponse.json({ success: false, error: 'ticket_link is required' }, { status: 400 })
     }
 
+    // Parse shareId from ticket_link: https://v3.url66.me/s?id={shareId}
     let parsedUrl: URL
     try {
       parsedUrl = new URL(ticket_link)
@@ -88,42 +98,43 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Invalid ticket_link URL' }, { status: 400 })
     }
 
-    const host = parsedUrl.origin
-    const token = parsedUrl.searchParams.get('token')
-
-    if (!token) {
-      return NextResponse.json({ success: false, error: 'No token found in ticket_link' }, { status: 400 })
+    const shareId = parsedUrl.searchParams.get('id')
+    if (!shareId) {
+      return NextResponse.json({ success: false, error: '无法从 ticket_link 中解析 shareId（需要 ?id= 参数）' }, { status: 400 })
     }
 
-    const limit = 100
+    const sharePassword: string = password ?? ''
+    if (!sharePassword) {
+      return NextResponse.json({ success: false, error: '火箭云控(旧版)需要分享密码，请在工单上填写 password 字段' }, { status: 400 })
+    }
 
-    const fetchPage = async (page: number): Promise<YunkonApiResponse> => {
+    const fetchPage = async (pageNum: number): Promise<HuojianOldApiResponse> => {
       const params = new URLSearchParams({
-        page: String(page),
-        limit: String(limit),
-        is_repet: '1',
-        id: '',
-        class_id: '',
-        start_time: '',
-        end_time: '',
+        shareId,
+        sharePassword,
+        pageNum: String(pageNum),
+        pageSize: String(PAGE_SIZE),
+        isDelete: '0',
       })
-      const apiUrl = `${host}/share/share/api_yinliu_count.html?${params.toString()}`
+      const apiUrl = `${HUOJIAN_OLD_BASE}/prod-api1/biz/link/share?${params.toString()}`
 
       const response = await fetch(apiUrl, {
+        method: 'GET',
         headers: {
-          Cookie: `share_token=${token}`,
+          'accept': 'application/json, text/plain, */*',
+          'referer': `${HUOJIAN_OLD_BASE}/s?id=${shareId}`,
+          'user-agent': 'Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Mobile Safari/537.36',
         },
-        redirect: 'follow',
       })
 
       if (!response.ok) {
-        throw new YunkonUpstreamError(`Yunkon API error: ${response.status}`)
+        throw new HuojianOldUpstreamError(`火箭云控(旧版) API error: ${response.status}`)
       }
 
-      const json: YunkonApiResponse = await response.json()
+      const json: HuojianOldApiResponse = await response.json()
 
-      if (json.code !== 0) {
-        throw new YunkonUpstreamError(`Yunkon returned error code: ${json.code}`)
+      if (json.list?.code !== 200) {
+        throw new HuojianOldUpstreamError(`火箭云控(旧版) returned error code: ${json.list?.code} - ${json.list?.msg}`)
       }
 
       return json
@@ -131,40 +142,50 @@ export async function POST(request: NextRequest) {
 
     // Fetch first page to determine total count and pages
     const firstPage = await fetchPage(1)
-    const totalCount = firstPage.count || 0
-    const totalSum = firstPage.totalRow?.sum ?? '0'
-    const totalDaySum = firstPage.totalRow?.day_sum ?? '0'
-    const totalPages = Math.ceil(totalCount / limit)
+    const totalCount = firstPage.list.total || 0
+    const totalSum = firstPage.addCount ?? 0
+    const totalDaySum = firstPage.addCountNow ?? 0
+    const totalPages = Math.ceil(totalCount / PAGE_SIZE)
 
-    const allNumbers: YunkonNumber[] = [...(firstPage.data || [])]
+    const allRows: HuojianOldRow[] = [...(firstPage.list.rows || [])]
 
     // Fetch remaining pages concurrently
     if (totalPages > 1) {
       const pageNumbers = Array.from({ length: totalPages - 1 }, (_, i) => i + 2)
       const results = await Promise.all(pageNumbers.map((p) => fetchPage(p)))
       for (const res of results) {
-        allNumbers.push(...(res.data || []))
+        allRows.push(...(res.list.rows || []))
       }
     }
 
-    const onlineCount = allNumbers.filter((n) => n.online === 1).length
-    const offlineCount = allNumbers.filter((n) => n.online !== 1).length
+    // Map to SyncNumber-compatible format
+    const numbers = allRows.map((row) => ({
+      id: row.id,
+      nickname: row.csName,
+      user: row.username,
+      online: row.onlineType === 1 ? 1 : 0,
+      sum: row.addCount,
+      day_sum: row.addCountNow,
+    }))
+
+    const onlineCount = numbers.filter((n) => n.online === 1).length
+    const offlineCount = numbers.length - onlineCount
 
     return NextResponse.json({
       success: true,
       data: {
-        numbers: allNumbers,
+        numbers,
         total_count: totalCount,
-        total_sum: Number(totalSum),
-        total_day_sum: Number(totalDaySum),
+        total_sum: totalSum,
+        total_day_sum: totalDaySum,
         online_count: onlineCount,
         offline_count: offlineCount,
       },
     })
   } catch (error) {
-    const isUpstream = error instanceof YunkonUpstreamError
+    const isUpstream = error instanceof HuojianOldUpstreamError
     const message = error instanceof Error ? error.message : 'Internal server error'
-    console.error('[yunkon sync] error:', error)
+    console.error('[huojian_old sync] error:', error)
     return NextResponse.json(
       { success: false, error: message },
       { status: isUpstream ? 502 : 500 }

@@ -2,7 +2,7 @@
  * ==============================================================
  * ⚠️ 工单平台隔离原则（接入新云控时必读，不允许违反）
  * --------------------------------------------------------------
- * 1. 每个云控平台（星河云控 / A2C云控 / 海王云控 / 未来新增的）
+ * 1. 每个云控平台（星河云控 / A2C云控 / 海王云控 / 火箭云控(旧版) / 未来新增的）
  *    都是【完全独立】的代码分支，互不依赖、互不共用函数。
  *
  * 2. 维护或新增功能时只允许 **添加** 自己平台的逻辑：
@@ -27,11 +27,12 @@
  *         （后端 PUT 检测到 completed 会按 label 停用全部号码）
  *
  * 6. 当前各平台支持矩阵（更新到 2026-04）：
- *    | 平台      | 同步 | total_quantity 自动完成 | download_ratio 自动停号 |
- *    |-----------|------|------------------------|------------------------|
- *    | 星河云控  |  ✅  |          ✅            |          ✅            |
- *    | 海王云控  |  ✅  |          ✅            |          ✅            |
- *    | A2C云控   |  ❌  |          ❌            |          ❌            |
+ *    | 平台              | 同步 | total_quantity 自动完成 | download_ratio 自动停号 |
+ *    |-------------------|------|------------------------|------------------------|
+ *    | 星河云控          |  ✅  |          ✅            |          ✅            |
+ *    | 海王云控          |  ✅  |          ✅            |          ✅            |
+ *    | A2C云控           |  ❌  |          ❌            |          ❌            |
+ *    | 火箭云控(旧版)    |  ✅  |          ✅            |          ✅            |
  * ==============================================================
  */
 'use client'
@@ -46,7 +47,7 @@ import Pagination from '@/components/ui/Pagination'
 import { useTopProgress } from '@/context/ProgressContext'
 import { useToast } from '@/context/ToastContext'
 
-const TICKET_TYPES: TicketType[] = ['星河云控', 'A2C云控', '海王云控']
+const TICKET_TYPES: TicketType[] = ['星河云控', 'A2C云控', '海王云控', '火箭云控(旧版)']
 
 const NUMBER_TYPES: { value: Platform; label: string }[] = [
   { value: 'whatsapp', label: 'WhatsApp' },
@@ -499,6 +500,190 @@ export default function TicketsPage() {
       // [海王云控] download_ratio 自动停号
       // 仅在 download_ratio > 0、工单仍为 active 且有分流链接时执行
       // ⚠️ 严禁将此段与星河云控的同名逻辑合并为共用函数——平台隔离原则
+      if ((order.download_ratio ?? 0) > 0 && order.status === 'active' && order.distribution_link_slug) {
+        try {
+          const ratio = order.download_ratio
+          const numsArr = numbers as SyncNumber[]
+
+          const { data: linkData } = await supabase
+            .from('short_links')
+            .select('id')
+            .eq('slug', order.distribution_link_slug)
+            .single()
+          if (!linkData) throw new Error('short_link not found')
+
+          const { data: dbNums } = await supabase
+            .from('whatsapp_numbers')
+            .select('id, phone_number')
+            .eq('short_link_id', linkData.id)
+            .eq('label', order.ticket_name)
+
+          if (dbNums && dbNums.length > 0) {
+            const norm = (s: string) => (s || '').replace(/\D/g, '')
+            const toDeactivate: string[] = []
+            const toActivate: string[] = []
+
+            for (const dbNum of dbNums) {
+              const dbN = norm(dbNum.phone_number)
+              const match = numsArr.find((n) => {
+                const nN = norm(n.user)
+                return nN && dbN && (nN === dbN || nN.endsWith(dbN) || dbN.endsWith(nN))
+              })
+              if (!match) continue
+              if (match.day_sum >= ratio) toDeactivate.push(dbNum.phone_number)
+              else toActivate.push(dbNum.phone_number)
+            }
+
+            const chunkSize = 100
+            if (toDeactivate.length > 0) {
+              for (let i = 0; i < toDeactivate.length; i += chunkSize) {
+                const chunk = toDeactivate.slice(i, i + chunkSize)
+                await supabase
+                  .from('whatsapp_numbers')
+                  .update({ is_active: false })
+                  .eq('short_link_id', linkData.id)
+                  .eq('label', order.ticket_name)
+                  .in('phone_number', chunk)
+              }
+            }
+            if (toActivate.length > 0) {
+              for (let i = 0; i < toActivate.length; i += chunkSize) {
+                const chunk = toActivate.slice(i, i + chunkSize)
+                await supabase
+                  .from('whatsapp_numbers')
+                  .update({ is_active: true })
+                  .eq('short_link_id', linkData.id)
+                  .eq('label', order.ticket_name)
+                  .in('phone_number', chunk)
+              }
+            }
+          }
+        } catch (err) {
+          console.error('[syncWorkOrder] download_ratio enforcement failed:', err)
+        }
+      }
+
+      // Persist sync results to the database
+      // ⚠️ 必须在 INSERT 之后执行，status=completed 触发后端按 label 停用号码时记录已存在
+      const persistRes = await fetch(`/api/work-orders/${order.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      })
+      if (!persistRes.ok) {
+        console.error('[syncWorkOrder] Failed to persist sync results for order', order.id)
+      }
+
+      return updates
+    }
+    // ──── 火箭云控(旧版)同步逻辑 ────
+    // ⚠️ 以下代码仅处理火箭云控(旧版)，请勿修改
+    // 接入新平台请在下方添加独立的 else if 分支
+    else if (order.ticket_type === '火箭云控(旧版)') {
+      const res = await fetch('/api/sync/huojian_old', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticket_link: order.ticket_link, password: order.password }),
+      })
+      const result = await res.json()
+      if (!result.success) return {}
+
+      const { numbers, total_count, total_sum, total_day_sum, online_count, offline_count } = result.data
+      const updates: Partial<WorkOrder> = {
+        sync_total_sum: total_sum,
+        sync_total_day_sum: total_day_sum,
+        sync_total_numbers: total_count,
+        sync_online_count: online_count,
+        sync_offline_count: offline_count,
+        sync_numbers: numbers as SyncNumber[],
+        last_synced_at: new Date().toISOString(),
+      }
+
+      // Auto-complete when today's count reaches the daily target
+      if (total_day_sum >= order.total_quantity && order.total_quantity > 0) {
+        updates.status = 'completed'
+      }
+
+      // Push synced phone numbers into whatsapp_numbers (号码管理)
+      // ⚠️ 必须在 PUT 之前执行，否则后端按 label 停用号码时找不到记录
+      if (numbers && numbers.length > 0 && order.distribution_link_slug) {
+        try {
+          const { data: linkData } = await supabase
+            .from('short_links')
+            .select('id')
+            .eq('slug', order.distribution_link_slug)
+            .single()
+
+          if (linkData) {
+            const shortLinkId = linkData.id
+            const { data: existingNums } = await supabase
+              .from('whatsapp_numbers')
+              .select('phone_number')
+              .eq('short_link_id', shortLinkId)
+              .eq('label', order.ticket_name)
+
+            const existingSet = new Set(
+              (existingNums || []).map((n: { phone_number: string }) => n.phone_number)
+            )
+
+            const toInsert = (numbers as SyncNumber[])
+              .filter((num) => num.user && !existingSet.has(num.user))
+              .map((num, idx) => ({
+                short_link_id: shortLinkId,
+                phone_number: num.user,
+                label: order.ticket_name,
+                platform: order.number_type,
+                is_active: num.online === 1,
+                sort_order: idx,
+              }))
+
+            if (toInsert.length > 0) {
+              const { error: insertError } = await supabase.from('whatsapp_numbers').insert(toInsert)
+              if (insertError) {
+                console.error('[syncWorkOrder] Failed to insert numbers to 号码管理', insertError.message)
+              }
+            }
+
+            // Update is_active for already-existing numbers based on current online status
+            const existingNumbers = (numbers as SyncNumber[]).filter(
+              (num) => num.user && existingSet.has(num.user)
+            )
+            const toActivate = existingNumbers.filter((n) => n.online === 1).map((n) => n.user)
+            const toDeactivate = existingNumbers.filter((n) => n.online !== 1).map((n) => n.user)
+            const chunkSize = 100
+
+            if (toActivate.length > 0) {
+              for (let i = 0; i < toActivate.length; i += chunkSize) {
+                const chunk = toActivate.slice(i, i + chunkSize)
+                await supabase
+                  .from('whatsapp_numbers')
+                  .update({ is_active: true })
+                  .eq('short_link_id', shortLinkId)
+                  .eq('label', order.ticket_name)
+                  .in('phone_number', chunk)
+              }
+            }
+
+            if (toDeactivate.length > 0) {
+              for (let i = 0; i < toDeactivate.length; i += chunkSize) {
+                const chunk = toDeactivate.slice(i, i + chunkSize)
+                await supabase
+                  .from('whatsapp_numbers')
+                  .update({ is_active: false })
+                  .eq('short_link_id', shortLinkId)
+                  .eq('label', order.ticket_name)
+                  .in('phone_number', chunk)
+              }
+            }
+          }
+        } catch (err) {
+          console.error('[syncWorkOrder] Failed to push numbers to 号码管理', err)
+        }
+      }
+
+      // [火箭云控(旧版)] download_ratio 自动停号
+      // 仅在 download_ratio > 0、工单仍为 active 且有分流链接时执行
+      // ⚠️ 严禁将此段与星河/海王云控的同名逻辑合并为共用函数——平台隔离原则
       if ((order.download_ratio ?? 0) > 0 && order.status === 'active' && order.distribution_link_slug) {
         try {
           const ratio = order.download_ratio
