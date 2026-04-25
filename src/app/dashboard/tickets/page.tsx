@@ -861,14 +861,25 @@ export default function TicketsPage() {
     setShowModal(true)
   }
 
-  const handleDelete = async (e: React.MouseEvent, id: string) => {
+  const handleDelete = async (e: React.MouseEvent, order: WorkOrder) => {
     e.stopPropagation()
-    if (!window.confirm('确认删除该工单？')) return
+    // Query count of associated numbers before confirming
+    const { count } = await supabase
+      .from('whatsapp_numbers')
+      .select('*', { count: 'exact', head: true })
+      .eq('label', order.ticket_name)
+
+    if (!window.confirm(
+      `确认删除工单 "${order.ticket_name}" 吗？\n\n` +
+      `此操作将同时删除该工单关联的 ${count ?? 0} 个 WhatsApp 号码，且不可恢复。`
+    )) return
     start()
     try {
-      const res = await fetch(`/api/work-orders/${id}`, { method: 'DELETE' })
+      const res = await fetch(`/api/work-orders/${order.id}`, { method: 'DELETE' })
       if (res.ok) {
-        showToast('工单已删除', 'success')
+        const json = await res.json().catch(() => ({}))
+        const deletedNums = json.deleted_numbers ?? 0
+        showToast(`工单已删除，同时删除了 ${deletedNums} 个关联号码`, 'success')
         await mutate()
       } else {
         showToast('删除失败', 'error')
@@ -943,7 +954,18 @@ export default function TicketsPage() {
 
   const handleBulkDelete = async () => {
     if (selected.size === 0) return
-    if (!window.confirm(`确认删除选中的 ${selected.size} 个工单？`)) return
+    const selectedOrders = workOrders.filter((o) => selected.has(o.id))
+    const labels = selectedOrders.map((o) => o.ticket_name)
+    // Query count of associated numbers for all selected orders
+    const { count } = await supabase
+      .from('whatsapp_numbers')
+      .select('*', { count: 'exact', head: true })
+      .in('label', labels)
+
+    if (!window.confirm(
+      `确认删除选中的 ${selectedOrders.length} 个工单吗？\n\n` +
+      `此操作将同时删除关联的 ${count ?? 0} 个 WhatsApp 号码，且不可恢复。`
+    )) return
     start()
     try {
       const results = await Promise.all(
@@ -953,7 +975,9 @@ export default function TicketsPage() {
       if (failed > 0) {
         showToast(`${failed} 个工单删除失败`, 'error')
       } else {
-        showToast(`已删除 ${selected.size} 个工单`, 'success')
+        const jsons = await Promise.all(results.map((r) => r.json().catch(() => ({}))))
+        const totalDeleted = jsons.reduce((sum: number, j) => sum + (j.deleted_numbers ?? 0), 0)
+        showToast(`已删除 ${selectedOrders.length} 个工单，同时删除了 ${totalDeleted} 个关联号码`, 'success')
       }
       setSelected(new Set())
       await mutate()
@@ -1342,7 +1366,7 @@ export default function TicketsPage() {
                           </button>
                           <button
                             type="button"
-                            onClick={(e) => handleDelete(e, order.id)}
+                            onClick={(e) => handleDelete(e, order)}
                             className="text-red-500 hover:text-red-700 text-xs whitespace-nowrap"
                           >
                             🗑 删除
