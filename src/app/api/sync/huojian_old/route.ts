@@ -75,6 +75,55 @@ class HuojianOldUpstreamError extends Error {
 const HUOJIAN_OLD_BASE = 'https://v3.url66.me'
 const PAGE_SIZE = 200
 
+/**
+ * 通过 Cloudflare Workers 代理转发请求到 v3.url66.me。
+ * 直连会被 Cloudflare 以 403 拒绝（Vercel 数据中心 IP 段在拦截名单里）。
+ * 注意：这个函数仅服务"火箭云控(旧版)"，不要被其他平台调用，也不要去复用海王的 proxyFetch。
+ */
+async function huojianOldProxyFetch(targetUrl: string): Promise<Response> {
+  const proxyUrl = process.env.HUOJIAN_OLD_PROXY_URL
+  const proxySecret = process.env.HUOJIAN_OLD_PROXY_SECRET
+
+  // 没配代理就走直连（本地开发友好）
+  if (!proxyUrl || !proxySecret) {
+    return fetch(targetUrl, {
+      headers: {
+        'accept': 'application/json, text/plain, */*',
+        'accept-language': 'zh-CN,zh;q=0.9',
+        'referer': 'https://v3.url66.me/',
+        'user-agent': 'Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Mobile Safari/537.36',
+      },
+    })
+  }
+
+  // 走代理（仿海王的 POST {url, method, headers} 协议，但不复用其代码）
+  const res = await fetch(proxyUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-proxy-secret': proxySecret,
+    },
+    body: JSON.stringify({
+      url: targetUrl,
+      method: 'GET',
+      headers: {
+        'accept': 'application/json, text/plain, */*',
+        'accept-language': 'zh-CN,zh;q=0.9',
+        'referer': 'https://v3.url66.me/',
+        'user-agent': 'Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Mobile Safari/537.36',
+      },
+    }),
+  })
+
+  if (res.status === 401 || res.status === 403) {
+    throw new HuojianOldUpstreamError(`代理认证失败：${res.status}（请检查 HUOJIAN_OLD_PROXY_SECRET）`)
+  }
+  if (res.status >= 500) {
+    throw new HuojianOldUpstreamError(`代理服务器错误：${res.status}`)
+  }
+  return res
+}
+
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -118,14 +167,7 @@ export async function POST(request: NextRequest) {
       })
       const apiUrl = `${HUOJIAN_OLD_BASE}/prod-api1/biz/link/share?${params.toString()}`
 
-      const response = await fetch(apiUrl, {
-        method: 'GET',
-        headers: {
-          'accept': 'application/json, text/plain, */*',
-          'referer': `${HUOJIAN_OLD_BASE}/s?id=${shareId}`,
-          'user-agent': 'Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Mobile Safari/537.36',
-        },
-      })
+      const response = await huojianOldProxyFetch(apiUrl)
 
       if (!response.ok) {
         throw new HuojianOldUpstreamError(`火箭云控(旧版) API error: ${response.status}`)
