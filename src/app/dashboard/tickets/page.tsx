@@ -863,11 +863,14 @@ export default function TicketsPage() {
 
   const handleDelete = async (e: React.MouseEvent, order: WorkOrder) => {
     e.stopPropagation()
-    // Query count of associated numbers before confirming
-    const { count } = await supabase
+    // Query count of associated numbers to show in the confirm dialog
+    const { count, error: countErr } = await supabase
       .from('whatsapp_numbers')
       .select('*', { count: 'exact', head: true })
       .eq('label', order.ticket_name)
+    if (countErr) {
+      console.error('[handleDelete] Failed to count associated numbers:', countErr)
+    }
 
     if (!window.confirm(
       `确认删除工单 "${order.ticket_name}" 吗？\n\n` +
@@ -957,10 +960,13 @@ export default function TicketsPage() {
     const selectedOrders = workOrders.filter((o) => selected.has(o.id))
     const labels = selectedOrders.map((o) => o.ticket_name)
     // Query count of associated numbers for all selected orders
-    const { count } = await supabase
+    const { count, error: countErr } = await supabase
       .from('whatsapp_numbers')
       .select('*', { count: 'exact', head: true })
       .in('label', labels)
+    if (countErr) {
+      console.error('[handleBulkDelete] Failed to count associated numbers:', countErr)
+    }
 
     if (!window.confirm(
       `确认删除选中的 ${selectedOrders.length} 个工单吗？\n\n` +

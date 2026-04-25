@@ -18,6 +18,16 @@ BEGIN
   END IF;
 END $$;
 
--- Step 2: Create unique index (will fail if duplicates exist – check step 1 first)
+-- Step 2: Create unique index
+-- ⚠️  If duplicates exist (see NOTICE above), this statement will fail.
+-- Before deploying, run the check query below in the Supabase console:
+--
+--   SELECT user_id, ticket_name, COUNT(*) c
+--   FROM work_orders
+--   GROUP BY user_id, ticket_name
+--   HAVING COUNT(*) > 1;
+--
+-- If any rows are returned, rename the duplicate work orders manually (keep one,
+-- add a suffix to the others), then re-run this migration.
 CREATE UNIQUE INDEX IF NOT EXISTS work_orders_user_ticket_name_unique
   ON work_orders(user_id, ticket_name);

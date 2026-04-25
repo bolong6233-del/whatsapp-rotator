@@ -172,7 +172,9 @@ export async function DELETE(
     return NextResponse.json({ error: '工单不存在' }, { status: 404 })
   }
 
-  // 2. Delete associated whatsapp numbers by label (RLS ensures only own numbers are deleted)
+  // 2. Delete associated whatsapp numbers by label.
+  //    RLS policy on whatsapp_numbers restricts DELETE to rows whose short_link_id
+  //    belongs to the authenticated user, so this cannot touch another user's numbers.
   const { count: deletedNumberCount, error: numbersDeleteError } = await supabase
     .from('whatsapp_numbers')
     .delete({ count: 'exact' })
