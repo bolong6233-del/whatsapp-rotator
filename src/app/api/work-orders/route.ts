@@ -51,6 +51,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: '缺少必填字段' }, { status: 400 })
   }
 
+  // Uniqueness check: reject duplicate ticket_name within the same user
+  const { data: existing } = await supabase
+    .from('work_orders')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('ticket_name', ticket_name)
+    .maybeSingle()
+
+  if (existing) {
+    return NextResponse.json(
+      { error: `工单名称 "${ticket_name}" 已存在，请改用其他名称` },
+      { status: 409 }
+    )
+  }
+
   const { data, error } = await supabase
     .from('work_orders')
     .insert({

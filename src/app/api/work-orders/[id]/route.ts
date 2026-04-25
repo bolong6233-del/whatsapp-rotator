@@ -78,6 +78,24 @@ export async function PUT(
     return NextResponse.json({ error: '没有可更新的字段' }, { status: 400 })
   }
 
+  // Uniqueness check when ticket_name is being changed
+  if ('ticket_name' in updatePayload) {
+    const { data: existing } = await supabase
+      .from('work_orders')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('ticket_name', updatePayload.ticket_name as string)
+      .neq('id', id)
+      .maybeSingle()
+
+    if (existing) {
+      return NextResponse.json(
+        { error: `工单名称 "${updatePayload.ticket_name}" 已存在，请改用其他名称` },
+        { status: 409 }
+      )
+    }
+  }
+
   const { data, error } = await supabase
     .from('work_orders')
     .update(updatePayload)
@@ -142,38 +160,31 @@ export async function DELETE(
 
   const { id } = await params
 
-  // 1. Fetch work order to get ticket_name and distribution_link_slug
-  const { data: workOrder } = await supabase
+  // 1. Fetch work order (also verifies ownership via user_id filter)
+  const { data: workOrder, error: fetchErr } = await supabase
     .from('work_orders')
-    .select('ticket_name, distribution_link_slug')
+    .select('ticket_name, user_id')
     .eq('id', id)
     .eq('user_id', user.id)
     .single()
 
-  if (workOrder && workOrder.distribution_link_slug) {
-    // 2. Find the short_link_id (use admin client so admin-created links are found)
-    const adminClient = createAdminClient()
-    const { data: linkData } = await adminClient
-      .from('short_links')
-      .select('id')
-      .eq('slug', workOrder.distribution_link_slug)
-      .single()
-
-    if (linkData) {
-      // 3. Delete the associated numbers from whatsapp_numbers (bypass RLS via admin client)
-      const { error: numbersDeleteError } = await adminClient
-        .from('whatsapp_numbers')
-        .delete()
-        .eq('short_link_id', linkData.id)
-        .eq('label', workOrder.ticket_name)
-
-      if (numbersDeleteError) {
-        console.error('[work-order delete] Failed to delete whatsapp_numbers:', numbersDeleteError)
-      }
-    }
+  if (fetchErr || !workOrder) {
+    return NextResponse.json({ error: '工单不存在' }, { status: 404 })
   }
 
-  // 4. Delete the work order
+  // 2. Delete associated whatsapp numbers by label.
+  //    RLS policy on whatsapp_numbers restricts DELETE to rows whose short_link_id
+  //    belongs to the authenticated user, so this cannot touch another user's numbers.
+  const { count: deletedNumberCount, error: numbersDeleteError } = await supabase
+    .from('whatsapp_numbers')
+    .delete({ count: 'exact' })
+    .eq('label', workOrder.ticket_name)
+
+  if (numbersDeleteError) {
+    console.error('[work-order delete] Failed to delete whatsapp_numbers:', numbersDeleteError)
+  }
+
+  // 3. Delete the work order
   const { error } = await supabase
     .from('work_orders')
     .delete()
@@ -184,5 +195,5 @@ export async function DELETE(
     return NextResponse.json({ error: error.message }, { status: 400 })
   }
 
-  return NextResponse.json({ success: true })
+  return NextResponse.json({ success: true, deleted_numbers: deletedNumberCount ?? 0 })
 }
