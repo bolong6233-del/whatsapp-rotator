@@ -271,11 +271,147 @@ export async function GET(
     })
   }
 
+  // [Fix] Supabase client with cache: 'no-store' to prevent Edge Runtime config caching
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      global: {
+        fetch: (url, options = {}) => fetch(url, { ...options, cache: 'no-store' }),
+      },
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    }
   )
 
+  // [Fix] Extract request metadata before any DB calls (needed for both cloak and click_logs)
+  // [Fix] Safer IP resolution to prevent IP spoofing
+  const ip = request.headers.get('x-real-ip') ||
+             request.headers.get('x-vercel-forwarded-for') ||
+             request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+             null
+
+  const userAgent = request.headers.get('user-agent') || null
+  const referer = request.headers.get('referer') || null
+  const country = request.headers.get('x-vercel-ip-country') || null
+  const rawCity = request.headers.get('x-vercel-ip-city')
+  const city = rawCity ? decodeURIComponent(rawCity) : null
+
+  const { os, browser, device_type } = parseUserAgent(userAgent)
+
+  // ---------------------------------------------------------------------------
+  // [Fix] Pre-fetch short_link info + cloak config BEFORE calling RPC so that
+  // blocked requests never consume a real WhatsApp number rotation slot.
+  // ---------------------------------------------------------------------------
+  const { data: shortLink } = await supabase
+    .from('short_links')
+    .select('id, is_active, cloak_enabled, cloak_audit_url, cloak_mode, cloak_target_regions, cloak_sources, cloak_block_ip_repeat, cloak_block_pc')
+    .eq('slug', slug)
+    .maybeSingle()
+
+  if (!shortLink || !shortLink.is_active) {
+    return noCacheRedirect(WHATSAPP_FALLBACK)
+  }
+
+  // ---------------------------------------------------------------------------
+  // Cloaking logic – runs BEFORE RPC so blocked requests don't consume numbers
+  // ---------------------------------------------------------------------------
+  if (shortLink.cloak_enabled) {
+    // Only query cloak_ip_visits when block_ip_repeat is enabled (performance optimisation)
+    let ipAlreadyVisited = false
+    let existingVisitCount = 0
+    if (shortLink.cloak_block_ip_repeat && ip) {
+      const { data: ipVisit } = await supabase
+        .from('cloak_ip_visits')
+        .select('visit_count')
+        .eq('short_link_id', shortLink.id)
+        .eq('ip', ip)
+        .maybeSingle()
+      existingVisitCount = ipVisit?.visit_count ?? 0
+      ipAlreadyVisited = existingVisitCount >= 1
+    }
+
+    const decision = evaluateCloak(shortLink as CloakConfig, {
+      device_type,
+      country,
+      referer,
+      userAgent,
+      ipAlreadyVisited,
+    })
+
+    if (!decision.allow) {
+      // [Fix] whatsapp_number_id: null — no number was consumed on this blocked request
+      waitUntil(
+        Promise.resolve(
+          supabase.from('click_logs').insert({
+            short_link_id: shortLink.id,
+            whatsapp_number_id: null,
+            ip_address: ip,
+            user_agent: userAgent,
+            referer: referer,
+            country: country,
+            city: city,
+            os: os,
+            browser: browser,
+            device_type: device_type,
+            was_cloaked: true,
+            cloak_reason: decision.reason,
+          }).then(({ error }) => {
+            if (error) console.error('[click_logs] cloak insert failed:', error.message)
+          })
+        )
+      )
+
+      // [Fix] If blocked by IP repeat, increment visit count asynchronously
+      if (decision.reason === 'ip_repeat' && ip) {
+        waitUntil(
+          Promise.resolve(
+            supabase
+              .from('cloak_ip_visits')
+              .update({
+                visit_count: existingVisitCount + 1,
+                last_visit_at: new Date().toISOString(),
+              })
+              .eq('short_link_id', shortLink.id)
+              .eq('ip', ip)
+              .then(({ error }) => {
+                if (error) console.error('[cloak_ip_visits] update failed:', error.message)
+              })
+          )
+        )
+      }
+
+      const auditUrl = shortLink.cloak_audit_url?.trim() || 'https://www.google.com'
+      return noCacheRedirect(auditUrl)
+    }
+
+    // [Fix] Cloak allowed: record first visit for IP repeat detection (direct upsert, not RPC)
+    if (shortLink.cloak_block_ip_repeat && ip) {
+      waitUntil(
+        Promise.resolve(
+          supabase
+            .from('cloak_ip_visits')
+            .upsert(
+              {
+                short_link_id: shortLink.id,
+                ip: ip,
+                visit_count: 1,
+                last_visit_at: new Date().toISOString(),
+              },
+              { onConflict: 'short_link_id,ip', ignoreDuplicates: false }
+            )
+            .then(({ error }) => {
+              if (error) console.error('[cloak_ip_visits] upsert failed:', error.message)
+            })
+        )
+      )
+    }
+  }
+  // ---------------------------------------------------------------------------
+
+  // Cloak passed (or not enabled) → now rotate number via RPC
   const { data: rpcData, error: rpcError } = await supabase.rpc('increment_and_get_number', {
     p_slug: slug,
   })
@@ -309,93 +445,6 @@ export async function GET(
     auto_reply_messages,
     auto_reply_index,
   } = rpcData[0]
-
-  // [Fix] Safer IP resolution to prevent IP spoofing
-  const ip = request.headers.get('x-real-ip') || 
-             request.headers.get('x-vercel-forwarded-for') || 
-             request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 
-             null
-
-  const userAgent = request.headers.get('user-agent') || null
-  const referer = request.headers.get('referer') || null
-  const country = request.headers.get('x-vercel-ip-country') || null
-  const rawCity = request.headers.get('x-vercel-ip-city')
-  const city = rawCity ? decodeURIComponent(rawCity) : null
-
-  const { os, browser, device_type } = parseUserAgent(userAgent)
-
-  // ---------------------------------------------------------------------------
-  // Cloaking logic – runs before click_logs to allow early return on block
-  // ---------------------------------------------------------------------------
-  // Fetch cloak config (extra SELECT — does NOT modify the RPC signature)
-  const { data: cloakConfig } = await supabase
-    .from('short_links')
-    .select('cloak_enabled, cloak_audit_url, cloak_mode, cloak_target_regions, cloak_sources, cloak_block_ip_repeat, cloak_block_pc')
-    .eq('id', link_id)
-    .maybeSingle()
-
-  if (cloakConfig?.cloak_enabled) {
-    // Only query cloak_ip_visits when block_ip_repeat is enabled (performance optimisation)
-    let ipAlreadyVisited = false
-    if (cloakConfig.cloak_block_ip_repeat && ip) {
-      const { data: ipVisit } = await supabase
-        .from('cloak_ip_visits')
-        .select('visit_count')
-        .eq('short_link_id', link_id)
-        .eq('ip', ip)
-        .maybeSingle()
-      ipAlreadyVisited = (ipVisit?.visit_count ?? 0) >= 1
-    }
-
-    const decision = evaluateCloak(cloakConfig as CloakConfig, {
-      device_type,
-      country,
-      referer,
-      userAgent,
-      ipAlreadyVisited,
-    })
-
-    if (!decision.allow) {
-      // Async: record the blocked click (non-blocking)
-      if (!is_hidden) {
-        waitUntil(
-          Promise.resolve(
-            supabase.from('click_logs').insert({
-              short_link_id: link_id,
-              whatsapp_number_id: number_id,
-              ip_address: ip,
-              user_agent: userAgent,
-              referer: referer,
-              country: country,
-              city: city,
-              os: os,
-              browser: browser,
-              device_type: device_type,
-              was_cloaked: true,
-              cloak_reason: decision.reason,
-            }).then(({ error }) => {
-              if (error) console.error('[click_logs] cloak insert failed:', error.message)
-            })
-          )
-        )
-      }
-      const auditUrl = cloakConfig.cloak_audit_url?.trim() || 'https://www.google.com'
-      return noCacheRedirect(auditUrl)
-    }
-
-    // Allowed: upsert IP visit record when block_ip_repeat is enabled
-    if (cloakConfig.cloak_block_ip_repeat && ip) {
-      waitUntil(
-        Promise.resolve(
-          supabase.rpc('upsert_cloak_ip_visit', { p_short_link_id: link_id, p_ip: ip })
-            .then(({ error }) => {
-              if (error) console.error('[cloak_ip_visits] upsert failed:', error.message)
-            })
-        )
-      )
-    }
-  }
-  // ---------------------------------------------------------------------------
 
   if (!is_hidden && process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
     const logPromise = Promise.resolve(
