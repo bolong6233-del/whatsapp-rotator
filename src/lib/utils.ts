@@ -1,13 +1,18 @@
-export const TIKTOK_EVENT_OPTIONS = [
-  { value: 'SubmitForm', label: '提交表单' },
-  { value: 'Contact', label: '联系' },
-  { value: 'Download', label: '下载' },
-  { value: 'CompleteRegistration', label: '完成注册' },
-] as const
+export {
+  FB_PIXEL_EVENTS,
+  FB_DEFAULT_EVENT,
+  TIKTOK_PIXEL_EVENTS,
+  TIKTOK_DEFAULT_EVENT,
+} from '@/lib/pixel-events'
+export type { FbEventType, TikTokEventType } from '@/lib/pixel-events'
 
-export type TikTokEventType = (typeof TIKTOK_EVENT_OPTIONS)[number]['value']
+// Legacy alias kept for backwards-compat (dashboard pages use TIKTOK_EVENT_OPTIONS)
+export { TIKTOK_PIXEL_EVENTS as TIKTOK_EVENT_OPTIONS } from '@/lib/pixel-events'
 
-export const ALLOWED_TIKTOK_EVENTS: readonly string[] = TIKTOK_EVENT_OPTIONS.map((o) => o.value)
+import { FB_PIXEL_EVENTS, TIKTOK_PIXEL_EVENTS } from '@/lib/pixel-events'
+
+export const ALLOWED_FB_EVENTS: readonly string[] = FB_PIXEL_EVENTS.map((o) => o.value)
+export const ALLOWED_TIKTOK_EVENTS: readonly string[] = TIKTOK_PIXEL_EVENTS.map((o) => o.value)
 
 export function formatDate(date: string): string {
   return new Date(date).toLocaleString('zh-CN', {
