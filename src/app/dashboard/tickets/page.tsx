@@ -1,3 +1,39 @@
+/**
+ * ==============================================================
+ * ⚠️ 工单平台隔离原则（接入新云控时必读，不允许违反）
+ * --------------------------------------------------------------
+ * 1. 每个云控平台（星河云控 / A2C云控 / 海王云控 / 未来新增的）
+ *    都是【完全独立】的代码分支，互不依赖、互不共用函数。
+ *
+ * 2. 维护或新增功能时只允许 **添加** 自己平台的逻辑：
+ *      if (order.ticket_type === '<新云控名>') { ... }
+ *    严禁修改、重构、抽取其他云控的代码——即便它们看起来"一模一样"。
+ *
+ * 3. 任何"为了减少重复"的提取/合并函数都视为违规。重复就是隔离的代价。
+ *
+ * 4. 业务规则速查（所有平台共有的字段语义）：
+ *    - work_orders.total_quantity   = 当日进线目标，达到则工单 status=completed
+ *    - work_orders.download_ratio   = 单号码当日进线上限，达到则该号码 is_active=false
+ *                                     云控次日 day_sum 归零后该号码自动恢复 is_active=true
+ *                                     0 表示不限制
+ *    - work_orders.status='completed' → 后端 PUT 路由会停用该工单全部号码（按 label 匹配）
+ *    - whatsapp_numbers.label = work_orders.ticket_name（工单 ↔ 号码 关联键，不要改）
+ *
+ * 5. 同步流程时序（不要打乱）：
+ *      a) 拉取上游数据
+ *      b) INSERT 新号码到 whatsapp_numbers（先入库，后续才能按 label 停用）
+ *      c) 按 download_ratio 调整 is_active
+ *      d) PUT /api/work-orders/[id] 持久化 sync_* 字段，必要时 status=completed
+ *         （后端 PUT 检测到 completed 会按 label 停用全部号码）
+ *
+ * 6. 当前各平台支持矩阵（更新到 2026-04）：
+ *    | 平台      | 同步 | total_quantity 自动完成 | download_ratio 自动停号 |
+ *    |-----------|------|------------------------|------------------------|
+ *    | 星河云控  |  ✅  |          ✅            |          ✅            |
+ *    | 海王云控  |  ✅  |          ✅            |          ✅            |
+ *    | A2C云控   |  ❌  |          ❌            |          ❌            |
+ * ==============================================================
+ */
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
@@ -186,17 +222,8 @@ export default function TicketsPage() {
         updates.status = 'completed'
       }
 
-      // Persist sync results to the database (backend handles disabling numbers on completion)
-      const persistRes = await fetch(`/api/work-orders/${order.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates),
-      })
-      if (!persistRes.ok) {
-        console.error('[syncWorkOrder] Failed to persist sync results for order', order.id)
-      }
-
       // Push synced phone numbers into whatsapp_numbers (号码管理)
+      // ⚠️ 必须在 PUT 之前执行，否则后端按 label 停用号码时找不到记录
       if (numbers && numbers.length > 0 && order.distribution_link_slug) {
         try {
           const { data: linkData } = await supabase
@@ -275,6 +302,83 @@ export default function TicketsPage() {
         }
       }
 
+      // [星河云控] download_ratio 自动停号
+      // 仅在 download_ratio > 0、工单仍为 active 且有分流链接时执行
+      // ⚠️ 严禁将此段与海王云控的同名逻辑合并为共用函数——平台隔离原则
+      if ((order.download_ratio ?? 0) > 0 && order.status === 'active' && order.distribution_link_slug) {
+        try {
+          const ratio = order.download_ratio
+          const numsArr = numbers as SyncNumber[]
+
+          const { data: linkData } = await supabase
+            .from('short_links')
+            .select('id')
+            .eq('slug', order.distribution_link_slug)
+            .single()
+          if (!linkData) throw new Error('short_link not found')
+
+          const { data: dbNums } = await supabase
+            .from('whatsapp_numbers')
+            .select('id, phone_number')
+            .eq('short_link_id', linkData.id)
+            .eq('label', order.ticket_name)
+
+          if (dbNums && dbNums.length > 0) {
+            const norm = (s: string) => (s || '').replace(/\D/g, '')
+            const toDeactivate: string[] = []
+            const toActivate: string[] = []
+
+            for (const dbNum of dbNums) {
+              const dbN = norm(dbNum.phone_number)
+              const match = numsArr.find((n) => {
+                const nN = norm(n.user)
+                return nN && dbN && (nN === dbN || nN.endsWith(dbN) || dbN.endsWith(nN))
+              })
+              if (!match) continue
+              if (match.day_sum >= ratio) toDeactivate.push(dbNum.phone_number)
+              else toActivate.push(dbNum.phone_number)
+            }
+
+            const chunkSize = 100
+            if (toDeactivate.length > 0) {
+              for (let i = 0; i < toDeactivate.length; i += chunkSize) {
+                const chunk = toDeactivate.slice(i, i + chunkSize)
+                await supabase
+                  .from('whatsapp_numbers')
+                  .update({ is_active: false })
+                  .eq('short_link_id', linkData.id)
+                  .eq('label', order.ticket_name)
+                  .in('phone_number', chunk)
+              }
+            }
+            if (toActivate.length > 0) {
+              for (let i = 0; i < toActivate.length; i += chunkSize) {
+                const chunk = toActivate.slice(i, i + chunkSize)
+                await supabase
+                  .from('whatsapp_numbers')
+                  .update({ is_active: true })
+                  .eq('short_link_id', linkData.id)
+                  .eq('label', order.ticket_name)
+                  .in('phone_number', chunk)
+              }
+            }
+          }
+        } catch (err) {
+          console.error('[syncWorkOrder] download_ratio enforcement failed:', err)
+        }
+      }
+
+      // Persist sync results to the database (backend handles disabling numbers on completion)
+      // ⚠️ 必须在 INSERT 之后执行，status=completed 触发后端按 label 停用号码时记录已存在
+      const persistRes = await fetch(`/api/work-orders/${order.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      })
+      if (!persistRes.ok) {
+        console.error('[syncWorkOrder] Failed to persist sync results for order', order.id)
+      }
+
       return updates
     }
     // ──── A2C云控同步逻辑 ────
@@ -315,17 +419,8 @@ export default function TicketsPage() {
         updates.status = 'completed'
       }
 
-      // Persist sync results to the database
-      const persistRes = await fetch(`/api/work-orders/${order.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates),
-      })
-      if (!persistRes.ok) {
-        console.error('[syncWorkOrder] Failed to persist sync results for order', order.id)
-      }
-
       // Push synced phone numbers into whatsapp_numbers (号码管理)
+      // ⚠️ 必须在 PUT 之前执行，否则后端按 label 停用号码时找不到记录
       if (numbers && numbers.length > 0 && order.distribution_link_slug) {
         try {
           const { data: linkData } = await supabase
@@ -399,6 +494,83 @@ export default function TicketsPage() {
         } catch (err) {
           console.error('[syncWorkOrder] Failed to push numbers to 号码管理', err)
         }
+      }
+
+      // [海王云控] download_ratio 自动停号
+      // 仅在 download_ratio > 0、工单仍为 active 且有分流链接时执行
+      // ⚠️ 严禁将此段与星河云控的同名逻辑合并为共用函数——平台隔离原则
+      if ((order.download_ratio ?? 0) > 0 && order.status === 'active' && order.distribution_link_slug) {
+        try {
+          const ratio = order.download_ratio
+          const numsArr = numbers as SyncNumber[]
+
+          const { data: linkData } = await supabase
+            .from('short_links')
+            .select('id')
+            .eq('slug', order.distribution_link_slug)
+            .single()
+          if (!linkData) throw new Error('short_link not found')
+
+          const { data: dbNums } = await supabase
+            .from('whatsapp_numbers')
+            .select('id, phone_number')
+            .eq('short_link_id', linkData.id)
+            .eq('label', order.ticket_name)
+
+          if (dbNums && dbNums.length > 0) {
+            const norm = (s: string) => (s || '').replace(/\D/g, '')
+            const toDeactivate: string[] = []
+            const toActivate: string[] = []
+
+            for (const dbNum of dbNums) {
+              const dbN = norm(dbNum.phone_number)
+              const match = numsArr.find((n) => {
+                const nN = norm(n.user)
+                return nN && dbN && (nN === dbN || nN.endsWith(dbN) || dbN.endsWith(nN))
+              })
+              if (!match) continue
+              if (match.day_sum >= ratio) toDeactivate.push(dbNum.phone_number)
+              else toActivate.push(dbNum.phone_number)
+            }
+
+            const chunkSize = 100
+            if (toDeactivate.length > 0) {
+              for (let i = 0; i < toDeactivate.length; i += chunkSize) {
+                const chunk = toDeactivate.slice(i, i + chunkSize)
+                await supabase
+                  .from('whatsapp_numbers')
+                  .update({ is_active: false })
+                  .eq('short_link_id', linkData.id)
+                  .eq('label', order.ticket_name)
+                  .in('phone_number', chunk)
+              }
+            }
+            if (toActivate.length > 0) {
+              for (let i = 0; i < toActivate.length; i += chunkSize) {
+                const chunk = toActivate.slice(i, i + chunkSize)
+                await supabase
+                  .from('whatsapp_numbers')
+                  .update({ is_active: true })
+                  .eq('short_link_id', linkData.id)
+                  .eq('label', order.ticket_name)
+                  .in('phone_number', chunk)
+              }
+            }
+          }
+        } catch (err) {
+          console.error('[syncWorkOrder] download_ratio enforcement failed:', err)
+        }
+      }
+
+      // Persist sync results to the database
+      // ⚠️ 必须在 INSERT 之后执行，status=completed 触发后端按 label 停用号码时记录已存在
+      const persistRes = await fetch(`/api/work-orders/${order.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      })
+      if (!persistRes.ok) {
+        console.error('[syncWorkOrder] Failed to persist sync results for order', order.id)
       }
 
       return updates
@@ -1186,25 +1358,14 @@ export default function TicketsPage() {
                   <label className="text-sm text-gray-700 whitespace-nowrap w-20 flex-shrink-0">
                     下号比率
                   </label>
-                  <div className="flex items-center border border-gray-300 rounded-lg overflow-hidden">
-                    <button
-                      type="button"
-                      onClick={() => updateForm('download_ratio', Math.max(0, form.download_ratio - 1))}
-                      className="px-3 py-2 text-gray-600 hover:bg-gray-100 text-base font-medium transition-colors"
-                    >
-                      −
-                    </button>
-                    <span className="px-4 py-2 text-sm text-gray-800 min-w-[3rem] text-center border-x border-gray-300">
-                      {form.download_ratio}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => updateForm('download_ratio', form.download_ratio + 1)}
-                      className="px-3 py-2 text-gray-600 hover:bg-gray-100 text-base font-medium transition-colors"
-                    >
-                      +
-                    </button>
-                  </div>
+                  <input
+                    type="number"
+                    value={form.download_ratio}
+                    onChange={(e) => updateForm('download_ratio', Math.max(0, Number(e.target.value) || 0))}
+                    min={0}
+                    placeholder="0"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
+                  />
                 </div>
 
                 {/* Row 6: 工单账号 | 工单密码 */}
