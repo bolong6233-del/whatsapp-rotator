@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { generateSlug, TIKTOK_EVENT_OPTIONS, TikTokEventType } from '@/lib/utils'
+import { generateSlug, TIKTOK_PIXEL_EVENTS, FB_PIXEL_EVENTS, TikTokEventType, FbEventType } from '@/lib/utils'
 
 export default function CreateLinkPage() {
   const router = useRouter()
@@ -14,7 +14,7 @@ export default function CreateLinkPage() {
   const [tiktokEventType, setTiktokEventType] = useState<TikTokEventType>('SubmitForm')
   const [fbPixelEnabled, setFbPixelEnabled] = useState(false)
   const [fbPixelId, setFbPixelId] = useState('')
-  const [fbEventType, setFbEventType] = useState<'Lead' | 'Purchase' | 'ViewContent'>('Lead')
+  const [fbEventType, setFbEventType] = useState<FbEventType>('Lead')
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(false)
   const [autoReplyMessages, setAutoReplyMessages] = useState('')
   const [loading, setLoading] = useState(false)
@@ -197,22 +197,15 @@ export default function CreateLinkPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-indigo-800 mb-2">事件类型</label>
-                <div className="flex gap-2">
-                  {TIKTOK_EVENT_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => setTiktokEventType(opt.value)}
-                      className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
-                        tiktokEventType === opt.value
-                          ? 'bg-indigo-600 text-white'
-                          : 'border border-indigo-300 text-indigo-700 bg-white hover:bg-indigo-50'
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
+                <select
+                  value={tiktokEventType}
+                  onChange={(e) => setTiktokEventType(e.target.value as TikTokEventType)}
+                  className="w-full px-3 py-2 border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-400 focus:border-transparent outline-none bg-white text-sm"
+                >
+                  {TIKTOK_PIXEL_EVENTS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
                   ))}
-                </div>
+                </select>
               </div>
             </div>
           )}
@@ -257,26 +250,15 @@ export default function CreateLinkPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-blue-800 mb-2">事件类型</label>
-                <div className="flex gap-2">
-                  {([
-                    { value: 'Lead', label: '潜在客户' },
-                    { value: 'Purchase', label: '购买' },
-                    { value: 'ViewContent', label: '点击' },
-                  ] as const).map((opt) => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => setFbEventType(opt.value)}
-                      className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
-                        fbEventType === opt.value
-                          ? 'bg-blue-600 text-white'
-                          : 'border border-blue-300 text-blue-700 bg-white hover:bg-blue-50'
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
+                <select
+                  value={fbEventType}
+                  onChange={(e) => setFbEventType(e.target.value as FbEventType)}
+                  className="w-full px-3 py-2 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-transparent outline-none bg-white text-sm"
+                >
+                  {FB_PIXEL_EVENTS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
                   ))}
-                </div>
+                </select>
               </div>
             </div>
           )}

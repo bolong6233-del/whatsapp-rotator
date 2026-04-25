@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase-client'
-import { generateSlug, getBaseUrl, TIKTOK_EVENT_OPTIONS, TikTokEventType } from '@/lib/utils'
+import { generateSlug, getBaseUrl, TIKTOK_PIXEL_EVENTS, FB_PIXEL_EVENTS, TikTokEventType, FbEventType } from '@/lib/utils'
 import { COUNTRIES } from '@/lib/countries'
 import type { ShortLink } from '@/types'
 import Link from 'next/link'
@@ -258,7 +258,7 @@ export default function DashboardPage() {
   const [newTiktokEventType, setNewTiktokEventType] = useState<TikTokEventType>('SubmitForm')
   const [newFbPixelEnabled, setNewFbPixelEnabled] = useState(false)
   const [newFbPixelId, setNewFbPixelId] = useState('')
-  const [newFbEventType, setNewFbEventType] = useState<'Lead' | 'Purchase' | 'ViewContent'>('Lead')
+  const [newFbEventType, setNewFbEventType] = useState<FbEventType>('Lead')
   const [newAutoReplyEnabled, setNewAutoReplyEnabled] = useState(false)
   const [newAutoReplyMessages, setNewAutoReplyMessages] = useState('')
   const [creating, setCreating] = useState(false)
@@ -769,22 +769,15 @@ export default function DashboardPage() {
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-indigo-800 mb-2">事件类型</label>
-                      <div className="flex gap-2">
-                        {TIKTOK_EVENT_OPTIONS.map((opt) => (
-                          <button
-                            key={opt.value}
-                            type="button"
-                            onClick={() => setNewTiktokEventType(opt.value)}
-                            className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
-                              newTiktokEventType === opt.value
-                                ? 'bg-indigo-600 text-white'
-                                : 'border border-indigo-300 text-indigo-700 bg-white hover:bg-indigo-50'
-                            }`}
-                          >
-                            {opt.label}
-                          </button>
+                      <select
+                        value={newTiktokEventType}
+                        onChange={(e) => setNewTiktokEventType(e.target.value as TikTokEventType)}
+                        className="w-full px-3 py-2 border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-400 outline-none bg-white text-sm"
+                      >
+                        {TIKTOK_PIXEL_EVENTS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
                         ))}
-                      </div>
+                      </select>
                     </div>
                   </div>
                 )}
@@ -820,26 +813,15 @@ export default function DashboardPage() {
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-blue-800 mb-2">事件类型</label>
-                      <div className="flex gap-2">
-                        {([
-                          { value: 'Lead', label: '潜在客户' },
-                          { value: 'Purchase', label: '购买' },
-                          { value: 'ViewContent', label: '点击' },
-                        ] as const).map((opt) => (
-                          <button
-                            key={opt.value}
-                            type="button"
-                            onClick={() => setNewFbEventType(opt.value)}
-                            className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
-                              newFbEventType === opt.value
-                                ? 'bg-blue-600 text-white'
-                                : 'border border-blue-300 text-blue-700 bg-white hover:bg-blue-50'
-                            }`}
-                          >
-                            {opt.label}
-                          </button>
+                      <select
+                        value={newFbEventType}
+                        onChange={(e) => setNewFbEventType(e.target.value as FbEventType)}
+                        className="w-full px-3 py-2 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-400 outline-none bg-white text-sm"
+                      >
+                        {FB_PIXEL_EVENTS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
                         ))}
-                      </div>
+                      </select>
                     </div>
                   </div>
                 )}
