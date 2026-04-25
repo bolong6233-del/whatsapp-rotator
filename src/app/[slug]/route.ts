@@ -8,6 +8,7 @@ import { ALLOWED_TIKTOK_EVENTS } from '@/lib/utils'
 // ALTER TABLE short_links ADD COLUMN IF NOT EXISTS fb_pixel_enabled BOOLEAN DEFAULT FALSE;
 // ALTER TABLE short_links ADD COLUMN IF NOT EXISTS fb_pixel_id TEXT;
 // ALTER TABLE short_links ADD COLUMN IF NOT EXISTS fb_event_type TEXT DEFAULT 'Lead';
+// See supabase/migrations/023_add_cloak_fields.sql for cloaking fields.
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
@@ -130,6 +131,113 @@ function buildRedirectUrl(phoneNumber: string, platform: string, autoReplyMessag
   }
 }
 
+// ---------------------------------------------------------------------------
+// Cloaking helpers (Edge-compatible – no Node.js APIs)
+// ---------------------------------------------------------------------------
+
+interface CloakConfig {
+  cloak_enabled: boolean
+  cloak_audit_url: string | null
+  cloak_mode: string | null
+  cloak_target_regions: string[] | null
+  cloak_sources: string[] | null
+  cloak_block_ip_repeat: boolean
+  cloak_block_pc: boolean
+}
+
+type CloakDecision =
+  | { allow: true }
+  | { allow: false; reason: 'block_pc' | 'wrong_country' | 'wrong_source' | 'ip_repeat' | 'mode_audit' }
+
+/**
+ * Detect whether the request matches a given traffic source.
+ * Uses both referer and User-Agent for double identification.
+ */
+function matchesSource(source: string, referer: string | null, ua: string | null): boolean {
+  const r = (referer ?? '').toLowerCase()
+  const u = (ua ?? '')
+
+  switch (source) {
+    case 'tiktok':
+      return r.includes('tiktok.com') || /TikTok|BytedanceWebview|musical_ly/.test(u)
+    case 'facebook':
+      return (
+        r.includes('facebook.com') ||
+        r.includes('fb.com') ||
+        r.includes('m.facebook.com') ||
+        r.includes('l.facebook.com') ||
+        /FBAN|FBAV/.test(u)
+      )
+    case 'x':
+      return r.includes('x.com') || r.includes('twitter.com') || r.includes('t.co') || /Twitter/.test(u)
+    case 'google':
+      return r.includes('google.') || /GoogleAdsBot/.test(u)
+    case 'instagram':
+      return r.includes('instagram.com') || /Instagram/.test(u)
+    default:
+      return false
+  }
+}
+
+/**
+ * Core cloaking decision logic.
+ * IMPORTANT: does NOT query cloak_ip_visits here — that is done by the caller
+ * to avoid unnecessary DB round-trips when block_ip_repeat is disabled.
+ */
+function evaluateCloak(
+  config: CloakConfig,
+  opts: {
+    device_type: string | null
+    country: string | null
+    referer: string | null
+    userAgent: string | null
+    ipAlreadyVisited: boolean
+  }
+): CloakDecision {
+  const mode = config.cloak_mode ?? 'cloak'
+
+  // Mode B: open — always allow
+  if (mode === 'open') {
+    return { allow: true }
+  }
+
+  // Mode C: audit — always block
+  if (mode === 'audit') {
+    return { allow: false, reason: 'mode_audit' }
+  }
+
+  // Mode A: cloak — sequential checks
+  // 1. Block PC
+  if (config.cloak_block_pc && opts.device_type === 'Desktop') {
+    return { allow: false, reason: 'block_pc' }
+  }
+
+  // 2. Country check
+  const regions = config.cloak_target_regions ?? []
+  if (regions.length > 0) {
+    const visitCountry = (opts.country ?? '').toUpperCase()
+    if (!visitCountry || !regions.map((r) => r.toUpperCase()).includes(visitCountry)) {
+      return { allow: false, reason: 'wrong_country' }
+    }
+  }
+
+  // 3. Source check (only when sources are selected)
+  const sources = config.cloak_sources ?? []
+  if (sources.length > 0) {
+    const matched = sources.some((src) => matchesSource(src, opts.referer, opts.userAgent))
+    if (!matched) {
+      return { allow: false, reason: 'wrong_source' }
+    }
+  }
+
+  // 4. IP repeat check
+  if (config.cloak_block_ip_repeat && opts.ipAlreadyVisited) {
+    return { allow: false, reason: 'ip_repeat' }
+  }
+
+  return { allow: true }
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
@@ -216,6 +324,79 @@ export async function GET(
 
   const { os, browser, device_type } = parseUserAgent(userAgent)
 
+  // ---------------------------------------------------------------------------
+  // Cloaking logic – runs before click_logs to allow early return on block
+  // ---------------------------------------------------------------------------
+  // Fetch cloak config (extra SELECT — does NOT modify the RPC signature)
+  const { data: cloakConfig } = await supabase
+    .from('short_links')
+    .select('cloak_enabled, cloak_audit_url, cloak_mode, cloak_target_regions, cloak_sources, cloak_block_ip_repeat, cloak_block_pc')
+    .eq('id', link_id)
+    .maybeSingle()
+
+  if (cloakConfig?.cloak_enabled) {
+    // Only query cloak_ip_visits when block_ip_repeat is enabled (performance optimisation)
+    let ipAlreadyVisited = false
+    if (cloakConfig.cloak_block_ip_repeat && ip) {
+      const { data: ipVisit } = await supabase
+        .from('cloak_ip_visits')
+        .select('visit_count')
+        .eq('short_link_id', link_id)
+        .eq('ip', ip)
+        .maybeSingle()
+      ipAlreadyVisited = (ipVisit?.visit_count ?? 0) >= 1
+    }
+
+    const decision = evaluateCloak(cloakConfig as CloakConfig, {
+      device_type,
+      country,
+      referer,
+      userAgent,
+      ipAlreadyVisited,
+    })
+
+    if (!decision.allow) {
+      // Async: record the blocked click (non-blocking)
+      if (!is_hidden) {
+        waitUntil(
+          Promise.resolve(
+            supabase.from('click_logs').insert({
+              short_link_id: link_id,
+              whatsapp_number_id: number_id,
+              ip_address: ip,
+              user_agent: userAgent,
+              referer: referer,
+              country: country,
+              city: city,
+              os: os,
+              browser: browser,
+              device_type: device_type,
+              was_cloaked: true,
+              cloak_reason: decision.reason,
+            }).then(({ error }) => {
+              if (error) console.error('[click_logs] cloak insert failed:', error.message)
+            })
+          )
+        )
+      }
+      const auditUrl = cloakConfig.cloak_audit_url?.trim() || 'https://www.google.com'
+      return noCacheRedirect(auditUrl)
+    }
+
+    // Allowed: upsert IP visit record when block_ip_repeat is enabled
+    if (cloakConfig.cloak_block_ip_repeat && ip) {
+      waitUntil(
+        Promise.resolve(
+          supabase.rpc('upsert_cloak_ip_visit', { p_short_link_id: link_id, p_ip: ip })
+            .then(({ error }) => {
+              if (error) console.error('[cloak_ip_visits] upsert failed:', error.message)
+            })
+        )
+      )
+    }
+  }
+  // ---------------------------------------------------------------------------
+
   if (!is_hidden && process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
     const logPromise = Promise.resolve(
       supabase.from('click_logs').insert({
@@ -229,6 +410,7 @@ export async function GET(
         os: os,
         browser: browser,
         device_type: device_type,
+        was_cloaked: false,
       }).then(({ error }) => {
         if (error) {
           console.error('[click_logs] Failed to insert click log:', error.message)

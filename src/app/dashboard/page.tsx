@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase-client'
 import { generateSlug, getBaseUrl, TIKTOK_EVENT_OPTIONS, TikTokEventType } from '@/lib/utils'
+import { COUNTRIES } from '@/lib/countries'
 import type { ShortLink } from '@/types'
 import Link from 'next/link'
 import Pagination from '@/components/ui/Pagination'
@@ -111,6 +112,125 @@ function ShortLinkSelect({
   )
 }
 
+/** Multi-select dropdown for countries with search. */
+function CountryMultiSelect({
+  value,
+  onChange,
+}: {
+  value: string[]
+  onChange: (codes: string[]) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false)
+        setSearch('')
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const filtered = COUNTRIES.filter(
+    (c) =>
+      c.code.toLowerCase().includes(search.toLowerCase()) ||
+      c.name.includes(search)
+  )
+
+  const toggle = (code: string) => {
+    if (value.includes(code)) {
+      onChange(value.filter((c) => c !== code))
+    } else {
+      onChange([...value, code])
+    }
+  }
+
+  const displayText =
+    value.length === 0
+      ? '选择投放地区...'
+      : value.length <= 3
+        ? value
+          .map((c) => {
+            const found = COUNTRIES.find((co) => co.code === c)
+            return found ? `${found.code} ${found.name}` : c
+          })
+          .join(', ')
+        : `已选 ${value.length} 个地区`
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => { setOpen((p) => !p); setSearch('') }}
+        className="w-full flex items-center justify-between gap-2 px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white hover:border-purple-400 focus:outline-none focus:ring-2 focus:ring-purple-400 transition-colors"
+      >
+        <span className={value.length > 0 ? 'text-gray-900' : 'text-gray-400'}>{displayText}</span>
+        <svg className={`w-4 h-4 text-gray-400 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute z-30 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+          <div className="p-2 border-b border-gray-100">
+            <input
+              autoFocus
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="搜索国家/地区..."
+              className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-purple-400"
+            />
+          </div>
+          {value.length > 0 && (
+            <div className="px-3 py-1.5 border-b border-gray-100">
+              <button
+                type="button"
+                onClick={() => onChange([])}
+                className="text-xs text-red-500 hover:text-red-700"
+              >
+                清空所有选择
+              </button>
+            </div>
+          )}
+          <ul className="max-h-48 overflow-y-auto">
+            {filtered.length === 0 ? (
+              <li className="px-3 py-2 text-sm text-gray-400">无匹配结果</li>
+            ) : (
+              filtered.map((c) => (
+                <li key={c.code}>
+                  <button
+                    type="button"
+                    onClick={() => toggle(c.code)}
+                    className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-purple-50 transition-colors ${
+                      value.includes(c.code) ? 'text-purple-700 bg-purple-50' : 'text-gray-700'
+                    }`}
+                  >
+                    <span className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
+                      value.includes(c.code) ? 'bg-purple-600 border-purple-600 text-white' : 'border-gray-300'
+                    }`}>
+                      {value.includes(c.code) && (
+                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </span>
+                    <span className="font-mono text-xs text-gray-500">{c.code}</span>
+                    <span>{c.name}</span>
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function DashboardPage() {
   const { start, done } = useTopProgress()
   const { showToast } = useToast()
@@ -143,6 +263,14 @@ export default function DashboardPage() {
   const [newAutoReplyMessages, setNewAutoReplyMessages] = useState('')
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState('')
+  // Cloak state
+  const [newCloakEnabled, setNewCloakEnabled] = useState(false)
+  const [newCloakAuditUrl, setNewCloakAuditUrl] = useState('')
+  const [newCloakMode, setNewCloakMode] = useState<'cloak' | 'open' | 'audit'>('cloak')
+  const [newCloakRegions, setNewCloakRegions] = useState<string[]>([])
+  const [newCloakSources, setNewCloakSources] = useState<string[]>([])
+  const [newCloakBlockIp, setNewCloakBlockIp] = useState(false)
+  const [newCloakBlockPc, setNewCloakBlockPc] = useState(false)
 
   useEffect(() => {
     supabase.auth.getUser().then(async ({ data: { user } }) => {
@@ -266,6 +394,11 @@ export default function DashboardPage() {
       return
     }
 
+    if (newCloakEnabled && newCloakMode === 'cloak' && newCloakRegions.length === 0) {
+      setCreateError('斗篷模式下必须至少选择一个投放地区')
+      return
+    }
+
     setCreating(true)
 
     try {
@@ -291,6 +424,13 @@ export default function DashboardPage() {
           fb_event_type: newFbPixelEnabled ? newFbEventType : null,
           auto_reply_enabled: newAutoReplyEnabled,
           auto_reply_messages: newAutoReplyEnabled && newAutoReplyMessages.trim() ? newAutoReplyMessages.trim() : null,
+          cloak_enabled: newCloakEnabled,
+          cloak_audit_url: newCloakEnabled && newCloakAuditUrl.trim() ? newCloakAuditUrl.trim() : null,
+          cloak_mode: newCloakEnabled ? newCloakMode : 'cloak',
+          cloak_target_regions: newCloakEnabled ? newCloakRegions : [],
+          cloak_sources: newCloakEnabled ? newCloakSources : [],
+          cloak_block_ip_repeat: newCloakEnabled ? newCloakBlockIp : false,
+          cloak_block_pc: newCloakEnabled ? newCloakBlockPc : false,
         })
 
       if (linkError) {
@@ -314,6 +454,13 @@ export default function DashboardPage() {
       setNewFbEventType('Lead')
       setNewAutoReplyEnabled(false)
       setNewAutoReplyMessages('')
+      setNewCloakEnabled(false)
+      setNewCloakAuditUrl('')
+      setNewCloakMode('cloak')
+      setNewCloakRegions([])
+      setNewCloakSources([])
+      setNewCloakBlockIp(false)
+      setNewCloakBlockPc(false)
       setSuccess('短链创建成功')
       setTimeout(() => setSuccess(''), 3000)
       showToast('短链创建成功', 'success')
@@ -724,6 +871,131 @@ export default function DashboardPage() {
                       placeholder={'你好\n早上好\n下午好'}
                       className="w-full px-3 py-2 border border-yellow-200 rounded-lg focus:ring-2 focus:ring-yellow-400 outline-none bg-white text-sm resize-none"
                     />
+                  </div>
+                )}
+              </div>
+
+              {/* Cloak */}
+              <div className="bg-purple-50 rounded-lg p-4 border border-purple-100">
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <p className="font-medium text-purple-900 text-sm">🛡️ 斗篷功能</p>
+                    <p className="text-xs text-purple-600 mt-0.5">
+                      开启后根据规则区分真实用户与审核员，分别跳转不同链接
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setNewCloakEnabled(!newCloakEnabled)}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      newCloakEnabled ? 'bg-purple-600' : 'bg-gray-300'
+                    }`}
+                  >
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      newCloakEnabled ? 'translate-x-6' : 'translate-x-1'
+                    }`} />
+                  </button>
+                </div>
+                {newCloakEnabled && (
+                  <div className="space-y-3 mt-3">
+                    <div>
+                      <label className="block text-xs font-medium text-purple-800 mb-1">
+                        审核链接 <span className="text-gray-400 font-normal">（选填，留空则跳转 google.com）</span>
+                      </label>
+                      <input
+                        type="url"
+                        value={newCloakAuditUrl}
+                        onChange={(e) => setNewCloakAuditUrl(e.target.value)}
+                        placeholder="https://www.example.com"
+                        className="w-full px-3 py-2 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-400 outline-none bg-white text-sm"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-purple-800 mb-2">模式 <span className="text-red-500">*</span></label>
+                      <div className="space-y-1">
+                        {([
+                          { value: 'cloak', label: '斗篷', desc: '只有投放地区客户能访问真实链接' },
+                          { value: 'open', label: '全开', desc: '所有点击都会访问真实链接' },
+                          { value: 'audit', label: '审核', desc: '所有点击都会访问审核链接' },
+                        ] as const).map((opt) => (
+                          <label key={opt.value} className="flex items-start gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="newCloakMode"
+                              value={opt.value}
+                              checked={newCloakMode === opt.value}
+                              onChange={() => setNewCloakMode(opt.value)}
+                              className="mt-0.5 accent-purple-600"
+                            />
+                            <span className="text-sm text-purple-900 font-medium">{opt.label}</span>
+                            <span className="text-xs text-purple-600">{opt.desc}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-purple-800 mb-1">
+                        投放地区 <span className="text-red-500">*</span>
+                        <span className="text-gray-400 font-normal ml-1">（斗篷模式必填）</span>
+                      </label>
+                      <CountryMultiSelect value={newCloakRegions} onChange={setNewCloakRegions} />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-purple-800 mb-2">
+                        来源 <span className="text-gray-400 font-normal">（多选，仅斗篷模式生效）</span>
+                      </label>
+                      <div className="flex flex-wrap gap-3">
+                        {(['tiktok', 'facebook', 'x', 'google', 'instagram'] as const).map((src) => {
+                          const labels: Record<string, string> = { tiktok: 'TikTok', facebook: 'Facebook', x: 'X', google: 'Google', instagram: 'Instagram' }
+                          return (
+                            <label key={src} className="flex items-center gap-1.5 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={newCloakSources.includes(src)}
+                                onChange={() =>
+                                  setNewCloakSources((prev) =>
+                                    prev.includes(src) ? prev.filter((s) => s !== src) : [...prev, src]
+                                  )
+                                }
+                                className="accent-purple-600 w-3.5 h-3.5"
+                              />
+                              <span className="text-xs text-purple-900">{labels[src]}</span>
+                            </label>
+                          )
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={newCloakBlockIp}
+                          onChange={() => setNewCloakBlockIp(!newCloakBlockIp)}
+                          className="accent-purple-600 w-3.5 h-3.5"
+                        />
+                        <span className="text-xs text-purple-900 font-medium">屏蔽 IP</span>
+                        <span
+                          title="开启后，符合斗篷条件的用户首次点击会进入真实链接，第二次起进入审核链接，防止同一客户反复添加多位客服。"
+                          className="text-xs text-purple-400 cursor-help border border-purple-300 rounded-full w-4 h-4 flex items-center justify-center shrink-0"
+                        >
+                          ?
+                        </span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={newCloakBlockPc}
+                          onChange={() => setNewCloakBlockPc(!newCloakBlockPc)}
+                          className="accent-purple-600 w-3.5 h-3.5"
+                        />
+                        <span className="text-xs text-purple-900 font-medium">屏蔽 PC</span>
+                        <span className="text-xs text-purple-600">电脑端访问走审核链接</span>
+                      </label>
+                    </div>
                   </div>
                 )}
               </div>

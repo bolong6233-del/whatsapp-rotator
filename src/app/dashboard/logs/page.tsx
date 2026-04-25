@@ -30,6 +30,7 @@ interface ShortLinkOption {
 
 interface Stats {
   todayCount: number
+  todayBlockedCount: number
   mobileCount: number
   desktopCount: number
   topCountry: string | null
@@ -392,6 +393,7 @@ export default function LogsPage() {
   const [pageSize, setPageSize] = useState(10)
   const [filterSlug, setFilterSlug] = useState('')
   const [filterCountry, setFilterCountry] = useState('')
+  const [filterCloaked, setFilterCloaked] = useState<'all' | 'passed' | 'blocked'>('all')
   const [selectedLogs, setSelectedLogs] = useState<Set<string>>(new Set())
 
   const { data: userInfo } = useSWR('logsCurrentUser', async () => {
@@ -430,9 +432,9 @@ export default function LogsPage() {
 
   const { data: logsData, isValidating: logsValidating, mutate: mutateLogs } = useSWR(
     currentUserId !== null
-      ? ['logs', page, pageSize, filterSlug, filterCountry, currentUserId, isAdmin]
+      ? ['logs', page, pageSize, filterSlug, filterCountry, filterCloaked, currentUserId, isAdmin]
       : null,
-    async ([, p, ps, slug, country, uid, admin]: [string, number, number, string, string, string, boolean]) => {
+    async ([, p, ps, slug, country, cloaked, uid, admin]: [string, number, number, string, string, string, string, boolean]) => {
       const from = (p - 1) * ps
       const to = from + ps - 1
       const selectStr = admin
@@ -451,6 +453,11 @@ export default function LogsPage() {
       }
       if (country) {
         query = query.eq('country', country)
+      }
+      if (cloaked === 'passed') {
+        query = query.eq('was_cloaked', false)
+      } else if (cloaked === 'blocked') {
+        query = query.eq('was_cloaked', true)
       }
       const { data, count, error } = await query
       if (error) throw error
@@ -486,6 +493,16 @@ export default function LogsPage() {
         if (slug) q = q.eq('short_links.slug', slug)
         return q
       }
+      const buildTodayBlockedQ = () => {
+        let q = supabase
+          .from('click_logs')
+          .select(countSelect, { count: 'exact', head: true })
+          .gte('clicked_at', todayStart.toISOString())
+          .eq('was_cloaked', true)
+        if (!admin) q = q.eq('short_links.user_id', uid)
+        if (slug) q = q.eq('short_links.slug', slug)
+        return q
+      }
       const buildMobileQ = () => {
         let q = supabase
           .from('click_logs')
@@ -515,14 +532,16 @@ export default function LogsPage() {
         return q
       }
 
-      const [todayRes, mobileRes, desktopRes, countryRes] = await Promise.all([
+      const [todayRes, todayBlockedRes, mobileRes, desktopRes, countryRes] = await Promise.all([
         buildTodayQ(),
+        buildTodayBlockedQ(),
         buildMobileQ(),
         buildDesktopQ(),
         buildCountryQ(),
       ])
 
       const todayCount = todayRes.count ?? 0
+      const todayBlockedCount = todayBlockedRes.count ?? 0
       const mobileCount = mobileRes.count ?? 0
       const desktopCount = desktopRes.count ?? 0
 
@@ -541,7 +560,7 @@ export default function LogsPage() {
         availableCountries.push(...sorted.map(([c]) => c))
       }
 
-      return { todayCount, mobileCount, desktopCount, topCountry, availableCountries }
+      return { todayCount, todayBlockedCount, mobileCount, desktopCount, topCountry, availableCountries }
     },
     { keepPreviousData: true, revalidateOnFocus: true }
   )
@@ -553,6 +572,11 @@ export default function LogsPage() {
 
   const handleCountryChange = (country: string) => {
     setFilterCountry(country)
+    setPage(1)
+  }
+
+  const handleCloakedChange = (v: 'all' | 'passed' | 'blocked') => {
+    setFilterCloaked(v)
     setPage(1)
   }
 
@@ -627,13 +651,19 @@ export default function LogsPage() {
       </div>
 
       {/* Stats cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         {/* Today clicks */}
         <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 ring-1 ring-black/[0.03]">
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
             今日点击{filterSlug && <span className="ml-1 text-blue-500 normal-case tracking-normal">· {filterSlug}</span>}
           </p>
           <p className="text-3xl font-bold text-gray-900 leading-none">{stats?.todayCount ?? '—'}</p>
+        </div>
+
+        {/* Today blocked */}
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 ring-1 ring-black/[0.03]">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">今日拦截数</p>
+          <p className="text-3xl font-bold text-red-500 leading-none">{stats?.todayBlockedCount ?? '—'}</p>
         </div>
 
         {/* Country selector card */}
@@ -698,10 +728,20 @@ export default function LogsPage() {
           value={filterCountry}
           onChange={handleCountryChange}
         />
-        {(filterSlug || filterCountry) && (
+        {/* Cloaked filter */}
+        <select
+          value={filterCloaked}
+          onChange={(e) => handleCloakedChange(e.target.value as 'all' | 'passed' | 'blocked')}
+          className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-colors"
+        >
+          <option value="all">全部</option>
+          <option value="passed">仅通过</option>
+          <option value="blocked">仅被拦截</option>
+        </select>
+        {(filterSlug || filterCountry || filterCloaked !== 'all') && (
           <button
             type="button"
-            onClick={() => { handleFilterChange(''); handleCountryChange('') }}
+            onClick={() => { handleFilterChange(''); handleCountryChange(''); handleCloakedChange('all') }}
             className="px-4 py-2 text-sm text-gray-500 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors"
           >
             重置
@@ -733,7 +773,7 @@ export default function LogsPage() {
               <thead>
                 <tr className="text-left text-gray-700 bg-gray-50/70 border-b border-gray-100">
                   <th className="py-4 px-3 w-10" />
-                  {['访问时间','短链','国家','城市','IP 地址','设备','来源'].map((h) => (
+                  {['访问时间','短链','国家','城市','IP 地址','设备','来源','是否拦截','拦截原因'].map((h) => (
                     <th key={h} className="py-4 px-5 font-bold text-sm text-gray-700">{h}</th>
                   ))}
                 </tr>
@@ -741,7 +781,7 @@ export default function LogsPage() {
               <tbody>
                 {Array.from({ length: 6 }).map((_, i) => (
                   <tr key={i} className="border-b border-gray-50">
-                    {Array.from({ length: 8 }).map((__, j) => (
+                    {Array.from({ length: 10 }).map((__, j) => (
                       <td key={j} className="py-4 px-5">
                         <div className="h-4 bg-gray-100 rounded animate-pulse" style={{ width: `${50 + (j * 13) % 40}%` }} />
                       </td>
@@ -778,6 +818,8 @@ export default function LogsPage() {
                   <th className="py-4 px-5 font-bold text-sm text-gray-700">网络服务商</th>
                   <th className="py-4 px-5 font-bold text-sm text-gray-700">浏览器</th>
                   <th className="py-4 px-5 font-bold text-sm text-gray-700">来源</th>
+                  <th className="py-4 px-5 font-bold text-sm text-gray-700">是否拦截</th>
+                  <th className="py-4 px-5 font-bold text-sm text-gray-700">拦截原因</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -829,6 +871,22 @@ export default function LogsPage() {
                     </td>
                     <td className="py-4 px-5">
                       <SourceBadge referer={log.referer ?? null} />
+                    </td>
+                    <td className="py-4 px-5">
+                      {log.was_cloaked ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">已拦截</span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">通过</span>
+                      )}
+                    </td>
+                    <td className="py-4 px-5 text-xs text-gray-700 whitespace-nowrap">
+                      {log.cloak_reason ? (({
+                        block_pc: '屏蔽 PC',
+                        wrong_country: '地区不符',
+                        wrong_source: '来源不符',
+                        ip_repeat: '重复 IP',
+                        mode_audit: '审核模式',
+                      } as Record<string, string>)[log.cloak_reason] ?? log.cloak_reason) : <span className="text-gray-400">—</span>}
                     </td>
                   </tr>
                 ))}

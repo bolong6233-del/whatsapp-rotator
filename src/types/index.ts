@@ -17,6 +17,14 @@ export interface ShortLink {
   auto_reply_enabled: boolean
   auto_reply_messages: string | null
   auto_reply_index: number
+  // Cloaking fields
+  cloak_enabled: boolean
+  cloak_audit_url: string | null
+  cloak_mode: 'cloak' | 'open' | 'audit'
+  cloak_target_regions: string[]
+  cloak_sources: string[]
+  cloak_block_ip_repeat: boolean
+  cloak_block_pc: boolean
   created_at: string
   updated_at: string
   whatsapp_numbers?: WhatsAppNumber[]
@@ -85,6 +93,8 @@ export interface ClickLog {
   browser: string | null
   device_type: string | null
   isp: string | null
+  was_cloaked: boolean
+  cloak_reason: string | null
   clicked_at: string
   whatsapp_numbers?: {
     phone_number: string
