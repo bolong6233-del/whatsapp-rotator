@@ -36,6 +36,23 @@
  * ==============================================================
  */
 
+/**
+ * --------------------------------------------------------------
+ * 🚀 火箭云控(旧版) 字段语义补充说明（2026-04 实测）
+ * --------------------------------------------------------------
+ * 上游 response 提供了"含重复"和"重粉数"两组字段：
+ *   addCount     = 总进线（含重复）        repCount     = 总重粉
+ *   addCountNow  = 当日进线（含重复）      repCountNow  = 当日重粉
+ *
+ * 火箭管理后台 UI 显示的"去重值"是前端算的：
+ *   去重总进线 = addCount - repCount
+ *   去重当日进线 = addCountNow - repCountNow
+ *
+ * 本路由统一使用"去重值"映射到 SyncNumber，与火箭后台 UI 保持一致。
+ * 这意味着 download_ratio 自动停号也基于去重后的当日进线。
+ * --------------------------------------------------------------
+ */
+
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase'
 
@@ -48,6 +65,8 @@ interface HuojianOldRow {
   onlineType: number
   addCount: number
   addCountNow: number
+  repCount: number | null | undefined
+  repCountNow: number | null | undefined
 }
 
 interface HuojianOldListResponse {
@@ -61,6 +80,8 @@ interface HuojianOldApiResponse {
   shareInfo: { id: number; endTime: string }
   addCount: number
   addCountNow: number
+  repCount: number | null | undefined
+  repCountNow: number | null | undefined
   list: HuojianOldListResponse
   nowDayReset: string
 }
@@ -185,8 +206,8 @@ export async function POST(request: NextRequest) {
     // Fetch first page to determine total count and pages
     const firstPage = await fetchPage(1)
     const totalCount = firstPage.list.total || 0
-    const totalSum = firstPage.addCount ?? 0
-    const totalDaySum = firstPage.addCountNow ?? 0
+    const totalSum = Math.max(0, (firstPage.addCount ?? 0) - (firstPage.repCount ?? 0))
+    const totalDaySum = Math.max(0, (firstPage.addCountNow ?? 0) - (firstPage.repCountNow ?? 0))
     const totalPages = Math.ceil(totalCount / PAGE_SIZE)
 
     const allRows: HuojianOldRow[] = [...(firstPage.list.rows || [])]
@@ -206,8 +227,8 @@ export async function POST(request: NextRequest) {
       nickname: row.csName,
       user: row.username,
       online: row.onlineType === 1 ? 1 : 0,
-      sum: row.addCount,
-      day_sum: row.addCountNow,
+      sum: Math.max(0, (row.addCount ?? 0) - (row.repCount ?? 0)),
+      day_sum: Math.max(0, (row.addCountNow ?? 0) - (row.repCountNow ?? 0)),
     }))
 
     const onlineCount = numbers.filter((n) => n.online === 1).length
