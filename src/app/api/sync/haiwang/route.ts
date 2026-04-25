@@ -6,7 +6,8 @@
  * 不要修改 src/app/api/sync/a2c/route.ts（A2C云控）的任何代码。
  */
 
-import { createHash } from 'crypto'
+import { createHash } from 'crypto' // used only for SHA-256 (X-Custom-Sign)
+import { haiwangMd5 } from '@/lib/haiwang-sign'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase'
 
@@ -65,10 +66,9 @@ const HAIWANG_SIGN_SUFFIX = 'haiwang'
 
 function buildHaiwangSignHeaders(): Record<string, string> {
   const timestamp = Math.floor(Date.now() / 1000).toString()
-  // MD5 is required by the Haiwang API signing protocol (reverse-engineered from their frontend)
-  const xApiKey = createHash('md5')
-    .update(HAIWANG_SIGN_SALT + timestamp + HAIWANG_SIGN_SUFFIX)
-    .digest('hex')
+  // Haiwang uses a custom "compressed MD5" (16 steps/block + sparse array). Do NOT use standard MD5.
+  const xApiKey = haiwangMd5(HAIWANG_SIGN_SALT + timestamp + HAIWANG_SIGN_SUFFIX)
+  // SHA-256 is standard and correct for X-Custom-Sign
   const sign = createHash('sha256').update(xApiKey + timestamp).digest('hex')
   return {
     'X-Timestamp': timestamp,
