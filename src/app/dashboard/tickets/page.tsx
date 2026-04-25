@@ -324,6 +324,7 @@ export default function TicketsPage() {
             .eq('label', order.ticket_name)
 
           if (dbNums && dbNums.length > 0) {
+            // norm is intentionally defined inline per platform isolation principle (not extracted as shared util)
             const norm = (s: string) => (s || '').replace(/\D/g, '')
             const toDeactivate: string[] = []
             const toActivate: string[] = []
@@ -335,6 +336,7 @@ export default function TicketsPage() {
                 return nN && dbN && (nN === dbN || nN.endsWith(dbN) || dbN.endsWith(nN))
               })
               if (!match) continue
+              // >= : deactivate when day_sum reaches (or exceeds) the ratio threshold
               if (match.day_sum >= ratio) toDeactivate.push(dbNum.phone_number)
               else toActivate.push(dbNum.phone_number)
             }
@@ -518,6 +520,7 @@ export default function TicketsPage() {
             .eq('label', order.ticket_name)
 
           if (dbNums && dbNums.length > 0) {
+            // norm is intentionally defined inline per platform isolation principle (not extracted as shared util)
             const norm = (s: string) => (s || '').replace(/\D/g, '')
             const toDeactivate: string[] = []
             const toActivate: string[] = []
@@ -529,6 +532,7 @@ export default function TicketsPage() {
                 return nN && dbN && (nN === dbN || nN.endsWith(dbN) || dbN.endsWith(nN))
               })
               if (!match) continue
+              // >= : deactivate when day_sum reaches (or exceeds) the ratio threshold
               if (match.day_sum >= ratio) toDeactivate.push(dbNum.phone_number)
               else toActivate.push(dbNum.phone_number)
             }
