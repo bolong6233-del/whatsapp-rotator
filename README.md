@@ -100,6 +100,46 @@ npm run dev
 - `whatsapp_numbers` - 绑定的 WhatsApp 号码
 - `click_logs` - 点击记录
 
+## 海王后端 API 签名工具
+
+`src/lib/haiwang-sign.ts` 封装了调用 `https://admin.haiwangweb.com` 后端 `/webApi/*` 接口所需的三层签名逻辑。
+
+### 签名说明
+
+每次请求需在请求头中附带：
+
+| 请求头 | 说明 |
+|---|---|
+| `X-Timestamp` | 秒级 Unix 时间戳 |
+| `X-API-Key` | 自定义魔改 MD5（非标准 MD5） |
+| `X-Custom-Sign` | 标准 SHA-256 |
+
+### 使用方法
+
+```ts
+import { fetchHaiwang } from '@/lib/haiwang-sign';
+
+// 调用示例：获取账号列表
+const res = await fetchHaiwang('/webApi/accountshow/list?page=1&pageSize=20');
+const data = await res.json();
+console.log(data);
+```
+
+签名头由 `fetchHaiwang` 自动生成并注入，无需手动处理。如需单独获取签名头：
+
+```ts
+import { signHaiwangRequest } from '@/lib/haiwang-sign';
+
+const headers = signHaiwangRequest();
+// { 'X-Timestamp': '...', 'X-API-Key': '...', 'X-Custom-Sign': '...' }
+```
+
+### 运行测试
+
+```bash
+npm test
+```
+
 ## 许可证
 
 MIT License
