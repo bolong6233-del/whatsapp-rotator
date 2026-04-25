@@ -6,7 +6,7 @@ export {
 } from '@/lib/pixel-events'
 export type { FbEventType, TikTokEventType } from '@/lib/pixel-events'
 
-// Legacy alias kept for backwards-compat (dashboard pages use TIKTOK_EVENT_OPTIONS)
+// Legacy alias kept for backwards-compat; prefer TIKTOK_PIXEL_EVENTS for new code
 export { TIKTOK_PIXEL_EVENTS as TIKTOK_EVENT_OPTIONS } from '@/lib/pixel-events'
 
 import { FB_PIXEL_EVENTS, TIKTOK_PIXEL_EVENTS } from '@/lib/pixel-events'
