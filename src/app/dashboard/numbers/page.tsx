@@ -417,7 +417,7 @@ export default function NumbersPage() {
       let query = supabase
         .from('whatsapp_numbers')
         .select('*, short_links(id, slug, title)', { count: 'exact' })
-        .order('created_at', { ascending: false })
+        .order('sort_order', { ascending: true })
 
       const linkIds = (linksData || []).map((l: { id: string }) => l.id)
       if (!root) {
