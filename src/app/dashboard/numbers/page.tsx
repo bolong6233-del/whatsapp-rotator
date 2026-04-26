@@ -732,14 +732,17 @@ export default function NumbersPage() {
       return
     }
 
-    const foundPhones = new Set((data || []).map((r: { id: string; phone_number: string }) => r.phone_number))
+    const foundPhones = new Set<string>()
+    const ids: string[] = []
+    for (const r of (data || [])) {
+      foundPhones.add((r as { id: string; phone_number: string }).phone_number)
+      ids.push((r as { id: string; phone_number: string }).id)
+    }
     const notFoundPhones = phones.filter((p) => !foundPhones.has(p))
-    const ids = (data || []).map((r: { id: string; phone_number: string }) => r.id)
+    const notFoundMsg = `以下 ${notFoundPhones.length} 个号码不存在（请检查是否拼写正确）：\n${notFoundPhones.join('，')}`
 
     if (ids.length === 0) {
-      setError(
-        `以下 ${notFoundPhones.length} 个号码不存在（请检查是否拼写正确）：\n${notFoundPhones.join('，')}`
-      )
+      setError(notFoundMsg)
       showToast('未找到匹配的号码', 'error')
       setBulkDeleting(false)
       done()
@@ -757,9 +760,7 @@ export default function NumbersPage() {
     } else {
       const actualDeleted = deleteCount ?? 0
       if (notFoundPhones.length > 0) {
-        setError(
-          `以下 ${notFoundPhones.length} 个号码不存在（请检查是否拼写正确）：\n${notFoundPhones.join('，')}`
-        )
+        setError(notFoundMsg)
         showToast(`已删除 ${actualDeleted} 个号码，${notFoundPhones.length} 个号码不存在`, 'info')
         mutate()
       } else if (actualDeleted < ids.length) {
