@@ -497,10 +497,23 @@ export default function NumbersPage() {
   const handleToggleActive = async (numberId: string, currentStatus: boolean) => {
     start()
     try {
-      await supabase.from('whatsapp_numbers').update({ is_active: !currentStatus }).eq('id', numberId)
-      mutate()
-    } catch {
-      showToast('状态切换失败', 'error')
+      const { error, count } = await supabase
+        .from('whatsapp_numbers')
+        .update({ is_active: !currentStatus }, { count: 'exact' })
+        .eq('id', numberId)
+      if (error) {
+        showToast(`状态切换失败：${error.message}`, 'error')
+        setError(`状态切换失败：${error.message}`)
+      } else if ((count ?? 0) === 0) {
+        showToast('状态切换失败：权限不足或号码不存在', 'error')
+        setError('状态切换失败：权限不足或号码不存在')
+      } else {
+        mutate()
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '未知错误'
+      showToast(`状态切换失败：${msg}`, 'error')
+      setError(`状态切换失败：${msg}`)
     } finally {
       done()
     }
@@ -510,10 +523,16 @@ export default function NumbersPage() {
     if (!confirm('确定要删除此号码吗？')) return
     start()
     try {
-      const { error } = await supabase.from('whatsapp_numbers').delete().eq('id', numberId)
+      const { error, count } = await supabase
+        .from('whatsapp_numbers')
+        .delete({ count: 'exact' })
+        .eq('id', numberId)
       if (error) {
         setError('删除失败：' + error.message)
         showToast('删除失败：' + error.message, 'error')
+      } else if ((count ?? 0) === 0) {
+        setError('删除失败：权限不足或号码不存在（可能受 RLS 策略限制）')
+        showToast('删除失败：权限不足或号码不存在', 'error')
       } else {
         showToast('号码已删除', 'success')
         mutate()
@@ -525,17 +544,36 @@ export default function NumbersPage() {
 
   const handleBulkToggle = async (activate: boolean) => {
     if (selected.size === 0) return
+    const total = selected.size
     start()
     try {
-      await supabase
+      const { error, count } = await supabase
         .from('whatsapp_numbers')
-        .update({ is_active: activate })
+        .update({ is_active: activate }, { count: 'exact' })
         .in('id', Array.from(selected))
+      if (error) {
+        showToast(`批量${activate ? '启用' : '停用'}失败：${error.message}`, 'error')
+        setError(`批量${activate ? '启用' : '停用'}失败：${error.message}`)
+        return
+      }
+      const actualUpdated = count ?? 0
+      if (actualUpdated === 0) {
+        showToast(`批量${activate ? '启用' : '停用'}失败：权限不足或号码不属于您`, 'error')
+        setError(`批量${activate ? '启用' : '停用'}失败：权限不足或号码不属于您（RLS 策略限制）`)
+        return
+      }
       setSelected(new Set())
-      showToast(`已批量${activate ? '启用' : '停用'} ${selected.size} 个号码`, 'success')
+      if (actualUpdated < total) {
+        showToast(`仅${activate ? '启用' : '停用'} ${actualUpdated}/${total} 个号码，其余可能因权限不足未操作`, 'error')
+        setError(`仅${activate ? '启用' : '停用'} ${actualUpdated}/${total} 个号码。可能原因：号码不属于您 / RLS 策略限制`)
+      } else {
+        showToast(`已批量${activate ? '启用' : '停用'} ${actualUpdated} 个号码`, 'success')
+      }
       mutate()
-    } catch {
-      showToast('批量操作失败', 'error')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '未知错误'
+      showToast(`批量操作失败：${msg}`, 'error')
+      setError(`批量操作失败：${msg}`)
     } finally {
       done()
     }
@@ -543,15 +581,35 @@ export default function NumbersPage() {
 
   const handleBulkDelete = async () => {
     if (selected.size === 0) return
-    if (!confirm(`确定要删除选中的 ${selected.size} 个号码吗？`)) return
+    const total = selected.size
+    if (!confirm(`确定要删除选中的 ${total} 个号码吗？`)) return
     start()
     try {
-      await supabase.from('whatsapp_numbers').delete().in('id', Array.from(selected))
+      const { error, count } = await supabase
+        .from('whatsapp_numbers')
+        .delete({ count: 'exact' })
+        .in('id', Array.from(selected))
+
+      if (error) {
+        showToast(`批量删除失败：${error.message}`, 'error')
+        setError(`批量删除失败：${error.message}`)
+        return
+      }
+
+      const actualDeleted = count ?? 0
       setSelected(new Set())
-      showToast(`已删除 ${selected.size} 个号码`, 'success')
+
+      if (actualDeleted < total) {
+        showToast(`仅删除 ${actualDeleted}/${total} 个号码，其余可能因权限不足未删除`, 'error')
+        setError(`仅删除 ${actualDeleted}/${total} 个号码。可能原因：号码不属于您 / RLS 策略限制 / 隐藏号码无权删除`)
+      } else {
+        showToast(`已删除 ${actualDeleted} 个号码`, 'success')
+      }
       mutate()
-    } catch {
-      showToast('批量删除失败', 'error')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '未知错误'
+      showToast(`批量删除失败：${msg}`, 'error')
+      setError(`批量删除失败：${msg}`)
     } finally {
       done()
     }
@@ -680,22 +738,29 @@ export default function NumbersPage() {
       return
     }
 
-    const { error: deleteError } = await supabase
+    const { error: deleteError, count: deleteCount } = await supabase
       .from('whatsapp_numbers')
-      .delete()
+      .delete({ count: 'exact' })
       .in('id', ids)
 
     if (deleteError) {
       setError('删除失败：' + deleteError.message)
       showToast('删除失败：' + deleteError.message, 'error')
     } else {
-      setSuccess(`成功删除 ${ids.length} 个号码`)
-      setTimeout(() => setSuccess(''), 3000)
-      showToast(`成功删除 ${ids.length} 个号码`, 'success')
-      setShowBulkDeleteModal(false)
-      setBulkDeleteLinkId('')
-      setBulkDeleteNumbers('')
-      mutate()
+      const actualDeleted = deleteCount ?? 0
+      if (actualDeleted < ids.length) {
+        setError(`仅删除 ${actualDeleted}/${ids.length} 个号码。可能原因：号码不属于您 / RLS 策略限制`)
+        showToast(`仅删除 ${actualDeleted}/${ids.length} 个号码，其余可能因权限不足未删除`, 'error')
+        mutate()
+      } else {
+        setSuccess(`成功删除 ${actualDeleted} 个号码`)
+        setTimeout(() => setSuccess(''), 3000)
+        showToast(`成功删除 ${actualDeleted} 个号码`, 'success')
+        setShowBulkDeleteModal(false)
+        setBulkDeleteLinkId('')
+        setBulkDeleteNumbers('')
+        mutate()
+      }
     }
     setBulkDeleting(false)
     done()
@@ -731,19 +796,22 @@ export default function NumbersPage() {
     setError('')
     start()
 
-    const { error: updateError } = await supabase
+    const { error: updateError, count: updateCount } = await supabase
       .from('whatsapp_numbers')
       .update({
         phone_number: editPhone,
         label: editLabel.trim(),
         platform: editPlatform,
         is_active: editStatus === 'active',
-      })
+      }, { count: 'exact' })
       .eq('id', editId)
 
     if (updateError) {
       setError('修改失败：' + updateError.message)
       showToast('修改失败：' + updateError.message, 'error')
+    } else if ((updateCount ?? 0) === 0) {
+      setError('修改失败：权限不足或号码不存在（可能受 RLS 策略限制）')
+      showToast('修改失败：权限不足或号码不存在', 'error')
     } else {
       setSuccess('修改成功')
       setTimeout(() => setSuccess(''), 3000)
