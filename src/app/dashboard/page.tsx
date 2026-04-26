@@ -353,12 +353,29 @@ export default function DashboardPage() {
 
   const handleDelete = async () => {
     if (selected.size === 0) return
-    if (!confirm(`确定要删除选中的 ${selected.size} 个短链吗？此操作不可撤销。`)) return
+    const total = selected.size
+    if (!confirm(`确定要删除选中的 ${total} 个短链吗？此操作不可撤销。`)) return
     start()
     try {
-      await supabase.from('short_links').delete().in('id', Array.from(selected))
+      const { error, count } = await supabase
+        .from('short_links')
+        .delete({ count: 'exact' })
+        .in('id', Array.from(selected))
+      if (error) {
+        showToast('删除失败：' + error.message, 'error')
+        return
+      }
+      const actualDeleted = count ?? 0
+      if (actualDeleted === 0) {
+        showToast('删除失败：权限不足或短链不存在', 'error')
+        return
+      }
       setSelected(new Set())
-      showToast(`已删除 ${selected.size} 个短链`, 'success')
+      if (actualDeleted < total) {
+        showToast(`仅删除 ${actualDeleted}/${total} 个短链，其余可能因权限不足未删除`, 'info')
+      } else {
+        showToast(`已删除 ${actualDeleted} 个短链`, 'success')
+      }
       fetchLinks()
     } catch {
       showToast('删除失败', 'error')
@@ -646,9 +663,18 @@ export default function DashboardPage() {
                               if (!confirm('确定要删除此短链吗？')) return
                               start()
                               try {
-                                await supabase.from('short_links').delete().eq('id', link.id)
-                                showToast('短链已删除', 'success')
-                                fetchLinks()
+                                const { error, count } = await supabase
+                                  .from('short_links')
+                                  .delete({ count: 'exact' })
+                                  .eq('id', link.id)
+                                if (error) {
+                                  showToast('删除失败：' + error.message, 'error')
+                                } else if ((count ?? 0) === 0) {
+                                  showToast('删除失败：权限不足或短链不存在', 'error')
+                                } else {
+                                  showToast('短链已删除', 'success')
+                                  fetchLinks()
+                                }
                               } catch {
                                 showToast('删除失败', 'error')
                               } finally {

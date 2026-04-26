@@ -417,7 +417,9 @@ export default function NumbersPage() {
       let query = supabase
         .from('whatsapp_numbers')
         .select('*, short_links(id, slug, title)', { count: 'exact' })
+        .order('short_link_id', { ascending: true })
         .order('sort_order', { ascending: true })
+        .order('created_at', { ascending: true })
 
       const linkIds = (linksData || []).map((l: { id: string }) => l.id)
       if (!root) {
@@ -718,7 +720,7 @@ export default function NumbersPage() {
 
     const { data, error: fetchError } = await supabase
       .from('whatsapp_numbers')
-      .select('id')
+      .select('id, phone_number')
       .eq('short_link_id', bulkDeleteLinkId)
       .in('phone_number', phones)
 
@@ -730,9 +732,15 @@ export default function NumbersPage() {
       return
     }
 
-    const ids = (data || []).map((r: { id: string }) => r.id)
+    const foundPhones = new Set((data || []).map((r: { id: string; phone_number: string }) => r.phone_number))
+    const notFoundPhones = phones.filter((p) => !foundPhones.has(p))
+    const ids = (data || []).map((r: { id: string; phone_number: string }) => r.id)
+
     if (ids.length === 0) {
-      setError('未找到匹配的号码')
+      setError(
+        `以下 ${notFoundPhones.length} 个号码不存在（请检查是否拼写正确）：\n${notFoundPhones.join('，')}`
+      )
+      showToast('未找到匹配的号码', 'error')
       setBulkDeleting(false)
       done()
       return
@@ -748,7 +756,13 @@ export default function NumbersPage() {
       showToast('删除失败：' + deleteError.message, 'error')
     } else {
       const actualDeleted = deleteCount ?? 0
-      if (actualDeleted < ids.length) {
+      if (notFoundPhones.length > 0) {
+        setError(
+          `以下 ${notFoundPhones.length} 个号码不存在（请检查是否拼写正确）：\n${notFoundPhones.join('，')}`
+        )
+        showToast(`已删除 ${actualDeleted} 个号码，${notFoundPhones.length} 个号码不存在`, 'info')
+        mutate()
+      } else if (actualDeleted < ids.length) {
         setError(`仅删除 ${actualDeleted}/${ids.length} 个号码。可能原因：号码不属于您 / RLS 策略限制`)
         showToast(`仅删除 ${actualDeleted}/${ids.length} 个号码，其余可能因权限不足未删除`, 'info')
         mutate()
@@ -985,7 +999,18 @@ export default function NumbersPage() {
             删除
           </button>
           <button
-            onClick={() => { setError(''); setShowBulkDeleteModal(true) }}
+            onClick={() => {
+              setError('')
+              if (selected.size > 0) {
+                const selectedPhones = numbers
+                  .filter((n) => selected.has(n.id))
+                  .map((n) => n.phone_number)
+                setBulkDeleteNumbers(selectedPhones.join('\n'))
+              } else {
+                setBulkDeleteNumbers('')
+              }
+              setShowBulkDeleteModal(true)
+            }}
             className="px-3 py-1.5 text-xs bg-orange-100 text-orange-600 rounded-lg hover:bg-orange-200 transition-colors"
           >
             批量删除
