@@ -894,7 +894,8 @@ export default function TicketsPage() {
           { revalidate: true }
         )
       } else {
-        showToast('删除失败', 'error')
+        const errData = await res.json().catch(() => ({}))
+        showToast(errData.error || '删除失败', 'error')
       }
     } finally {
       done()
@@ -904,46 +905,54 @@ export default function TicketsPage() {
   const handleToggleStatus = async (e: React.MouseEvent, order: WorkOrder) => {
     e.stopPropagation()
     const newStatus = order.status === 'active' ? 'cancelled' : 'active'
-    const res = await fetch(`/api/work-orders/${order.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: newStatus }),
-    })
-    if (res.ok) {
-      await mutate(
-        (prev) => prev
-          ? { ...prev, data: prev.data.map((o) => (o.id === order.id ? { ...o, status: newStatus } : o)) }
-          : prev,
-        { revalidate: false }
-      )
+    start()
+    try {
+      const res = await fetch(`/api/work-orders/${order.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      })
+      if (res.ok) {
+        await mutate(
+          (prev) => prev
+            ? { ...prev, data: prev.data.map((o) => (o.id === order.id ? { ...o, status: newStatus } : o)) }
+            : prev,
+          { revalidate: false }
+        )
 
-      // Get exact phone numbers synced by this work order
-      const phoneNumbers = order.sync_numbers?.map((n) => n.user).filter(Boolean) || []
+        // Get exact phone numbers synced by this work order
+        const phoneNumbers = order.sync_numbers?.map((n) => n.user).filter(Boolean) || []
 
-      if (phoneNumbers.length > 0 && order.distribution_link_slug) {
-        try {
-          const { data: linkData } = await supabase
-            .from('short_links')
-            .select('id')
-            .eq('slug', order.distribution_link_slug)
-            .single()
+        if (phoneNumbers.length > 0 && order.distribution_link_slug) {
+          try {
+            const { data: linkData } = await supabase
+              .from('short_links')
+              .select('id')
+              .eq('slug', order.distribution_link_slug)
+              .single()
 
-          if (linkData) {
-            // Chunk updates to avoid URL length limits on the 'in' filter
-            const chunkSize = 100
-            for (let i = 0; i < phoneNumbers.length; i += chunkSize) {
-              const chunk = phoneNumbers.slice(i, i + chunkSize)
-              await supabase
-                .from('whatsapp_numbers')
-                .update({ is_active: newStatus === 'active' })
-                .eq('short_link_id', linkData.id)
-                .in('phone_number', chunk)
+            if (linkData) {
+              // Chunk updates to avoid URL length limits on the 'in' filter
+              const chunkSize = 100
+              for (let i = 0; i < phoneNumbers.length; i += chunkSize) {
+                const chunk = phoneNumbers.slice(i, i + chunkSize)
+                await supabase
+                  .from('whatsapp_numbers')
+                  .update({ is_active: newStatus === 'active' })
+                  .eq('short_link_id', linkData.id)
+                  .in('phone_number', chunk)
+              }
             }
+          } catch (err) {
+            console.error('[handleToggleStatus] Failed to update numbers for slug', order.distribution_link_slug, err)
           }
-        } catch (err) {
-          console.error('[handleToggleStatus] Failed to update numbers for slug', order.distribution_link_slug, err)
         }
+      } else {
+        const data = await res.json().catch(() => ({}))
+        showToast(data.error || '状态更新失败', 'error')
       }
+    } finally {
+      done()
     }
   }
 

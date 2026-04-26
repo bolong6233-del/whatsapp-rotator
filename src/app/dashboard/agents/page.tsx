@@ -256,34 +256,48 @@ export default function AgentsPage() {
   }
   async function handleToggleInjectPermission(agent: AgentWithStats) {
     const newValue = !agent.can_inject_numbers
-    const res = await fetch(`/api/admin/agents/${agent.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ can_inject_numbers: newValue }),
-    })
+    start()
+    try {
+      const res = await fetch(`/api/admin/agents/${agent.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ can_inject_numbers: newValue }),
+      })
 
-    if (res.ok) {
-      setSuccess('上帝之手权限已更新')
-      mutate()
-    } else {
-      const data = await res.json()
-      setError(data.error || '操作失败')
+      if (res.ok) {
+        setSuccess('上帝之手权限已更新')
+        showToast('上帝之手权限已更新', 'success')
+        mutate()
+      } else {
+        const data = await res.json()
+        setError(data.error || '操作失败')
+        showToast(data.error || '操作失败', 'error')
+      }
+    } finally {
+      done()
     }
   }
 
   async function handleChangeRole(agent: AgentWithStats, role: string) {
-    const res = await fetch(`/api/admin/agents/${agent.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ role }),
-    })
+    start()
+    try {
+      const res = await fetch(`/api/admin/agents/${agent.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role }),
+      })
 
-    if (res.ok) {
-      setSuccess('角色已更新')
-      mutate()
-    } else {
-      const data = await res.json()
-      setError(data.error || '操作失败')
+      if (res.ok) {
+        setSuccess('角色已更新')
+        showToast('角色已更新', 'success')
+        mutate()
+      } else {
+        const data = await res.json()
+        setError(data.error || '操作失败')
+        showToast(data.error || '操作失败', 'error')
+      }
+    } finally {
+      done()
     }
   }
 
@@ -371,6 +385,7 @@ export default function AgentsPage() {
 
   async function handleSaveNote(agentId: string) {
     setSavingNote(true)
+    start()
     try {
       const res = await fetch(`/api/admin/agents/${agentId}`, {
         method: 'PUT',
@@ -378,14 +393,17 @@ export default function AgentsPage() {
         body: JSON.stringify({ notes: noteValue.trim() || null }),
       })
       if (res.ok) {
+        showToast('备注已保存', 'success')
         mutate()
         setEditingNoteId(null)
       } else {
         const data = await res.json()
         setError(data.error || '保存备注失败')
+        showToast(data.error || '保存备注失败', 'error')
       }
     } finally {
       setSavingNote(false)
+      done()
     }
   }
 
