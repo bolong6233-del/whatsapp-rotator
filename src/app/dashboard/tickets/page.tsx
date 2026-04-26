@@ -39,7 +39,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import useSWR from 'swr'
+import useSWR, { mutate as globalMutate } from 'swr'
 import { supabase } from '@/lib/supabase-client'
 import { formatDate } from '@/lib/utils'
 import type { WorkOrder, TicketType, Platform, SyncNumber } from '@/types'
@@ -884,6 +884,15 @@ export default function TicketsPage() {
         const deletedNums = json.deleted_numbers ?? 0
         showToast(`工单已删除，同时删除了 ${deletedNums} 个关联号码`, 'success')
         await mutate()
+        await globalMutate(
+          (key) => Array.isArray(key) && (
+            key[0] === '/api/numbers' ||
+            key[0] === 'allPhones' ||
+            key[0] === 'allLabels'
+          ),
+          undefined,
+          { revalidate: true }
+        )
       } else {
         showToast('删除失败', 'error')
       }
