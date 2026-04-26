@@ -564,7 +564,7 @@ export default function NumbersPage() {
       }
       setSelected(new Set())
       if (actualUpdated < total) {
-        showToast(`仅${activate ? '启用' : '停用'} ${actualUpdated}/${total} 个号码，其余可能因权限不足未操作`, 'error')
+        showToast(`仅${activate ? '启用' : '停用'} ${actualUpdated}/${total} 个号码，其余可能因权限不足未操作`, 'info')
         setError(`仅${activate ? '启用' : '停用'} ${actualUpdated}/${total} 个号码。可能原因：号码不属于您 / RLS 策略限制`)
       } else {
         showToast(`已批量${activate ? '启用' : '停用'} ${actualUpdated} 个号码`, 'success')
@@ -600,7 +600,7 @@ export default function NumbersPage() {
       setSelected(new Set())
 
       if (actualDeleted < total) {
-        showToast(`仅删除 ${actualDeleted}/${total} 个号码，其余可能因权限不足未删除`, 'error')
+        showToast(`仅删除 ${actualDeleted}/${total} 个号码，其余可能因权限不足未删除`, 'info')
         setError(`仅删除 ${actualDeleted}/${total} 个号码。可能原因：号码不属于您 / RLS 策略限制 / 隐藏号码无权删除`)
       } else {
         showToast(`已删除 ${actualDeleted} 个号码`, 'success')
@@ -750,7 +750,7 @@ export default function NumbersPage() {
       const actualDeleted = deleteCount ?? 0
       if (actualDeleted < ids.length) {
         setError(`仅删除 ${actualDeleted}/${ids.length} 个号码。可能原因：号码不属于您 / RLS 策略限制`)
-        showToast(`仅删除 ${actualDeleted}/${ids.length} 个号码，其余可能因权限不足未删除`, 'error')
+        showToast(`仅删除 ${actualDeleted}/${ids.length} 个号码，其余可能因权限不足未删除`, 'info')
         mutate()
       } else {
         setSuccess(`成功删除 ${actualDeleted} 个号码`)
