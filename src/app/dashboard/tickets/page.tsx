@@ -913,13 +913,6 @@ export default function TicketsPage() {
         body: JSON.stringify({ status: newStatus }),
       })
       if (res.ok) {
-        await mutate(
-          (prev) => prev
-            ? { ...prev, data: prev.data.map((o) => (o.id === order.id ? { ...o, status: newStatus } : o)) }
-            : prev,
-          { revalidate: false }
-        )
-
         // Get exact phone numbers synced by this work order
         const phoneNumbers = order.sync_numbers?.map((n) => n.user).filter(Boolean) || []
 
@@ -947,6 +940,8 @@ export default function TicketsPage() {
             console.error('[handleToggleStatus] Failed to update numbers for slug', order.distribution_link_slug, err)
           }
         }
+
+        await mutate()
       } else {
         const data = await res.json().catch(() => ({}))
         showToast(data.error || '状态更新失败', 'error')
@@ -1105,13 +1100,8 @@ export default function TicketsPage() {
           setSubmitError(err.error || '更新工单失败，请稍后重试')
           return
         }
-        const updated: WorkOrder = await res.json()
-        await mutate(
-          (prev) => prev
-            ? { ...prev, data: prev.data.map((o) => (o.id === updated.id ? { ...o, ...updated } : o)) }
-            : prev,
-          { revalidate: false }
-        )
+        await res.json()
+        await mutate()
         showToast('工单已更新', 'success')
         setShowModal(false)
         setEditingOrder(null)
@@ -1147,12 +1137,7 @@ export default function TicketsPage() {
         const syncFn = async () => {
           const updates = await syncWorkOrder(newOrder)
           if (Object.keys(updates).length > 0) {
-            await mutate(
-              (prev) => prev
-                ? { ...prev, data: prev.data.map((o) => (o.id === newOrder.id ? { ...o, ...updates } : o)) }
-                : prev,
-              { revalidate: false }
-            )
+            await mutate()
           }
         }
         syncFn().catch((err) => console.error('[auto-sync] Failed to sync order', newOrder.id, err))

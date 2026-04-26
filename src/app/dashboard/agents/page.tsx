@@ -176,13 +176,13 @@ export default function AgentsPage() {
       const data = await res.json()
 
       if (res.ok) {
+        await mutate()
         setSuccess('账号创建成功')
         showToast('账号创建成功', 'success')
         setNewEmail('')
         setNewPassword('')
         setNewRole('agent')
         setShowCreate(false)
-        mutate()
       } else {
         setError(data.error || '创建失败')
         showToast(data.error || '创建失败', 'error')
@@ -209,7 +209,7 @@ export default function AgentsPage() {
       if (res.ok) {
         setSuccess(`账号已${label}`)
         showToast(`账号已${label}`, 'success')
-        mutate()
+        await mutate()
       } else {
         const data = await res.json()
         setError(data.error || '操作失败')
@@ -240,10 +240,10 @@ export default function AgentsPage() {
       })
 
       if (res.ok) {
+        await mutate()
         setSuccess(`账号 ${deleteAgent.email} 已永久删除`)
         showToast(`账号 ${deleteAgent.email} 已永久删除`, 'success')
         setDeleteAgent(null)
-        mutate()
       } else {
         const data = await res.json()
         setError(data.error || '删除失败')
@@ -267,7 +267,7 @@ export default function AgentsPage() {
       if (res.ok) {
         setSuccess('上帝之手权限已更新')
         showToast('上帝之手权限已更新', 'success')
-        mutate()
+        await mutate()
       } else {
         const data = await res.json()
         setError(data.error || '操作失败')
@@ -290,7 +290,7 @@ export default function AgentsPage() {
       if (res.ok) {
         setSuccess('角色已更新')
         showToast('角色已更新', 'success')
-        mutate()
+        await mutate()
       } else {
         const data = await res.json()
         setError(data.error || '操作失败')
@@ -368,10 +368,10 @@ export default function AgentsPage() {
         const data = await res.json()
         const label = timeOptions.find((o) => o.value === extendPeriod)?.label ?? extendPeriod
         const msg = `已为 ${extendAgent.email} 增加 ${label}，到期时间：${formatExpiry(data.expires_at)}`
+        await mutate()
         setSuccess(msg)
         showToast(msg, 'success')
         setExtendAgent(null)
-        mutate()
       } else {
         const data = await res.json()
         setError(data.error || '操作失败')
@@ -393,8 +393,8 @@ export default function AgentsPage() {
         body: JSON.stringify({ notes: noteValue.trim() || null }),
       })
       if (res.ok) {
+        await mutate()
         showToast('备注已保存', 'success')
-        mutate()
         setEditingNoteId(null)
       } else {
         const data = await res.json()
@@ -424,9 +424,9 @@ export default function AgentsPage() {
         body: JSON.stringify({ max_agents: max }),
       })
       if (res.ok) {
+        await mutate()
         showToast('配额已更新', 'success')
         setQuotaAgent(null)
-        mutate()
       } else {
         const data = await res.json()
         showToast(data.error || '保存失败', 'error')
