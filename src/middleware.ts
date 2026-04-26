@@ -28,9 +28,8 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  // Use getSession for speed (reads from cookie, no network round-trip)
-  const { data: { session } } = await supabase.auth.getSession()
-  const user = session?.user ?? null
+  // Use getUser() to verify token authenticity server-side (prevents cookie forgery)
+  const { data: { user } } = await supabase.auth.getUser()
 
   if (request.nextUrl.pathname.startsWith('/dashboard') && !user) {
     return NextResponse.redirect(new URL('/login', request.url))
