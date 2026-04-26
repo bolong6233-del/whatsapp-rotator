@@ -510,7 +510,7 @@ export default function NumbersPage() {
         showToast('状态切换失败：权限不足或号码不存在', 'error')
         setError('状态切换失败：权限不足或号码不存在')
       } else {
-        mutate()
+        await mutate()
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : '未知错误'
@@ -537,7 +537,7 @@ export default function NumbersPage() {
         showToast('删除失败：权限不足或号码不存在', 'error')
       } else {
         showToast('号码已删除', 'success')
-        mutate()
+        await mutate()
       }
     } finally {
       done()
@@ -571,7 +571,7 @@ export default function NumbersPage() {
       } else {
         showToast(`已批量${activate ? '启用' : '停用'} ${actualUpdated} 个号码`, 'success')
       }
-      mutate()
+      await mutate()
     } catch (err) {
       const msg = err instanceof Error ? err.message : '未知错误'
       showToast(`批量操作失败：${msg}`, 'error')
@@ -607,7 +607,7 @@ export default function NumbersPage() {
       } else {
         showToast(`已删除 ${actualDeleted} 个号码`, 'success')
       }
-      mutate()
+      await mutate()
     } catch (err) {
       const msg = err instanceof Error ? err.message : '未知错误'
       showToast(`批量删除失败：${msg}`, 'error')
@@ -694,13 +694,13 @@ export default function NumbersPage() {
       setSuccess(`成功添加 ${added} 个号码`)
       setTimeout(() => setSuccess(''), 3000)
       showToast(`成功添加 ${added} 个号码`, 'success')
+      await mutate()
       setModalLinkId('')
       setModalPlatform('whatsapp')
       setModalLabel('')
       setModalNumbers('')
       setModalStatus('active')
       setShowModal(false)
-      mutate()
     }
   }
 
@@ -762,19 +762,19 @@ export default function NumbersPage() {
       if (notFoundPhones.length > 0) {
         setError(notFoundMsg)
         showToast(`已删除 ${actualDeleted} 个号码，${notFoundPhones.length} 个号码不存在`, 'info')
-        mutate()
+        await mutate()
       } else if (actualDeleted < ids.length) {
         setError(`仅删除 ${actualDeleted}/${ids.length} 个号码。可能原因：号码不属于您 / RLS 策略限制`)
         showToast(`仅删除 ${actualDeleted}/${ids.length} 个号码，其余可能因权限不足未删除`, 'info')
-        mutate()
+        await mutate()
       } else {
         setSuccess(`成功删除 ${actualDeleted} 个号码`)
         setTimeout(() => setSuccess(''), 3000)
         showToast(`成功删除 ${actualDeleted} 个号码`, 'success')
+        await mutate()
         setShowBulkDeleteModal(false)
         setBulkDeleteLinkId('')
         setBulkDeleteNumbers('')
-        mutate()
       }
     }
     setBulkDeleting(false)
@@ -831,8 +831,8 @@ export default function NumbersPage() {
       setSuccess('修改成功')
       setTimeout(() => setSuccess(''), 3000)
       showToast('修改成功', 'success')
+      await mutate()
       setShowEditModal(false)
-      mutate()
     }
     setEditSaving(false)
     done()
