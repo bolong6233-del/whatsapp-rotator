@@ -435,16 +435,47 @@ export async function GET(
     link_id,
     platform,
     is_hidden,
-    tiktok_pixel_enabled,
-    tiktok_pixel_id,
-    tiktok_event_type,
-    fb_pixel_enabled,
-    fb_pixel_id,
-    fb_event_type,
+    tiktok_pixel_enabled: rpcTiktokEnabled,
+    tiktok_pixel_id: rpcTiktokId,
+    tiktok_event_type: rpcTiktokEvent,
+    fb_pixel_enabled: rpcFbEnabled,
+    fb_pixel_id: rpcFbId,
+    fb_event_type: rpcFbEvent,
     auto_reply_enabled,
     auto_reply_messages,
     auto_reply_index,
   } = rpcData[0]
+
+  // Some environments may still run an older RPC signature that doesn't return
+  // the newer pixel fields. Fallback to direct short_links lookup to keep
+  // pixel callback behavior working without requiring immediate DB function sync.
+  let tiktokPixelEnabled = rpcTiktokEnabled
+  let tiktokPixelId = rpcTiktokId
+  let tiktokEventType = rpcTiktokEvent
+  let fbPixelEnabled = rpcFbEnabled
+  let fbPixelId = rpcFbId
+  let fbEventType = rpcFbEvent
+
+  const pixelFieldsMissing =
+    typeof rpcTiktokEnabled === 'undefined' ||
+    typeof rpcFbEnabled === 'undefined'
+
+  if (pixelFieldsMissing && link_id) {
+    const { data: linkPixelConfig } = await supabase
+      .from('short_links')
+      .select('tiktok_pixel_enabled, tiktok_pixel_id, tiktok_event_type, fb_pixel_enabled, fb_pixel_id, fb_event_type')
+      .eq('id', link_id)
+      .maybeSingle()
+
+    if (linkPixelConfig) {
+      tiktokPixelEnabled = linkPixelConfig.tiktok_pixel_enabled
+      tiktokPixelId = linkPixelConfig.tiktok_pixel_id
+      tiktokEventType = linkPixelConfig.tiktok_event_type
+      fbPixelEnabled = linkPixelConfig.fb_pixel_enabled
+      fbPixelId = linkPixelConfig.fb_pixel_id
+      fbEventType = linkPixelConfig.fb_event_type
+    }
+  }
 
   if (!is_hidden && process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
     const logPromise = Promise.resolve(
@@ -483,8 +514,8 @@ export async function GET(
 
   const redirectUrl = buildRedirectUrl(phone_number, platform || 'whatsapp', autoReplyMessage)
 
-  const hasTiktokPixel = tiktok_pixel_enabled && tiktok_pixel_id
-  const hasFbPixel = fb_pixel_enabled && fb_pixel_id
+  const hasTiktokPixel = tiktokPixelEnabled && tiktokPixelId
+  const hasFbPixel = fbPixelEnabled && fbPixelId
 
   if (hasTiktokPixel || hasFbPixel) {
     const safeRedirectUrl = JSON.stringify(redirectUrl)
@@ -492,13 +523,13 @@ export async function GET(
     // FB lightweight beacon (speed-first, best-effort delivery)
     let fbBeaconScript = ''
     if (hasFbPixel) {
-      const fbEvent = ALLOWED_FB_EVENTS.includes(fb_event_type as string)
-        ? (fb_event_type as string)
+      const fbEvent = ALLOWED_FB_EVENTS.includes(fbEventType as string)
+        ? (fbEventType as string)
         : 'Lead'
       fbBeaconScript = `
 try{
   var fbEid=(crypto.randomUUID ? crypto.randomUUID() : (Date.now()+'-'+Math.random().toString(36).slice(2)));
-  var fbUrl='https://www.facebook.com/tr/?id='+encodeURIComponent(${JSON.stringify(fb_pixel_id as string)})+'&ev='+encodeURIComponent(${JSON.stringify(fbEvent)})+'&eid='+encodeURIComponent(fbEid)+'&noscript=1';
+  var fbUrl='https://www.facebook.com/tr/?id='+encodeURIComponent(${JSON.stringify(fbPixelId as string)})+'&ev='+encodeURIComponent(${JSON.stringify(fbEvent)})+'&eid='+encodeURIComponent(fbEid)+'&noscript=1';
   if(typeof navigator.sendBeacon==='function'){
     navigator.sendBeacon(fbUrl);
   }else{
@@ -510,13 +541,13 @@ try{
     // TK lightweight beacon (speed-first, best-effort delivery)
     let tkBeaconScript = ''
     if (hasTiktokPixel) {
-      const tkEvent = ALLOWED_TIKTOK_EVENTS.includes(tiktok_event_type as string)
-        ? (tiktok_event_type as string)
+      const tkEvent = ALLOWED_TIKTOK_EVENTS.includes(tiktokEventType as string)
+        ? (tiktokEventType as string)
         : 'SubmitForm'
       tkBeaconScript = `
 try{
   var tkEid=(crypto.randomUUID ? crypto.randomUUID() : (Date.now()+'-'+Math.random().toString(36).slice(2)));
-  var tkUrl='https://analytics.tiktok.com/api/v2/pixel/track?pixel_code='+encodeURIComponent(${JSON.stringify(tiktok_pixel_id as string)})+'&event='+encodeURIComponent(${JSON.stringify(tkEvent)})+'&event_id='+encodeURIComponent(tkEid);
+  var tkUrl='https://analytics.tiktok.com/api/v2/pixel/track?pixel_code='+encodeURIComponent(${JSON.stringify(tiktokPixelId as string)})+'&event='+encodeURIComponent(${JSON.stringify(tkEvent)})+'&event_id='+encodeURIComponent(tkEid);
   if(typeof navigator.sendBeacon==='function'){
     navigator.sendBeacon(tkUrl);
   }else{
