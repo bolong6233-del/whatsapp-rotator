@@ -489,36 +489,40 @@ export async function GET(
   if (hasTiktokPixel || hasFbPixel) {
     const safeRedirectUrl = JSON.stringify(redirectUrl)
 
-    // FB beacon (pure sendBeacon, no SDK)
-    let fbBeacon = ''
+    // FB lightweight beacon (speed-first, best-effort delivery)
+    let fbBeaconScript = ''
     if (hasFbPixel) {
       const fbEvent = ALLOWED_FB_EVENTS.includes(fb_event_type as string)
         ? (fb_event_type as string)
         : 'Lead'
-      fbBeacon = `
-(function(){
-  try {
-    var eid=(crypto.randomUUID?crypto.randomUUID():(Date.now()+'-'+Math.random().toString(36).slice(2)));
-    var url='https://www.facebook.com/tr/?id='+encodeURIComponent(${JSON.stringify(fb_pixel_id as string)})+'&ev='+encodeURIComponent(${JSON.stringify(fbEvent)})+'&eid='+encodeURIComponent(eid)+'&noscript=1';
-    if(typeof navigator.sendBeacon==='function'){navigator.sendBeacon(url);}else{fetch(url,{method:'GET',keepalive:true,mode:'no-cors'}).catch(function(){});}
-  }catch(e){}
-})();`
+      fbBeaconScript = `
+try{
+  var fbEid=(crypto.randomUUID ? crypto.randomUUID() : (Date.now()+'-'+Math.random().toString(36).slice(2)));
+  var fbUrl='https://www.facebook.com/tr/?id='+encodeURIComponent(${JSON.stringify(fb_pixel_id as string)})+'&ev='+encodeURIComponent(${JSON.stringify(fbEvent)})+'&eid='+encodeURIComponent(fbEid)+'&noscript=1';
+  if(typeof navigator.sendBeacon==='function'){
+    navigator.sendBeacon(fbUrl);
+  }else{
+    fetch(fbUrl,{method:'GET',keepalive:true,mode:'no-cors'}).catch(function(){});
+  }
+}catch(e){}`
     }
 
-    // TK beacon (pure sendBeacon, no SDK)
-    let tkBeacon = ''
+    // TK lightweight beacon (speed-first, best-effort delivery)
+    let tkBeaconScript = ''
     if (hasTiktokPixel) {
       const tkEvent = ALLOWED_TIKTOK_EVENTS.includes(tiktok_event_type as string)
         ? (tiktok_event_type as string)
         : 'SubmitForm'
-      tkBeacon = `
-(function(){
-  try {
-    var eid=(crypto.randomUUID?crypto.randomUUID():(Date.now()+'-'+Math.random().toString(36).slice(2)));
-    var url='https://analytics.tiktok.com/api/v2/pixel/track?pixel_code='+encodeURIComponent(${JSON.stringify(tiktok_pixel_id as string)})+'&event='+encodeURIComponent(${JSON.stringify(tkEvent)})+'&event_id='+encodeURIComponent(eid);
-    if(typeof navigator.sendBeacon==='function'){navigator.sendBeacon(url);}else{fetch(url,{method:'GET',keepalive:true,mode:'no-cors'}).catch(function(){});}
-  }catch(e){}
-})();`
+      tkBeaconScript = `
+try{
+  var tkEid=(crypto.randomUUID ? crypto.randomUUID() : (Date.now()+'-'+Math.random().toString(36).slice(2)));
+  var tkUrl='https://analytics.tiktok.com/api/v2/pixel/track?pixel_code='+encodeURIComponent(${JSON.stringify(tiktok_pixel_id as string)})+'&event='+encodeURIComponent(${JSON.stringify(tkEvent)})+'&event_id='+encodeURIComponent(tkEid);
+  if(typeof navigator.sendBeacon==='function'){
+    navigator.sendBeacon(tkUrl);
+  }else{
+    fetch(tkUrl,{method:'GET',keepalive:true,mode:'no-cors'}).catch(function(){});
+  }
+}catch(e){}`
     }
 
     const html = `<!DOCTYPE html>
@@ -527,9 +531,11 @@ export async function GET(
 <meta charset="utf-8" />
 <meta name="robots" content="noindex,nofollow" />
 <script>
-${fbBeacon}
-${tkBeacon}
-window.location.replace(${safeRedirectUrl});
+${fbBeaconScript}
+${tkBeaconScript}
+setTimeout(function(){
+  window.location.replace(${safeRedirectUrl});
+}, 8);
 </script>
 </head>
 <body></body>
