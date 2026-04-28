@@ -520,7 +520,10 @@ export async function GET(
   if (hasTiktokPixel || hasFbPixel) {
     const safeRedirectUrl = JSON.stringify(redirectUrl)
 
-    // FB lightweight beacon (speed-first, best-effort delivery)
+    // ============================================================
+    // FB Pixel: 使用图片像素 (GET 请求,浏览器原生方式,速度极快)
+    // 修复: 之前用 sendBeacon 发 POST 导致 FB 不接收
+    // ============================================================
     let fbBeaconScript = ''
     if (hasFbPixel) {
       const fbEvent = ALLOWED_FB_EVENTS.includes(fbEventType as string)
@@ -529,16 +532,21 @@ export async function GET(
       fbBeaconScript = `
 try{
   var fbEid=(crypto.randomUUID ? crypto.randomUUID() : (Date.now()+'-'+Math.random().toString(36).slice(2)));
-  var fbUrl='https://www.facebook.com/tr/?id='+encodeURIComponent(${JSON.stringify(fbPixelId as string)})+'&ev='+encodeURIComponent(${JSON.stringify(fbEvent)})+'&eid='+encodeURIComponent(fbEid)+'&noscript=1';
-  if(typeof navigator.sendBeacon==='function'){
-    navigator.sendBeacon(fbUrl);
-  }else{
-    fetch(fbUrl,{method:'GET',keepalive:true,mode:'no-cors'}).catch(function(){});
-  }
+  var fbUrl='https://www.facebook.com/tr/?id='+encodeURIComponent(${JSON.stringify(fbPixelId as string)})
+    +'&ev='+encodeURIComponent(${JSON.stringify(fbEvent)})
+    +'&eid='+encodeURIComponent(fbEid)
+    +'&dl='+encodeURIComponent(location.href)
+    +'&rl='+encodeURIComponent(document.referrer||'')
+    +'&noscript=1';
+  // 关键修复: 用 Image 发 GET (FB 标准方式), 不用 sendBeacon (那是 POST)
+  (new Image()).src=fbUrl;
 }catch(e){}`
     }
 
-    // TK lightweight beacon (speed-first, best-effort delivery)
+    // ============================================================
+    // TikTok Pixel: 加载官方 SDK 并 track (恢复成原本能正常工作的方式)
+    // 修复: 之前那个 /api/v2/pixel/track endpoint 是不存在的
+    // ============================================================
     let tkBeaconScript = ''
     if (hasTiktokPixel) {
       const tkEvent = ALLOWED_TIKTOK_EVENTS.includes(tiktokEventType as string)
@@ -546,15 +554,21 @@ try{
         : 'SubmitForm'
       tkBeaconScript = `
 try{
-  var tkEid=(crypto.randomUUID ? crypto.randomUUID() : (Date.now()+'-'+Math.random().toString(36).slice(2)));
-  var tkUrl='https://analytics.tiktok.com/api/v2/pixel/track?pixel_code='+encodeURIComponent(${JSON.stringify(tiktokPixelId as string)})+'&event='+encodeURIComponent(${JSON.stringify(tkEvent)})+'&event_id='+encodeURIComponent(tkEid);
-  if(typeof navigator.sendBeacon==='function'){
-    navigator.sendBeacon(tkUrl);
-  }else{
-    fetch(tkUrl,{method:'GET',keepalive:true,mode:'no-cors'}).catch(function(){});
-  }
+  !function(w,d,t){w.TiktokAnalyticsObject=t;var ttq=w[t]=w[t]||[];ttq.methods=["page","track","identify","instances","debug","on","off","once","ready","alias","group","enableCookie","disableCookie"],ttq.setAndDefer=function(t,e){t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}};for(var i=0;i<ttq.methods.length;i++)ttq.setAndDefer(ttq,ttq.methods[i]);ttq.instance=function(t){for(var e=ttq._i[t]||[],n=0;n<ttq.methods.length;n++)ttq.setAndDefer(e,ttq.methods[n]);return e},ttq.load=function(e,n){var i="https://analytics.tiktok.com/i18n/pixel/events.js";ttq._i=ttq._i||{},ttq._i[e]=[],ttq._i[e]._u=i,ttq._t=ttq._t||{},ttq._t[e]=+new Date,ttq._o=ttq._o||{},ttq._o[e]=n||{};var o=document.createElement("script");o.type="text/javascript",o.async=!0,o.src=i+"?sdkid="+e+"&lib="+t;var a=document.getElementsByTagName("script")[0];a.parentNode.insertBefore(o,a)};
+    ttq.load(${JSON.stringify(tiktokPixelId as string)});
+    ttq.page();
+    var tkEid=(crypto.randomUUID ? crypto.randomUUID() : (Date.now()+'-'+Math.random().toString(36).slice(2)));
+    ttq.track(${JSON.stringify(tkEvent)},{event_id:tkEid});
+  }(window,document,'ttq');
 }catch(e){}`
     }
+
+    // ============================================================
+    // 跳转延迟:
+    // - 只有 FB 时: 50ms 足够 (图片像素瞬时完成)
+    // - 有 TT 时: 250ms (等 TT SDK 下载并发送 track 请求)
+    // ============================================================
+    const redirectDelay = hasTiktokPixel ? 250 : 50
 
     const html = `<!DOCTYPE html>
 <html>
@@ -566,7 +580,7 @@ ${fbBeaconScript}
 ${tkBeaconScript}
 setTimeout(function(){
   window.location.replace(${safeRedirectUrl});
-}, 8);
+}, ${redirectDelay});
 </script>
 </head>
 <body></body>
