@@ -119,39 +119,45 @@ function DeviceBadge({ device }: { device: string | null }) {
   return <Badge label="🖥️ 电脑" color="bg-blue-100 text-blue-700" />
 }
 
-function detectSource(referer: string | null | undefined): 'DIRECT' | 'TK' | 'FB' | 'INS' | 'OTHER' {
-  if (!referer) return 'DIRECT'
-  try {
-    const hostname = new URL(referer).hostname.toLowerCase()
-    if (
-      hostname.includes('tiktok.com') ||
-      hostname.includes('tiktokv.com')
-    ) {
-      return 'TK'
-    }
-    if (
-      hostname === 'facebook.com' ||
-      hostname.endsWith('.facebook.com') ||
-      hostname === 'fb.com' ||
-      hostname.endsWith('.fb.com')
-    ) {
-      return 'FB'
-    }
-    if (
-      hostname === 'instagram.com' ||
-      hostname.endsWith('.instagram.com')
-    ) {
-      return 'INS'
-    }
-    return 'OTHER'
-  } catch {
-    return 'OTHER'
+function detectSource(referer: string | null | undefined, ua: string | null | undefined): 'DIRECT' | 'TK' | 'FB' | 'INS' | 'OTHER' {
+  if (referer) {
+    try {
+      const hostname = new URL(referer).hostname.toLowerCase()
+      if (
+        hostname.includes('tiktok.com') ||
+        hostname.includes('tiktokv.com')
+      ) {
+        return 'TK'
+      }
+      if (
+        hostname === 'facebook.com' ||
+        hostname.endsWith('.facebook.com') ||
+        hostname === 'fb.com' ||
+        hostname.endsWith('.fb.com')
+      ) {
+        return 'FB'
+      }
+      if (
+        hostname === 'instagram.com' ||
+        hostname.endsWith('.instagram.com')
+      ) {
+        return 'INS'
+      }
+      return 'OTHER'
+    } catch {}
   }
+  if (ua) {
+    const uaLower = ua.toLowerCase()
+    if (uaLower.includes('bytedancewebview') || uaLower.includes('musical_ly') || uaLower.includes('tiktok')) return 'TK'
+    if (uaLower.includes('fban') || uaLower.includes('fbav')) return 'FB'
+    if (uaLower.includes('instagram')) return 'INS'
+  }
+  return 'DIRECT'
 }
 
-/** Source pill: classifies visit by referer hostname into 直接访问 / TK / FB / INS / 其他来源. */
-function SourceBadge({ referer }: { referer: string | null | undefined }) {
-  const source = detectSource(referer)
+/** Source pill: classifies visit by referer hostname + UA fallback into 直接访问 / TK / FB / INS / 其他来源. */
+function SourceBadge({ referer, ua }: { referer: string | null | undefined; ua: string | null | undefined }) {
+  const source = detectSource(referer, ua)
   const title = referer || undefined
 
   if (source === 'DIRECT') {
@@ -870,7 +876,7 @@ export default function LogsPage() {
                       <BrowserBadge browser={log.browser ?? null} />
                     </td>
                     <td className="py-4 px-5">
-                      <SourceBadge referer={log.referer ?? null} />
+                      <SourceBadge referer={log.referer ?? null} ua={log.user_agent ?? null} />
                     </td>
                     <td className="py-4 px-5">
                       {log.was_cloaked ? (
