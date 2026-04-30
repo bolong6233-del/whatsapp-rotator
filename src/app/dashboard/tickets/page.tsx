@@ -337,7 +337,7 @@ export default function TicketsPage() {
               })
               if (!match) continue
               if (match.day_sum >= ratio) toDeactivate.push(dbNum.phone_number)
-              else toActivate.push(dbNum.phone_number)
+              else if (match.online === 1) toActivate.push(dbNum.phone_number)
             }
 
             const chunkSize = 100
@@ -531,7 +531,7 @@ export default function TicketsPage() {
               })
               if (!match) continue
               if (match.day_sum >= ratio) toDeactivate.push(dbNum.phone_number)
-              else toActivate.push(dbNum.phone_number)
+              else if (match.online === 1) toActivate.push(dbNum.phone_number)
             }
 
             const chunkSize = 100
@@ -715,7 +715,7 @@ export default function TicketsPage() {
               })
               if (!match) continue
               if (match.day_sum >= ratio) toDeactivate.push(dbNum.phone_number)
-              else toActivate.push(dbNum.phone_number)
+              else if (match.online === 1) toActivate.push(dbNum.phone_number)
             }
 
             const chunkSize = 100
