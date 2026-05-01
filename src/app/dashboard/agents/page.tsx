@@ -137,10 +137,16 @@ export default function AgentsPage() {
     })
   }, [])
 
-  const { data: agents = [], isLoading, mutate } = useSWR<AgentWithStats[]>(
+    const { data: agents = [], isLoading, mutate } = useSWR<AgentWithStats[]>(
     '/api/admin/agents',
     async (url: string) => {
-      const res = await fetch(url)
+      // Send the browser's local midnight so 今日点击 matches the user-facing
+      // dashboard (which also uses local time). Without this, the server would
+      // fall back to UTC midnight and shier@... 的 1558 vs 818 那种不一致就会出现.
+      const localMidnight = new Date()
+      localMidnight.setHours(0, 0, 0, 0)
+      const since = encodeURIComponent(localMidnight.toISOString())
+      const res = await fetch(`${url}?since=${since}`)
       if (res.status === 403) {
         router.push('/dashboard')
         return []
