@@ -382,23 +382,26 @@ export default function NumbersPage() {
     }
   )
 
-  const { data: allLabels = [] } = useSWR<string[]>(
-    currentUserId ? ['allLabels', currentUserId, isAdmin, isRoot] : null,
-    async ([, uid, _isAdmin, root]: [string, string, boolean, boolean]) => { // eslint-disable-line @typescript-eslint/no-unused-vars
-      let query = supabase
-        .from('whatsapp_numbers')
-        .select('label, short_links!inner(user_id)')
-        .not('label', 'is', null)
-        .order('label', { ascending: true })
-      if (!root) {
-        query = query.eq('short_links.user_id', uid).eq('is_hidden', false)
-      }
-      const { data } = await query
-      return data
-        ? Array.from(new Set(data.map((r: { label: string | null }) => r.label).filter(Boolean) as string[]))
-        : []
+  // Source labels from work_orders (the real source of truth) so deleted
+// work orders never appear in the dropdown, even if orphan label rows
+// remain in whatsapp_numbers.
+const { data: allLabels = [] } = useSWR<string[]>(
+  currentUserId ? ['allLabels', currentUserId, isRoot] : null,
+  async ([, uid, root]: [string, string, boolean]) => {
+    let query = supabase
+      .from('work_orders')
+      .select('ticket_name')
+      .not('ticket_name', 'is', null)
+      .order('ticket_name', { ascending: true })
+    if (!root) {
+      query = query.eq('user_id', uid)
     }
-  )
+    const { data } = await query
+    return data
+      ? Array.from(new Set(data.map((r: { ticket_name: string | null }) => r.ticket_name).filter(Boolean) as string[]))
+      : []
+  }
+)
 
   const { data: mainData, isValidating, mutate } = useSWR(
     currentUserId
