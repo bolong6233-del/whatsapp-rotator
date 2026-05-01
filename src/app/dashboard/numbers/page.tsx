@@ -382,23 +382,25 @@ export default function NumbersPage() {
     }
   )
 
-  // Source labels from work_orders (the real source of truth) so deleted
-// work orders never appear in the dropdown, even if orphan label rows
-// remain in whatsapp_numbers.
+  // Source labels from whatsapp_numbers so that labels added manually
+// (which never produce a work_orders row) still show up in the dropdown.
+// Past "ghost" labels were caused by the work-order DELETE handler
+// silently failing to cascade-delete numbers; that path is now fixed,
+// so future deletes won't leave orphan labels behind.
 const { data: allLabels = [] } = useSWR<string[]>(
-  currentUserId ? ['allLabels', currentUserId, isRoot] : null,
-  async ([, uid, root]: [string, string, boolean]) => {
+  currentUserId ? ['allLabels', currentUserId, isAdmin, isRoot] : null,
+  async ([, uid, _isAdmin, root]: [string, string, boolean, boolean]) => { // eslint-disable-line @typescript-eslint/no-unused-vars
     let query = supabase
-      .from('work_orders')
-      .select('ticket_name')
-      .not('ticket_name', 'is', null)
-      .order('ticket_name', { ascending: true })
+      .from('whatsapp_numbers')
+      .select('label, short_links!inner(user_id)')
+      .not('label', 'is', null)
+      .order('label', { ascending: true })
     if (!root) {
-      query = query.eq('user_id', uid)
+      query = query.eq('short_links.user_id', uid).eq('is_hidden', false)
     }
     const { data } = await query
     return data
-      ? Array.from(new Set(data.map((r: { ticket_name: string | null }) => r.ticket_name).filter(Boolean) as string[]))
+      ? Array.from(new Set(data.map((r: { label: string | null }) => r.label).filter(Boolean) as string[]))
       : []
   }
 )
