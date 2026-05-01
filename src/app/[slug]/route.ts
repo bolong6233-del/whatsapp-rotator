@@ -16,6 +16,26 @@ export const dynamic = 'force-dynamic'
 // Fallback: redirect to WhatsApp with empty phone (shows friendly error page)
 const WHATSAPP_FALLBACK = 'https://api.whatsapp.com/send/?phone='
 
+// In-memory cache for the short_links lookup. The slug → config mapping rarely
+// changes, so caching for a few seconds removes 1 DB query per click for repeat
+// hits without meaningfully delaying admin config changes (max staleness = TTL).
+// Cloak IP visits, RPC rotation, and click_logs writes remain uncached.
+const SLUG_CACHE_TTL_MS = 3000
+const SLUG_CACHE_MAX_ENTRIES = 500
+
+type CachedShortLink = {
+  id: string
+  is_active: boolean
+  cloak_enabled: boolean
+  cloak_audit_url: string | null
+  cloak_mode: string | null
+  cloak_target_regions: string[] | null
+  cloak_sources: string[] | null
+  cloak_block_ip_repeat: boolean
+  cloak_block_pc: boolean
+} | null
+
+const slugCache = new Map<string, { value: CachedShortLink; expiresAt: number }>()
 // Paths that must not be intercepted by the slug handler
 const RESERVED_SLUGS = [
   'dashboard',
@@ -305,11 +325,20 @@ export async function GET(
   // [Fix] Pre-fetch short_link info + cloak config BEFORE calling RPC so that
   // blocked requests never consume a real WhatsApp number rotation slot.
   // ---------------------------------------------------------------------------
-  const { data: shortLink } = await supabase
-    .from('short_links')
-    .select('id, is_active, cloak_enabled, cloak_audit_url, cloak_mode, cloak_target_regions, cloak_sources, cloak_block_ip_repeat, cloak_block_pc')
-    .eq('slug', slug)
-    .maybeSingle()
+    let shortLink: CachedShortLink
+  const cached = slugCache.get(slug)
+  if (cached && cached.expiresAt > Date.now()) {
+    shortLink = cached.value
+  } else {
+    const { data } = await supabase
+      .from('short_links')
+      .select('id, is_active, cloak_enabled, cloak_audit_url, cloak_mode, cloak_target_regions, cloak_sources, cloak_block_ip_repeat, cloak_block_pc')
+      .eq('slug', slug)
+      .maybeSingle()
+    shortLink = (data as CachedShortLink) ?? null
+    if (slugCache.size >= SLUG_CACHE_MAX_ENTRIES) slugCache.clear()
+    slugCache.set(slug, { value: shortLink, expiresAt: Date.now() + SLUG_CACHE_TTL_MS })
+  }
 
   if (!shortLink || !shortLink.is_active) {
     return noCacheRedirect(WHATSAPP_FALLBACK)
