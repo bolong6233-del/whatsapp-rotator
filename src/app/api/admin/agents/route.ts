@@ -30,7 +30,7 @@ async function requireAdmin() {
 }
 
 // GET /api/admin/agents — list all agents with stats
-export async function GET() {
+export async function GET(request: NextRequest) {
   const adminUser = await requireAdmin()
   if (!adminUser) {
     return NextResponse.json({ error: '无权限' }, { status: 403 })
@@ -77,10 +77,18 @@ export async function GET() {
     filteredAgents = filteredAgents.filter(a => a.email !== ROOT_ADMIN_EMAIL)
   }
 
-  // Compute today's start time (UTC midnight)
-  const todayStart = new Date()
-  todayStart.setUTCHours(0, 0, 0, 0)
-  const todayStartIso = todayStart.toISOString()
+    // Compute today's start. The client passes its local midnight in ?since=
+  // (ISO 8601). If absent, fall back to UTC midnight. This keeps the 今日点击
+  // figure consistent with the user-facing dashboard which uses local time.
+  const sinceParam = request.nextUrl.searchParams.get('since')
+  let todayStartIso: string
+  if (sinceParam && !Number.isNaN(Date.parse(sinceParam))) {
+    todayStartIso = new Date(sinceParam).toISOString()
+  } else {
+    const todayStart = new Date()
+    todayStart.setUTCHours(0, 0, 0, 0)
+    todayStartIso = todayStart.toISOString()
+  }
 
   // Batch-fetch all short_links for all agents in one query
   const allAgentIds = filteredAgents.map((a) => a.id)
@@ -99,20 +107,30 @@ export async function GET() {
     linksByUserId.set(link.user_id, existing)
   }
 
-  // Batch-fetch today's click counts for all links in one query (group in JS)
+    // Batch-fetch today's click counts for all links. PostgREST caps a single
+  // .select() at 1000 rows, so paginate until the result set is exhausted —
+  // otherwise high-traffic days would silently under-count.
   const allLinkIds = (allLinks || []).map((l) => l.id)
   const todayClicksByLinkId = new Map<string, number>()
   if (allLinkIds.length > 0) {
-    const { data: todayClickRows } = await adminSupabase
-      .from('click_logs')
-      .select('short_link_id')
-      .in('short_link_id', allLinkIds)
-      .gte('clicked_at', todayStartIso)
-    for (const row of todayClickRows || []) {
-      todayClicksByLinkId.set(
-        row.short_link_id,
-        (todayClicksByLinkId.get(row.short_link_id) ?? 0) + 1,
-      )
+    const pageSize = 1000
+    let offset = 0
+    while (true) {
+      const { data: rows } = await adminSupabase
+        .from('click_logs')
+        .select('short_link_id')
+        .in('short_link_id', allLinkIds)
+        .gte('clicked_at', todayStartIso)
+        .range(offset, offset + pageSize - 1)
+      if (!rows || rows.length === 0) break
+      for (const row of rows) {
+        todayClicksByLinkId.set(
+          row.short_link_id,
+          (todayClicksByLinkId.get(row.short_link_id) ?? 0) + 1,
+        )
+      }
+      if (rows.length < pageSize) break
+      offset += pageSize
     }
   }
 
