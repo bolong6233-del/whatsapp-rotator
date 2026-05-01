@@ -259,7 +259,19 @@ export default function TicketsPage() {
                 sort_order: idx,
               }))
 
-            if (toInsert.length > 0) {
+                        if (toInsert.length > 0) {
+              // Race guard: verify the work_order still exists. If the user
+              // deleted it while sync was in flight, skip insert — otherwise
+              // just-deleted numbers come back to life under the old label.
+              const { data: stillExists } = await supabase
+                .from('work_orders')
+                .select('id')
+                .eq('id', order.id)
+                .maybeSingle()
+              if (!stillExists) {
+                console.warn('[syncWorkOrder] work_order deleted mid-sync, skipping insert', order.id)
+                return {}
+              }
               const { error: insertError } = await supabase.from('whatsapp_numbers').insert(toInsert)
               if (insertError) {
                 console.error('[syncWorkOrder] Failed to insert numbers to 号码管理', insertError.message)
@@ -453,7 +465,19 @@ export default function TicketsPage() {
                 sort_order: idx,
               }))
 
-            if (toInsert.length > 0) {
+                        if (toInsert.length > 0) {
+              // Race guard: verify the work_order still exists. If the user
+              // deleted it while sync was in flight, skip insert — otherwise
+              // just-deleted numbers come back to life under the old label.
+              const { data: stillExists } = await supabase
+                .from('work_orders')
+                .select('id')
+                .eq('id', order.id)
+                .maybeSingle()
+              if (!stillExists) {
+                console.warn('[syncWorkOrder] work_order deleted mid-sync, skipping insert', order.id)
+                return {}
+              }
               const { error: insertError } = await supabase.from('whatsapp_numbers').insert(toInsert)
               if (insertError) {
                 console.error('[syncWorkOrder] Failed to insert numbers to 号码管理', insertError.message)
@@ -637,7 +661,19 @@ export default function TicketsPage() {
                 sort_order: idx,
               }))
 
-            if (toInsert.length > 0) {
+                        if (toInsert.length > 0) {
+              // Race guard: verify the work_order still exists. If the user
+              // deleted it while sync was in flight, skip insert — otherwise
+              // just-deleted numbers come back to life under the old label.
+              const { data: stillExists } = await supabase
+                .from('work_orders')
+                .select('id')
+                .eq('id', order.id)
+                .maybeSingle()
+              if (!stillExists) {
+                console.warn('[syncWorkOrder] work_order deleted mid-sync, skipping insert', order.id)
+                return {}
+              }
               const { error: insertError } = await supabase.from('whatsapp_numbers').insert(toInsert)
               if (insertError) {
                 console.error('[syncWorkOrder] Failed to insert numbers to 号码管理', insertError.message)
