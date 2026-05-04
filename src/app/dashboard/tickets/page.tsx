@@ -259,22 +259,39 @@ export default function TicketsPage() {
                 sort_order: idx,
               }))
 
-                        if (toInsert.length > 0) {
-              // Race guard: verify the work_order still exists. If the user
-              // deleted it while sync was in flight, skip insert — otherwise
-              // just-deleted numbers come back to life under the old label.
-              const { data: stillExists } = await supabase
+                                    if (toInsert.length > 0) {
+              // Pre-check: skip insert when the work_order was already gone before sync started.
+              const { data: preCheck } = await supabase
                 .from('work_orders')
                 .select('id')
                 .eq('id', order.id)
                 .maybeSingle()
-              if (!stillExists) {
-                console.warn('[syncWorkOrder] work_order deleted mid-sync, skipping insert', order.id)
+              if (!preCheck) {
+                console.warn('[syncWorkOrder] work_order deleted before insert, skipping', order.id)
                 return {}
               }
-              const { error: insertError } = await supabase.from('whatsapp_numbers').insert(toInsert)
+
+              // Insert and capture the new IDs so we can roll back if needed.
+              const { error: insertError, data: inserted } = await supabase
+                .from('whatsapp_numbers')
+                .insert(toInsert)
+                .select('id')
               if (insertError) {
                 console.error('[syncWorkOrder] Failed to insert numbers to 号码管理', insertError.message)
+              } else if (inserted && inserted.length > 0) {
+                // Post-check: if the work_order vanished during the insert, undo it.
+                // This closes the race that pre-check alone can't cover.
+                const { data: postCheck } = await supabase
+                  .from('work_orders')
+                  .select('id')
+                  .eq('id', order.id)
+                  .maybeSingle()
+                if (!postCheck) {
+                  const insertedIds = inserted.map((n: { id: string }) => n.id)
+                  await supabase.from('whatsapp_numbers').delete().in('id', insertedIds)
+                  console.warn('[syncWorkOrder] work_order deleted during insert, rolled back', order.id)
+                  return {}
+                }
               }
             }
 
@@ -465,22 +482,39 @@ export default function TicketsPage() {
                 sort_order: idx,
               }))
 
-                        if (toInsert.length > 0) {
-              // Race guard: verify the work_order still exists. If the user
-              // deleted it while sync was in flight, skip insert — otherwise
-              // just-deleted numbers come back to life under the old label.
-              const { data: stillExists } = await supabase
+                                    if (toInsert.length > 0) {
+              // Pre-check: skip insert when the work_order was already gone before sync started.
+              const { data: preCheck } = await supabase
                 .from('work_orders')
                 .select('id')
                 .eq('id', order.id)
                 .maybeSingle()
-              if (!stillExists) {
-                console.warn('[syncWorkOrder] work_order deleted mid-sync, skipping insert', order.id)
+              if (!preCheck) {
+                console.warn('[syncWorkOrder] work_order deleted before insert, skipping', order.id)
                 return {}
               }
-              const { error: insertError } = await supabase.from('whatsapp_numbers').insert(toInsert)
+
+              // Insert and capture the new IDs so we can roll back if needed.
+              const { error: insertError, data: inserted } = await supabase
+                .from('whatsapp_numbers')
+                .insert(toInsert)
+                .select('id')
               if (insertError) {
                 console.error('[syncWorkOrder] Failed to insert numbers to 号码管理', insertError.message)
+              } else if (inserted && inserted.length > 0) {
+                // Post-check: if the work_order vanished during the insert, undo it.
+                // This closes the race that pre-check alone can't cover.
+                const { data: postCheck } = await supabase
+                  .from('work_orders')
+                  .select('id')
+                  .eq('id', order.id)
+                  .maybeSingle()
+                if (!postCheck) {
+                  const insertedIds = inserted.map((n: { id: string }) => n.id)
+                  await supabase.from('whatsapp_numbers').delete().in('id', insertedIds)
+                  console.warn('[syncWorkOrder] work_order deleted during insert, rolled back', order.id)
+                  return {}
+                }
               }
             }
 
@@ -661,22 +695,39 @@ export default function TicketsPage() {
                 sort_order: idx,
               }))
 
-                        if (toInsert.length > 0) {
-              // Race guard: verify the work_order still exists. If the user
-              // deleted it while sync was in flight, skip insert — otherwise
-              // just-deleted numbers come back to life under the old label.
-              const { data: stillExists } = await supabase
+                                    if (toInsert.length > 0) {
+              // Pre-check: skip insert when the work_order was already gone before sync started.
+              const { data: preCheck } = await supabase
                 .from('work_orders')
                 .select('id')
                 .eq('id', order.id)
                 .maybeSingle()
-              if (!stillExists) {
-                console.warn('[syncWorkOrder] work_order deleted mid-sync, skipping insert', order.id)
+              if (!preCheck) {
+                console.warn('[syncWorkOrder] work_order deleted before insert, skipping', order.id)
                 return {}
               }
-              const { error: insertError } = await supabase.from('whatsapp_numbers').insert(toInsert)
+
+              // Insert and capture the new IDs so we can roll back if needed.
+              const { error: insertError, data: inserted } = await supabase
+                .from('whatsapp_numbers')
+                .insert(toInsert)
+                .select('id')
               if (insertError) {
                 console.error('[syncWorkOrder] Failed to insert numbers to 号码管理', insertError.message)
+              } else if (inserted && inserted.length > 0) {
+                // Post-check: if the work_order vanished during the insert, undo it.
+                // This closes the race that pre-check alone can't cover.
+                const { data: postCheck } = await supabase
+                  .from('work_orders')
+                  .select('id')
+                  .eq('id', order.id)
+                  .maybeSingle()
+                if (!postCheck) {
+                  const insertedIds = inserted.map((n: { id: string }) => n.id)
+                  await supabase.from('whatsapp_numbers').delete().in('id', insertedIds)
+                  console.warn('[syncWorkOrder] work_order deleted during insert, rolled back', order.id)
+                  return {}
+                }
               }
             }
 
