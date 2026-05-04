@@ -8,7 +8,6 @@ import Navbar from '@/components/layout/Navbar'
 import AlertBanner from '@/components/layout/AlertBanner'
 import TopProgressBar from '@/components/ui/TopProgressBar'
 import ToastContainer from '@/components/ui/ToastContainer'
-import IdleLogout from '@/components/IdleLogout'
 import { ProgressProvider } from '@/context/ProgressContext'
 import { ToastProvider } from '@/context/ToastContext'
 import type { User } from '@supabase/supabase-js'
@@ -51,7 +50,24 @@ export default function DashboardLayout({
       setReady(true)
     })
   }, [router])
-
+  // Listen for session loss (token refresh failure, sign out, etc.) and
+  // show a friendly notice + redirect, so users don't see stale 401 errors
+  // or silently broken pages.
+    // Listen for session loss (token refresh failure, sign out, etc.) and
+  // show a friendly notice + redirect, so users don't see stale 401 errors
+  // or silently broken pages.
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
+        // Avoid double-triggering when user is already on /login
+        if (window.location.pathname.startsWith('/login')) return
+        // Use a simple alert + redirect — toast provider may not be mounted yet
+        alert('会话已过期，请重新登录')
+        router.replace('/login?timeout=1')
+      }
+    })
+    return () => subscription.unsubscribe()
+  }, [router])
   // While checking auth, show nothing (avoids flash)
   if (!ready || !user) return null
 
@@ -60,7 +76,6 @@ export default function DashboardLayout({
       <ToastProvider>
         <TopProgressBar />
         <ToastContainer />
-        <IdleLogout />
         <div className="min-h-screen bg-gray-50 flex">
           <Sidebar role={role} />
           <div className="flex-1 flex flex-col min-w-0">
