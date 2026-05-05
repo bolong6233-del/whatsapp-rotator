@@ -57,13 +57,15 @@ export default function DashboardLayout({
   // show a friendly notice + redirect, so users don't see stale 401 errors
   // or silently broken pages.
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'SIGNED_OUT') {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      const isSignedOut = event === 'SIGNED_OUT' || (event === 'TOKEN_REFRESHED' && !session) || (event === 'USER_UPDATED' && !session)
+      if (isSignedOut) {
         // Avoid double-triggering when user is already on /login
         if (window.location.pathname.startsWith('/login')) return
         // Use a simple alert + redirect — toast provider may not be mounted yet
         alert('会话已过期，请重新登录')
-        router.replace('/login?timeout=1')
+        // Hard redirect to ensure navigation even if React tree is in a bad state
+        window.location.href = '/login?timeout=1'
       }
     })
     return () => subscription.unsubscribe()
