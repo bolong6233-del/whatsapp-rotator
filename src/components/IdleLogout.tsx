@@ -1,22 +1,20 @@
 'use client'
 
 import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase-client'
 
 const IDLE_MS = 60 * 60 * 1000 // 1 hour
 const THROTTLE_MS = 500 // throttle activity events to reduce timer churn
 
 export default function IdleLogout() {
-  const router = useRouter()
-
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>
     let lastReset = 0
 
     const logout = async () => {
       await supabase.auth.signOut().catch(() => {})
-      router.replace('/login?timeout=1')
+      // Hard redirect ensures navigation even if React tree is in a bad state
+      window.location.href = '/login?timeout=1'
     }
 
     const reset = () => {
@@ -35,7 +33,7 @@ export default function IdleLogout() {
       clearTimeout(timer)
       events.forEach((evt) => window.removeEventListener(evt, reset))
     }
-  }, [router])
+  }, [])
 
   return null
 }

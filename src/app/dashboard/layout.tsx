@@ -57,19 +57,34 @@ export default function DashboardLayout({
   // show a friendly notice + redirect, so users don't see stale 401 errors
   // or silently broken pages.
   useEffect(() => {
+    const redirectToLogin = (withTimeout: boolean) => {
+      if (window.location.pathname.startsWith('/login')) return
+      // Hard redirect ensures navigation regardless of React state
+      window.location.href = withTimeout ? '/login?timeout=1' : '/login'
+    }
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      const isSignedOut = event === 'SIGNED_OUT' || (event === 'TOKEN_REFRESHED' && !session) || (event === 'USER_UPDATED' && !session)
-      if (isSignedOut) {
-        // Avoid double-triggering when user is already on /login
-        if (window.location.pathname.startsWith('/login')) return
-        // Use a simple alert + redirect — toast provider may not be mounted yet
-        alert('会话已过期，请重新登录')
-        // Hard redirect to ensure navigation even if React tree is in a bad state
-        window.location.href = '/login?timeout=1'
-      }
+      const isSignedOut =
+        event === 'SIGNED_OUT' ||
+        (event === 'TOKEN_REFRESHED' && !session) ||
+        (event === 'USER_UPDATED' && !session)
+      if (isSignedOut) redirectToLogin(true)
     })
-    return () => subscription.unsubscribe()
-  }, [router])
+
+    // Belt-and-suspenders: if the tab regains focus and the session is gone
+    // (e.g. token expired in the background, refresh failed silently),
+    // kick the user back to the login page.
+    const onFocus = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) redirectToLogin(true)
+    }
+    window.addEventListener('focus', onFocus)
+
+    return () => {
+      subscription.unsubscribe()
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [])
   // While checking auth, show nothing (avoids flash)
   if (!ready || !user) return null
 

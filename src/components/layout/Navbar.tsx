@@ -1,16 +1,13 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase-client'
 import type { User } from '@supabase/supabase-js'
 
 export default function Navbar({ user }: { user: User }) {
-  const router = useRouter()
-
   const handleLogout = async () => {
-    await supabase.auth.signOut()
-    router.push('/login')
-    router.refresh()
+    await supabase.auth.signOut().catch(() => {})
+    // Hard redirect ensures navigation even if React tree is in a bad state
+    window.location.href = '/login'
   }
 
   return (
